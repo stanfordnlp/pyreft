@@ -289,7 +289,7 @@ def main():
         padding="longest"
     )
     
-    initial_lr = 5e-3
+    initial_lr = 2e-3
     total_step = 0
 
     train_dataloader = DataLoader(
@@ -385,17 +385,23 @@ def main():
         q_input = ""
         q_prompt = prompt_template % (q, q_input)
         prompt = tokenizer(q_prompt, return_tensors="pt").to(device)
-        base_unit_location = prompt["input_ids"].shape[-1] - 1 
+        
+        if position in {"last+first", "first+last"}:
+            base_unit_location = prompt["input_ids"].shape[-1] - 1 
+            base_unit_location = {"sources->base": (None, [[[base_unit_location]]]*(len(layers)//2) + [[[0]]]*(len(layers)//2))}
+        else:
+            base_unit_location = prompt["input_ids"].shape[-1] - 1 
+            base_unit_location = {"base": base_unit_location}
+
         _, steered_response = intervenable.generate(
             prompt, 
-            unit_locations={"base": base_unit_location},
+            unit_locations=base_unit_location,
             intervene_on_prompt=True,
-            max_new_tokens=512, 
-            do_sample=False,
-            eos_token_id=tokenizer.pad_token_id, 
-            early_stopping=True, 
-            num_beams=1
+            # much longer generation
+            max_new_tokens=512, do_sample=False, 
+            eos_token_id=tokenizer.pad_token_id, early_stopping=True
         )
+            
         raw_response = tokenizer.decode(steered_response[0], skip_special_tokens=True)
         response = raw_response.split("### Response:\n")[-1]
 
@@ -403,6 +409,7 @@ def main():
         data_item["instruction"] = example["instruction"]
         data_item["generator"] = run_name
         data_item["dataset"] = example["dataset"]
+        data_item["raw_response"] = raw_response
         data_item["output"] = response
         generations += [data_item]
         idx += 1
