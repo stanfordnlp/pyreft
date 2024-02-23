@@ -187,7 +187,7 @@ def main():
         f"layers: {layers}, rank: {rank}, "
         f"position: {position}, epoch: {epochs}"
     )
-    run_name = f"alpaca.intervention_type={intervention_type[:10]}.layers={layers}."\
+    run_name = f"alpaca.intervention_type={intervention_type}.layers={layers}."\
                f"rank={rank}.position={position}.epoch={epochs}"
     
     config, _, llama = create_llama(model)
@@ -338,7 +338,7 @@ def main():
             base_unit_location = inputs["intervention_position"].tolist()
             if position in {"last+first", "first+last"}:
                 base_first_token = torch.zeros_like(inputs["intervention_position"]).tolist()
-                intervention_locations = [base_unit_location]*(len(layers)//2)+[base_first_token]*(len(layers)//2)
+                intervention_locations = [base_first_token]*(len(layers)//2)+[base_unit_location]*(len(layers)//2)
             else:
                 intervention_locations = [base_unit_location]*len(layers)
                 
@@ -388,7 +388,7 @@ def main():
         
         if position in {"last+first", "first+last"}:
             base_unit_location = prompt["input_ids"].shape[-1] - 1 
-            base_unit_location = {"sources->base": (None, [[[base_unit_location]]]*(len(layers)//2) + [[[0]]]*(len(layers)//2))}
+            base_unit_location = {"sources->base": (None, [[[0]]]*(len(layers)//2) + [[[base_unit_location]]]*(len(layers)//2))}
         else:
             base_unit_location = prompt["input_ids"].shape[-1] - 1 
             base_unit_location = {"base": base_unit_location}

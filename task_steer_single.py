@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
 from transformers import DataCollatorForSeq2Seq
 from transformers import AutoTokenizer
+from transformers.activations import ACT2FN
 from torch.nn import CrossEntropyLoss
 import wandb
 
@@ -32,7 +33,6 @@ from pyvene.models.layers import LowRankRotateLayer
 import io
 import json
 import os
-import re
 
 def _make_r_io_base(f, mode: str):
     if not isinstance(f, io.IOBase):
@@ -81,46 +81,12 @@ def create_directory(path):
     else:
         print(f"Directory '{path}' already exists.")
 
-def extract_answer_number(sentence: str) -> float:
-    sentence = sentence.replace(',', '')
-    pred = [s for s in re.findall(r'-?\d+\.?\d*', sentence)]
-    if not pred:
-        return float('inf')
-    pred_answer = float(pred[-1])
-    if isinstance(pred_answer, str):
-        try:
-            pred_answer = float(pred_answer)
-        except ValueError as e:
-            pred_answer = float('inf')
-    return pred_answer
-
-
-def extract_answer_letter(sentence: str) -> str:
-    sentence_ = sentence.strip()
-    pred_answers = re.findall(r'A|B|C|D|E', sentence_)
-    if pred_answers:
-        if not pred_answers:
-            return ''
-        return pred_answers[-1]
-    else:
-        return ''
-        
 device = "cuda"
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
 DEFAULT_EOS_TOKEN = "</s>"
 DEFAULT_BOS_TOKEN = "<s>"
 DEFAULT_UNK_TOKEN = "<unk>"
-prompt_template = """Below is an instruction that \
-describes a task. Write a response that appropriately \
-completes the request.
-
-### Instruction:
-%s
-
-### Response:
-"""
-trigger_tokens = "### Response:\n"
 
 class LearnedSourceLowRankRotatedSpaceIntervention(
     ConstantSourceIntervention,
@@ -154,13 +120,36 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16)
-
+        self.act_fn = ACT2FN["silu"]
+        
     def forward(
         self, base, source=None, subspaces=None
     ):
         rotated_base = self.rotate_layer(base)
         output = base + torch.matmul(
-            (self.learned_source(base) - rotated_base), self.rotate_layer.weight.T
+            (self.act_fn(self.learned_source(base)) - rotated_base), self.rotate_layer.weight.T
+        )
+        return output.to(base.dtype)
+    
+class ConditionedSourceLowRankIntervention(
+    ConstantSourceIntervention,
+    TrainableIntervention, 
+    DistributedRepresentationIntervention
+):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.proj_layer = torch.nn.Linear(
+            self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16)
+        self.learned_source = torch.nn.Linear(
+            self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16)
+        self.act_fn = ACT2FN["silu"]
+        
+    def forward(
+        self, base, source=None, subspaces=None
+    ):
+        proj_base = self.proj_layer(base)
+        output = base + torch.matmul(
+            (self.act_fn(self.learned_source(base)) - proj_base), self.proj_layer.weight
         )
         return output.to(base.dtype)
     
@@ -183,9 +172,10 @@ def main():
     parser.add_argument(
         '-type', '--intervention_type', type=str, 
         help='LearnedSourceLowRankRotatedSpaceIntervention', default="LearnedSourceLowRankRotatedSpaceIntervention")
-    parser.add_argument('-gradient_accumulation_steps', '--gradient_accumulation_steps', type=int, default=4)
-    parser.add_argument('-batch_size', '--batch_size', type=int, default=4)
-    parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
+    parser.add_argument('-gradient_accumulation_steps', '--gradient_accumulation_steps', type=int, default=2)
+    parser.add_argument('-batch_size', '--batch_size', type=int, default=8)
+    parser.add_argument('-output_dir', '--output_dir', type=str, default="./results")
+    parser.add_argument('-lr', '--lr', type=float, default=5e-3)
     
     args = parser.parse_args()
 
@@ -203,14 +193,15 @@ def main():
     gradient_accumulation_steps = args.gradient_accumulation_steps
     batch_size = args.batch_size
     output_dir = args.output_dir
+    lr = args.lr
     
     print(
         f"model: {model}, intervention_type: {intervention_type}"
         f"layers: {layers}, rank: {rank}, "
         f"position: {position}, epoch: {epochs}"
     )
-    run_name = f"math.intervention_type={intervention_type}.layers={layers}."\
-               f"rank={rank}.position={position}.epoch={epochs}"
+    run_name = f"openbookqa.intervention_type={intervention_type}.layers={layers}."\
+               f"rank={rank}.position={position}.epoch={epochs}.lr={lr}"
     
     config, _, llama = create_llama(model)
     _ = llama.to(device)
@@ -221,6 +212,9 @@ def main():
         intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
     elif intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
         intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
+    elif intervention_type == "ConditionedSourceLowRankIntervention":
+        intervention_type = ConditionedSourceLowRankIntervention
+        
     user_give_all_layers = False
     if layers != "all":
         if "+" in layers:
@@ -234,7 +228,7 @@ def main():
             layers = [int(l) for l in layers.split(";")]
     else:
         layers = [l for l in range(config.num_hidden_layers)]
-    assert position in {"last", "last+first", "first+last"}
+    assert position in {"last", "first+last", "first_two+last_two"}
     if position in {"last+first", "first+last"}:
         if user_give_all_layers:
             pass
@@ -256,33 +250,36 @@ def main():
     llama.resize_token_embeddings(len(tokenizer))
     print("adding new tokens count: ", num_new_tokens)
 
-    task = "math_10k"
-    
+    tasks = [
+        "openbookqa"
+    ]
+    task_prompt_template = "%s\n"
+    trigger_tokens = "the correct answer is "
+
     ###################
     # data loaders
     ###################
     all_base_input_ids, all_base_positions, all_output_ids, all_source_input_ids = [], [], [], []
 
-    task_dataset = jload(f"./datasets/{task}.json")
-    for data_item in task_dataset[:max_n_train_example]:
-        assert data_item['input'] == ""
-        base_prompt = prompt_template % data_item['instruction'].strip()
-        # base input = base prompt + steered base output
-        base_input = base_prompt + data_item["output"].strip() + tokenizer.pad_token
-        base_prompt_length = len(tokenizer(
-            # we use 256 to follow previous work's cut-off length
-            base_prompt, max_length=256, truncation=True, return_tensors="pt")["input_ids"][0])
-        base_input_ids = tokenizer(
-            base_input, max_length=256, truncation=True, return_tensors="pt")["input_ids"][0]
-        output_ids = tokenizer(
-            base_input, max_length=256, truncation=True, return_tensors="pt")["input_ids"][0]
-        output_ids[:base_prompt_length] = -100
-        base_input_ids[-1] = tokenizer.pad_token_id
-        output_ids[-1] = tokenizer.pad_token_id
-    
-        all_base_input_ids.append(base_input_ids)
-        all_base_positions.append([base_prompt_length-1]) # intervene on the last prompt token
-        all_output_ids.append(output_ids)
+    for task in tasks:
+        print("loading data for task: ", task)
+        task_dataset = jload(f"./datasets/{task}/train.json")
+        for data_item in task_dataset[:max_n_train_example]:
+            assert data_item['input'] == ""
+            base_prompt = task_prompt_template % (data_item['instruction'])
+            # base input = base prompt + steered base output
+            base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.pad_token
+            base_prompt_length = len(tokenizer(
+                base_prompt, max_length=512, truncation=True, return_tensors="pt")["input_ids"][0])
+            base_input_ids = tokenizer(
+                base_input, max_length=512, truncation=True, return_tensors="pt")["input_ids"][0]
+            output_ids = tokenizer(
+                base_input, max_length=512, truncation=True, return_tensors="pt")["input_ids"][0]
+            output_ids[:base_prompt_length] = -100
+
+            all_base_input_ids.append(base_input_ids)
+            all_base_positions.append([base_prompt_length-1]) # intervene on the last prompt token
+            all_output_ids.append(output_ids)
             
     raw_train = (
         all_base_input_ids,
@@ -307,7 +304,7 @@ def main():
         padding="longest"
     )
     
-    initial_lr = 3e-4
+    initial_lr = lr
     total_step = 0
 
     train_dataloader = DataLoader(
@@ -337,7 +334,7 @@ def main():
     
     if is_wandb:
         run = wandb.init(
-            project="Steer_LM", 
+            project="Steer_LM_Local", 
             entity="wuzhengx",
             name=run_name,
         )
@@ -354,7 +351,13 @@ def main():
                     inputs[k] = v.to(device)
             b_s = inputs["input_ids"].shape[0]
             base_unit_location = inputs["intervention_position"].tolist()
-            if position in {"last+first", "first+last"}:
+            if position in {"first_two+last_two"}:
+                base_first_token = torch.zeros_like(inputs["intervention_position"]).tolist()
+                base_second_token = torch.ones_like(inputs["intervention_position"]).tolist()
+                base_second_last_token = (inputs["intervention_position"] - 1).tolist()
+                intervention_locations = [base_first_token]*(len(layers)//4)+[base_second_token]*(len(layers)//4)+\
+                    [base_second_last_token]*(len(layers)//4)+[base_unit_location]*(len(layers)//4)
+            elif position in {"last+first", "first+last"}:
                 base_first_token = torch.zeros_like(inputs["intervention_position"]).tolist()
                 intervention_locations = [base_first_token]*(len(layers)//2)+[base_unit_location]*(len(layers)//2)
             else:
@@ -398,7 +401,7 @@ def main():
     
     eval_results = {}
     eval_tasks = [
-        "MultiArith", "gsm8k", "AddSub", "AQuA", "SingleEq", "SVAMP"
+        "openbookqa"
     ]
     
     for i in range(len(eval_tasks)):
@@ -416,12 +419,17 @@ def main():
         )
         generations = []
         for data_item in eval_iterator:
-            prompt = prompt_template % data_item['instruction'].strip()
+            prompt = task_prompt_template % (data_item['instruction'])
             # base input = base prompt + steered base output
-            answer = data_item["answer"].strip()
+            answer = data_item["answer"]
             prompt = tokenizer(prompt, return_tensors="pt").to(device)
-            
-            if position in {"last+first", "first+last"}:
+            if position in {"first_two+last_two"}:
+                base_unit_location = prompt["input_ids"].shape[-1] - 1 
+                base_unit_location = {"sources->base": (
+                    None, [[[0]]]*(len(layers)//4) + [[[1]]]*(len(layers)//4) + \
+                    [[[base_unit_location-1]]]*(len(layers)//4) + [[[base_unit_location]]]*(len(layers)//4)
+                )}
+            elif position in {"last+first", "first+last"}:
                 base_unit_location = prompt["input_ids"].shape[-1] - 1 
                 base_unit_location = {"sources->base": (None, [[[0]]]*(len(layers)//2) + [[[base_unit_location]]]*(len(layers)//2))}
             else:
@@ -432,33 +440,24 @@ def main():
                 prompt, 
                 unit_locations=base_unit_location,
                 intervene_on_prompt=True,
-                # since we are generating the CoT, we follow previous works setting.
-                temperature=0.1,
-                top_p=0.75,
-                top_k=40,
-                num_beams=4,
-                max_new_tokens=128,
-                do_sample=True,
+                max_new_tokens=10, do_sample=False, 
+                eos_token_id=tokenizer.pad_token_id, early_stopping=True
             )
             raw_generation = tokenizer.decode(steered_response[0], skip_special_tokens=True)
-            generation = raw_generation.split(trigger_tokens)[-1]
-
-            generation = generation.strip()
-            if eval_tasks[i] == "AQuA":
-                generation = extract_answer_letter(generation)
-                if generation.strip() == answer.strip():
-                    correct_count += 1
-            else:
-                generation = extract_answer_number(generation)
-                if generation == float(answer):
-                    correct_count += 1
+            try:
+                generation = raw_generation.split(trigger_tokens)[1]
+                # cleaning step
+                generation = generation.split()[0]
+            except:
+                print("get not split based on trigger tokens: ", raw_generation)
+                generation = "WRONG"
+            if generation.strip() == answer.strip():
+                correct_count += 1
             totol_count += 1
             metric_str = round(correct_count/totol_count, 3)
             eval_iterator.set_postfix({"em": metric_str})
             generations += [{
-                "instruction": data_item['instruction'].strip(),
-                "input": data_item['input'].strip(),
-                "raw_generation": raw_generation,
+                "instruction": data_item['instruction'],
                 "generation": generation,
                 "answer": answer
             }]
