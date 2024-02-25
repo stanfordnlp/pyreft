@@ -187,7 +187,7 @@ class ConditionedSourceLowRankIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.proj_layer = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16)
+            self.embed_dim, kwargs["low_rank_dimension"], bias=False).to(torch.bfloat16)
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16)
         self.act_fn = ACT2FN["silu"]
