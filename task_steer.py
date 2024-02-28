@@ -513,7 +513,7 @@ def main():
                         eval_iterator.set_postfix({"em": metric_str})
                         generations += [{
                             "instruction": example["instruction"],
-                            "raw_generation": raw_generation,
+                            "raw_generation": pred,
                             "generation": generation,
                             "answer": answer,
                             "generator": run_name,
