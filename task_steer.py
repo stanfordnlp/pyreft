@@ -17,6 +17,7 @@ from transformers.activations import ACT2FN
 from transformers import get_linear_schedule_with_warmup
 from torch.nn import CrossEntropyLoss
 import wandb
+import datetime
 
 from data import _make_r_io_base, _make_w_io_base, jload, jdump, create_directory, load_task, chunk
 
@@ -238,8 +239,10 @@ def main():
         f"position: {position}, epoch: {epochs}"
     )
     model_str = model.split("/")[-1]
-    run_name = f"{model_str}.{task}.intervention_type={intervention_type}.layers={layers}."\
-               f"rank={rank}.position={position}.epoch={epochs}.lr={lr}"
+    now = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+    run_name = f"{model_str}.{task}.{now}"
+    # run_name = f"{model_str}.{task}.intervention_type={intervention_type}.layers={layers}."\
+            #    f"rank={rank}.position={position}.epoch={epochs}.lr={lr}"
     
     config, _, llama = create_llama(model)
     _ = llama.to(device)
@@ -332,9 +335,10 @@ def main():
     if is_wandb:
         run = wandb.init(
             project=f"Steer_LM_{task}", 
-            entity="wuzhengx",
+            entity="reft",
             name=run_name,
         )
+        run.summary.update(**vars(args))
         wandb.log({"train/n_params": n_params})
     
     # MAIN TRAIN LOOP
