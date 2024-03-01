@@ -170,7 +170,7 @@ def main():
         save_total_limit=1,
         logging_steps=1,
         learning_rate=lr,
-        warmup_steps=20 if task == "math" else 100,
+        warmup_steps=20,
         weight_decay=0.01,
         report_to="wandb" if is_wandb else None,
         use_cpu=False if device == "cuda" else True,

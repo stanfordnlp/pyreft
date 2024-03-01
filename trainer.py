@@ -65,6 +65,7 @@ class ReftTrainer(Trainer):
     def get_train_dataloader(self) -> DataLoader:
         return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator)
 
+
     def compute_loss(
         self,
         intervenable: pv.IntervenableModel,
@@ -90,6 +91,7 @@ class ReftTrainer(Trainer):
 
         # return
         return (loss, cf_outputs) if return_outputs else loss
+
 
     def save_model(self, output_dir, _internal_call):
         if not os.path.exists(output_dir):
