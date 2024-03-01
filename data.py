@@ -4,13 +4,16 @@ Data loading and preprocessing.
 
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
+from collections import defaultdict
 from templates import *
 from tqdm import tqdm
+import torch
 import json
 import os
 import io
+import re
 
-device = "cuda"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def _make_r_io_base(f, mode: str):
     if not isinstance(f, io.IOBase):
@@ -88,6 +91,8 @@ def reformat_by_task(
     trigger_tokens: str,
     tokenizer: AutoTokenizer,
     max_length: int,
+    position: str="last",
+    layers: int=[1],
     split: str='train',
     batch_size: int=None,
     max_n_eval_example: int=None,
@@ -97,10 +102,10 @@ def reformat_by_task(
     print("loading data for dataset: ", dataset)
     task_dataset = jload(f"./datasets/{dataset}/{split}.json")
     if batch_size is None:
-        all_base_input_ids = []
-        all_base_positions = []
-        all_output_ids = []
-        for data_item in task_dataset:
+        result = defaultdict(list)
+        for data_item in tqdm(task_dataset):
+
+            # format task-specific prompt
             if task == "commonsense":
                 base_prompt = task_prompt_template % (data_item['instruction'])
                 base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.eos_token
@@ -115,6 +120,8 @@ def reformat_by_task(
                 else:
                     base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
                     base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+            
+            # tokenize
             base_prompt_length = len(tokenizer(
                 base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0])
             base_input_ids = tokenizer(
@@ -124,11 +131,20 @@ def reformat_by_task(
             output_ids[:base_prompt_length] = -100
             base_input_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
             output_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
-        
-            all_base_input_ids.append(base_input_ids)
-            all_base_positions.append([base_prompt_length-1]) # intervene on the last prompt token
-            all_output_ids.append(output_ids)
-        return all_base_input_ids, all_base_positions, all_output_ids
+            last_position = torch.tensor([base_prompt_length-1,])
+
+            # compute intervention positions
+            base_unit_location = last_position.tolist()
+            if position in {"first+last"}:
+                base_first_token = torch.zeros_like(last_position).tolist()
+                intervention_locations = [base_first_token]*(len(layers)//2)+[base_unit_location]*(len(layers)//2)
+            else:
+                intervention_locations = [base_unit_location]*len(layers)
+
+            result["input_ids"].append(base_input_ids)
+            result["intervention_locations"].append(intervention_locations)
+            result["labels"].append(output_ids)
+        return result
     
     # batching
     if batch_size is not None:
@@ -178,6 +194,8 @@ def load_task(
     eval_dataset: list=None,
     seed: int=42,
     eval_batch_size: int=1,
+    position: str="last",
+    layers: int=[1],
 ):
     # config
     if task == "commonsense":
@@ -217,25 +235,16 @@ def load_task(
         trigger_tokens = "### Response:\n"
     
     # load data
-    all_base_input_ids, all_base_positions, all_output_ids = [], [], []
+    raw_train = defaultdict(list)
     for dataset in train_datasets:
-        base_input_ids, base_positions, output_ids = reformat_by_task(
-            task, dataset, task_prompt_template, trigger_tokens, tokenizer, max_length)
-        all_base_input_ids.extend(base_input_ids)
-        all_base_positions.extend(base_positions)
-        all_output_ids.extend(output_ids)
+        result = reformat_by_task(
+            task, dataset, task_prompt_template, trigger_tokens, tokenizer, max_length,
+            position, layers)
+        for key in result:
+            raw_train[key].extend(result[key])
     
     # make dataset obj
-    raw_train = (
-        all_base_input_ids,
-        all_base_positions,
-        all_output_ids,
-    )
-    train_dataset = Dataset.from_dict({
-        "input_ids": raw_train[0],
-        "intervention_position": raw_train[1],
-        "labels": raw_train[2],
-    }).shuffle(seed=seed)
+    train_dataset = Dataset.from_dict(raw_train).shuffle(seed=seed)
     if max_n_train_example is not None:
         train_dataset = train_dataset.select(range(max_n_train_example))
     
@@ -244,7 +253,7 @@ def load_task(
     all_eval_datasets = {}
     for dataset in eval_datasets:
         base_input_ids, attention_masks, output_ids, base_first_unit_location, base_last_unit_location, batch_example = reformat_by_task(
-            task, dataset, task_prompt_template, trigger_tokens, tokenizer, max_length,
+            task, dataset, task_prompt_template, trigger_tokens, tokenizer, max_length, position, layers,
             split='test', batch_size=eval_batch_size, max_n_eval_example=max_n_eval_example)
         all_eval_datasets[dataset] = Dataset.from_dict({
             "input_ids": base_input_ids,
@@ -256,3 +265,40 @@ def load_task(
         })
 
     return train_dataset, all_eval_datasets, trigger_tokens
+
+
+def extract_answer_number(sentence: str) -> float:
+    sentence = sentence.replace(',', '')
+    pred = [s for s in re.findall(r'-?\d+\.?\d*', sentence)]
+    if not pred:
+        return float('inf')
+    pred_answer = float(pred[-1])
+    if isinstance(pred_answer, str):
+        try:
+            pred_answer = float(pred_answer)
+        except ValueError as e:
+            pred_answer = float('inf')
+    return pred_answer
+
+
+def extract_answer_letter(sentence: str) -> str:
+    sentence_ = sentence.strip()
+    pred_answers = re.findall(r'A|B|C|D|E', sentence_)
+    if pred_answers:
+        if not pred_answers:
+            return ''
+        return pred_answers[-1]
+    else:
+        return ''
+        
+        
+def extract_output(pred, trigger=''):
+    if not trigger:
+        return pred
+    # for causallm only, use special trigger to detect new tokens.
+    # if cannot find trigger --> generation is too long; default to empty generation
+    start = pred.find(trigger)
+    if start < 0:
+        return ''
+    output = pred[start+len(trigger):].lstrip() # left strip any whitespaces
+    return output

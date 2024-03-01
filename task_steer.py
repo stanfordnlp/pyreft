@@ -18,167 +18,22 @@ from transformers import get_linear_schedule_with_warmup
 from torch.nn import CrossEntropyLoss
 import wandb
 import datetime
-
-from data import _make_r_io_base, _make_w_io_base, jload, jdump, create_directory, load_task, chunk
-
-from pyvene import (
-    IntervenableModel,
-    LowRankRotatedSpaceIntervention,
-    RepresentationConfig,
-    IntervenableConfig,
-    ConstantSourceIntervention,
-    TrainableIntervention,
-    DistributedRepresentationIntervention,
-)
-from pyvene import create_llama
-from pyvene import set_seed, count_parameters
-from pyvene.models.layers import LowRankRotateLayer
-
-import io
 import json
-import os
-import re
 
-def extract_answer_number(sentence: str) -> float:
-    sentence = sentence.replace(',', '')
-    pred = [s for s in re.findall(r'-?\d+\.?\d*', sentence)]
-    if not pred:
-        return float('inf')
-    pred_answer = float(pred[-1])
-    if isinstance(pred_answer, str):
-        try:
-            pred_answer = float(pred_answer)
-        except ValueError as e:
-            pred_answer = float('inf')
-    return pred_answer
+import pyvene as pv
+from data import (
+    create_directory, load_task, extract_output,
+    extract_answer_number, extract_answer_letter
+)
+from trainer import ReftTrainer, TrainingArguments
+from interventions import (
+    LearnedSourceLowRankRotatedSpaceIntervention,
+    ConditionedSourceLowRankRotatedSpaceIntervention,
+    ConditionedSourceLowRankIntervention,
+)
 
-def extract_answer_letter(sentence: str) -> str:
-    sentence_ = sentence.strip()
-    pred_answers = re.findall(r'A|B|C|D|E', sentence_)
-    if pred_answers:
-        if not pred_answers:
-            return ''
-        return pred_answers[-1]
-    else:
-        return ''
-        
-def extract_output(pred, trigger=''):
-    if not trigger:
-        return pred
-    # for causallm only, use special trigger to detect new tokens.
-    # if cannot find trigger --> generation is too long; default to empty generation
-    start = pred.find(trigger)
-    if start < 0:
-        return ''
-    output = pred[start+len(trigger):].lstrip() # left strip any whitespaces
-    return output
-        
-device = "cuda"
-IGNORE_INDEX = -100
-DEFAULT_PAD_TOKEN = "[PAD]"
-DEFAULT_EOS_TOKEN = "</s>"
-DEFAULT_BOS_TOKEN = "<s>"
-DEFAULT_UNK_TOKEN = "<unk>"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-no_header_prompt_template = """\
-### Instruction:
-%s
-
-### Response:
-"""
-
-alpaca_prompt_template = """Below is an instruction that \
-describes a task, paired with an input that provides \
-further context. Write a response that appropriately \
-completes the request.
-
-### Instruction:
-%s
-
-### Input:
-%s
-
-### Response:
-"""
-
-alpaca_prompt_no_input_template = """Below is an instruction that \
-describes a task. Write a response that appropriately \
-completes the request.
-
-### Instruction:
-%s
-
-### Response:
-"""
-
-class LearnedSourceLowRankRotatedSpaceIntervention(
-    ConstantSourceIntervention,
-    TrainableIntervention, 
-    DistributedRepresentationIntervention
-):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"])
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
-        self.learned_source = torch.nn.Parameter(
-            torch.rand(kwargs["low_rank_dimension"]), requires_grad=True)
-        self.dropout = torch.nn.Dropout(0.05)
-        
-    def forward(
-        self, base, source=None, subspaces=None
-    ):
-        rotated_base = self.rotate_layer(base)
-        output = base + torch.matmul(
-            (self.learned_source - rotated_base), self.rotate_layer.weight.T
-        )
-        return self.dropout(output.to(base.dtype))
-
-class ConditionedSourceLowRankRotatedSpaceIntervention(
-    ConstantSourceIntervention,
-    TrainableIntervention, 
-    DistributedRepresentationIntervention
-):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"])
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
-        self.learned_source = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16)
-        self.act_fn = ACT2FN["silu"]
-        self.dropout = torch.nn.Dropout(0.05)
-        
-    def forward(
-        self, base, source=None, subspaces=None
-    ):
-        rotated_base = self.rotate_layer(base)
-        output = base + torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base), self.rotate_layer.weight.T
-        )
-        return self.dropout(output.to(base.dtype))
-    
-class ConditionedSourceLowRankIntervention(
-    ConstantSourceIntervention,
-    TrainableIntervention, 
-    DistributedRepresentationIntervention
-):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.proj_layer = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"], bias=False).to(torch.bfloat16)
-        self.learned_source = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16)
-        self.act_fn = ACT2FN["silu"]
-        self.dropout = torch.nn.Dropout(0.05)
-        
-    def forward(
-        self, base, source=None, subspaces=None
-    ):
-        proj_base = self.proj_layer(base)
-        output = base + torch.matmul(
-            (self.act_fn(self.learned_source(base)) - proj_base), self.proj_layer.weight
-        )
-        return self.dropout(output.to(base.dtype))
-    
 def main():
     """
     Generic Representation Finetuning.
@@ -217,7 +72,7 @@ def main():
     epochs = args.epochs
     seed = args.seed
     intervention_type = args.intervention_type
-    set_seed(seed)
+    pv.set_seed(seed)
     max_n_train_example = args.max_n_train_example
     max_n_eval_example = args.max_n_eval_example
     is_wandb = args.is_wandb
@@ -230,21 +85,22 @@ def main():
     eval_dataset = args.eval_dataset
     save_model = args.save_model
     eval_batch_size = args.eval_batch_size
+    dtype = torch.float16 if device == "cuda" else torch.float32
     
     assert task in {"commonsense", "math", "alpaca", "instruct"}
     
+    # store/log run details
     print(
-        f"task: {task}, model: {model}, intervention_type: {intervention_type}"
+        f"task: {task}, model: {model}, intervention_type: {intervention_type}, "
         f"layers: {layers}, rank: {rank}, "
         f"position: {position}, epoch: {epochs}"
     )
     model_str = model.split("/")[-1]
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
     run_name = f"{model_str}.{task}.{now}"
-    # run_name = f"{model_str}.{task}.intervention_type={intervention_type}.layers={layers}."\
-            #    f"rank={rank}.position={position}.epoch={epochs}.lr={lr}"
     
-    config, _, llama = create_llama(model)
+    # load model
+    config, _, llama = pv.create_llama(model, dtype=dtype)
     _ = llama.to(device)
     _ = llama.eval()
     
@@ -255,7 +111,8 @@ def main():
         intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
     elif intervention_type == "ConditionedSourceLowRankIntervention":
         intervention_type = ConditionedSourceLowRankIntervention
-        
+    
+    # which layers to intervene on
     user_give_all_layers = False
     if layers != "all":
         if "+" in layers:
@@ -283,7 +140,8 @@ def main():
 
     # load dataset splits
     train_dataset, eval_datasets, trigger_tokens = load_task(
-        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset, eval_dataset, seed, eval_batch_size)
+        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
+        eval_dataset, seed, eval_batch_size, position, layers)
     print(eval_datasets)
     print("loaded", len(train_dataset), len(eval_datasets))
     
@@ -294,109 +152,58 @@ def main():
         label_pad_token_id=-100,
         padding="longest"
     )
-    train_dataloader = DataLoader(
-        train_dataset, shuffle=True, batch_size=batch_size, collate_fn=data_collator)
-    
-    initial_lr = lr
-    total_step = 0
-    t_total = int(len(train_dataloader) * epochs) // gradient_accumulation_steps
 
     # intervention config
-    config = IntervenableConfig([{
+    config = pv.IntervenableConfig([{
         "layer": l,
         "component": "block_output",
         "low_rank_dimension": rank} for l in layers],
         intervention_type
     )
-    intervenable = IntervenableModel(config, llama)
+    intervenable = pv.IntervenableModel(config, llama)
     intervenable.set_device(device)
     intervenable.disable_model_gradients()
     n_params = intervenable.count_parameters()
     
-    # optimiser + scheduler
-    if intervention_type == "ConditionedSourceLowRankIntervention":
-        optimizer = torch.optim.AdamW(
-            intervenable.get_trainable_parameters(), lr=initial_lr
-        )
-    else:
-        optimizer = torch.optim.Adam(
-            intervenable.get_trainable_parameters(), lr=initial_lr
-        )
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, 
-        num_warmup_steps=20 if task == "math" else 100, 
-        num_training_steps=t_total
+    # start wandb logging
+    run = wandb.init(
+        project=f"Steer_LM_{task}", 
+        entity="reft",
+        name=run_name,
+    )
+    run.summary.update(vars(args))
+    wandb.log({"train/n_params": n_params})
+    
+    # training args
+    training_args = TrainingArguments(
+        output_dir=f"{output_dir}/{run_name}",
+        num_train_epochs=epochs,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=eval_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        evaluation_strategy="no",
+        save_strategy="no",
+        logging_strategy="steps",
+        save_total_limit=1,
+        logging_steps=1,
+        learning_rate=lr,
+        warmup_steps=20 if task == "math" else 100,
+        weight_decay=0.01,
+        report_to="wandb" if is_wandb else None,
+        use_cpu=False if device == "cuda" else True,
     )
 
-    intervenable.model.train()  # train enables drop-off but no grads
-    print("llama trainable parameters: ", count_parameters(intervenable.model))
-    print("intervention trainable parameters: ", n_params)
-    
-    if is_wandb:
-        run = wandb.init(
-            project=f"Steer_LM_{task}", 
-            entity="reft",
-            name=run_name,
-        )
-        run.summary.update(**vars(args))
-        wandb.log({"train/n_params": n_params})
-    
-    # MAIN TRAIN LOOP
-    train_iterator = trange(0, int(epochs), desc="Epoch")
-    for epoch in train_iterator:
-        epoch_iterator = tqdm(
-            train_dataloader, desc=f"Epoch: {epoch}", position=0, leave=True
-        )
-
-        # each step for the epoch
-        for step, inputs in enumerate(epoch_iterator):
-
-            # move to device
-            for k, v in inputs.items():
-                if v is not None and isinstance(v, torch.Tensor):
-                    inputs[k] = v.to(device)
-            
-            # intervention position
-            b_s = inputs["input_ids"].shape[0]
-            base_unit_location = inputs["intervention_position"].tolist()
-            if position in {"first+last"}:
-                base_first_token = torch.zeros_like(inputs["intervention_position"]).tolist()
-                intervention_locations = [base_first_token]*(len(layers)//2)+[base_unit_location]*(len(layers)//2)
-            else:
-                intervention_locations = [base_unit_location]*len(layers)
-
-            # perform intervention
-            _, cf_outputs = intervenable(
-                {"input_ids": inputs["input_ids"]},
-                unit_locations={"sources->base": (None, intervention_locations)})
-
-            # lm loss on counterfactual labels
-            lm_logits = cf_outputs.logits
-            labels = inputs["labels"]
-            shift_logits = lm_logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            loss_str = round(loss.item(), 2)
-            epoch_iterator.set_postfix({"loss": loss_str})
-
-            # backprop
-            if is_wandb:
-                wandb.log({"train/loss": loss_str})
-            if gradient_accumulation_steps > 1:
-                loss = loss / gradient_accumulation_steps
-            loss.backward()
-            if total_step % gradient_accumulation_steps == 0:
-                if not (gradient_accumulation_steps > 1 and total_step == 0):
-                    optimizer.step()
-                    scheduler.step()
-                    optimizer.zero_grad()
-            total_step += 1
-    
-    # save model
-    if save_model:
-        intervenable.save(save_directory=f"{output_dir}/{run_name}")
-    create_directory(f"{output_dir}/{run_name}")
+    # make trainer
+    trainer = ReftTrainer(
+        model=intervenable,
+        args=training_args,
+        data_collator=data_collator,
+        train_dataset=train_dataset,
+        eval_dataset=None,
+        compute_metrics=None,
+        tokenizer=tokenizer,
+    )
+    trainer.train()
     
     # dump config
     args_dict = vars(args)
