@@ -2,35 +2,18 @@ import sys
 sys.path.append("../pyvene/")
 
 import torch
-import random, copy, argparse
-import pandas as pd
-import numpy as np
-import torch.nn.functional as F
-import seaborn as sns
-from tqdm import tqdm, trange
-from datasets import Dataset, load_dataset
-from torch.utils.data import DataLoader
-from transformers import get_linear_schedule_with_warmup
+import argparse
+from tqdm import tqdm
 from transformers import DataCollatorForSeq2Seq
 from transformers import AutoTokenizer
-from transformers.activations import ACT2FN
-from transformers import get_linear_schedule_with_warmup
-from torch.nn import CrossEntropyLoss
 import wandb
 import datetime
 import json
 
 import pyvene as pv
-from data import (
-    create_directory, load_task, extract_output,
-    extract_answer_number, extract_answer_letter
-)
-from trainer import ReftTrainer, TrainingArguments
-from interventions import (
-    LearnedSourceLowRankRotatedSpaceIntervention,
-    ConditionedSourceLowRankRotatedSpaceIntervention,
-    ConditionedSourceLowRankIntervention,
-)
+from data import load_task
+from trainer import ReftTrainer, TrainingArguments, compute_metrics
+from interventions import *
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -177,6 +160,7 @@ def main():
     # training args
     training_args = TrainingArguments(
         output_dir=f"{output_dir}/{run_name}",
+        run_name=run_name,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=eval_batch_size,
@@ -216,126 +200,20 @@ def main():
     intervenable.model.eval()
     for k,v in intervenable.interventions.items():
         _ = v[0].eval()
-    tokenizer.padding_side = "left" # switch padding side for generation
 
     # do eval
     eval_results = {}
     for dataset_name in eval_datasets:
-        correct_count = 0
-        total_count = 0
-        generations = []
-
         # split evalset into chunks
-        eval_dataset = eval_datasets[dataset_name]
-        eval_iterator = tqdm(
-            eval_dataset, position=0, leave=True
+        eval_dataset, data_items = eval_datasets[dataset_name]
+        generations, stats = compute_metrics(
+            task, dataset_name, intervenable, tokenizer, eval_dataset, data_items,
+            trigger_tokens, eval_batch_size
         )
 
-        with torch.no_grad():
-            for batch in eval_iterator:
-                
-                # intervention locations
-                last_shape = torch.tensor(batch["input_ids"]).shape[-1]
-                if position in {"first+last"}:
-                    base_unit_location = last_shape - 1 
-                    base_unit_location = {"sources->base": (
-                        None, [batch["base_first_unit_location"]]*(len(layers)//2) + 
-                        [batch["base_last_unit_location"]]*(len(layers)//2))}
-                else:
-                    base_unit_location = last_shape - 1 
-                    base_unit_location = {"sources->base": (None, [batch["base_last_unit_location"]]*(len(layers)))}
-
-                tokenized = {
-                    "input_ids": torch.tensor(batch["input_ids"]).to(device),
-                    "attention_mask": torch.tensor(batch["attention_mask"]).to(device),
-                    "labels": torch.tensor(batch["labels"]).to(device),
-                }
-                
-                # collect generations
-                if task == "commonsense":
-                    _, steered_response = intervenable.generate(
-                        tokenized,
-                        unit_locations=base_unit_location,
-                        intervene_on_prompt=True,
-                        max_new_tokens=10, do_sample=False, 
-                        eos_token_id=tokenizer.eos_token_id, early_stopping=True
-                    )
-                elif task == "math":
-                    _, steered_response = intervenable.generate(
-                        tokenized, 
-                        unit_locations=base_unit_location,
-                        intervene_on_prompt=True,
-                        # since we are generating the CoT, we follow previous works setting.
-                        max_new_tokens=256,
-                        temperature=0.1,
-                        top_p=0.75,
-                        top_k=40,
-                        num_beams=1,
-                        do_sample=True,
-                        eos_token_id=tokenizer.eos_token_id, 
-                        early_stopping=True,
-                    )
-                elif task in ["alpaca", "instruct"]:
-                    _, steered_response = intervenable.generate(
-                        tokenized, 
-                        unit_locations=base_unit_location,
-                        intervene_on_prompt=True,
-                        # much longer generation
-                        max_new_tokens=2048,
-                        temperature=0.7,
-                        top_p=1.0,
-                        do_sample=True,
-                        eos_token_id=tokenizer.eos_token_id, 
-                        early_stopping=True
-                    )
-                batch_example = batch["example"]
-                    
-                # detokenize in batch
-                actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
-                for pred, example in zip(actual_preds, batch_example):
-
-                    try:
-                        raw_generation = extract_output(pred, trigger_tokens)
-                    except:
-                        print("get not split based on trigger tokens: ", raw_generation)
-                        raw_generation = "WRONG"
-
-                    # check if generation is correct
-                    answer = example["answer"]
-                    if task == "commonsense":
-                        generation = raw_generation[:]
-                        if generation.strip() == answer.strip():
-                            correct_count += 1
-                    elif task == "math":
-                        answer = answer.strip()
-                        if dataset_name == "AQuA":
-                            generation = extract_answer_letter(raw_generation)
-                            if generation.strip() == answer.strip():
-                                correct_count += 1
-                        else:
-                            generation = extract_answer_number(raw_generation)
-                            if generation == float(answer):
-                                correct_count += 1
-                    
-                    # log
-                    total_count += 1
-                    if task not in ["alpaca", "instruct"]:
-                        metric_str = round(correct_count / total_count, 3)
-                        eval_iterator.set_postfix({"em": metric_str})
-                        generations += [{
-                            "instruction": example["instruction"],
-                            "raw_generation": pred,
-                            "generation": generation,
-                            "answer": answer,
-                            "generator": run_name,
-                        }]
-        
-        # log stats
-        if task not in ["alpaca", "instruct"]:
-            metric_str = round(correct_count / total_count, 3)
-            if is_wandb:
-                wandb.log({f"eval/{dataset_name}": metric_str})
-            eval_results[dataset_name] = metric_str
+        # log
+        eval_results.update(stats)
+        wandb.log(stats)
         result_json_file_name = f"{output_dir}/{run_name}/{dataset_name}_outputs.json"
         with open(result_json_file_name, 'w') as json_file:
             json.dump(generations, json_file, indent=4)
