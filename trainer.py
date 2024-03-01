@@ -53,7 +53,8 @@ def make_data_collator(tokenizer, model) -> DataCollatorForSeq2Seq:
         tokenizer=tokenizer,
         model=model,
         label_pad_token_id=-100,
-        padding="longest"
+        padding="longest",
+        max_length=2048,
     )
 
 
@@ -74,7 +75,7 @@ class ReftTrainer(Trainer):
     ):
         # run intervened forward pass
         _, cf_outputs = intervenable(
-            {"input_ids": inputs["input_ids"]},
+            {"input_ids": inputs["input_ids_with_ans"]},
             unit_locations={"sources->base": (
                 None,
                 inputs["intervention_locations"].permute(1, 0, 2).tolist()
@@ -124,7 +125,7 @@ def compute_metrics(
         intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).to(device)
 
         # get left padding count, [batch_size], and add to locations
-        left_padding = (inputs["input_ids"] != tokenizer.pad_token_id).float().argmax(dim=1)
+        left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
         left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
         intervention_locations += left_padding
         # print(intervention_locations)
@@ -145,6 +146,9 @@ def compute_metrics(
         # repeat each batch by num_beams times in intervention locations
         # -> [layers, batch_size * num_beams, positions]
         intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1)
+        print(intervention_locations)
+        print(intervention_locations.shape)
+        input()
 
         # set generation args depending on task
         generation_args = {

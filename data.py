@@ -5,6 +5,7 @@ Data loading and preprocessing.
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 from collections import defaultdict
+from copy import deepcopy
 from templates import *
 from tqdm import tqdm
 import torch
@@ -119,12 +120,12 @@ def reformat_by_task(
                 base_input = base_prompt + data_item["output"] + tokenizer.eos_token
         
         # tokenize
-        base_prompt_length = len(tokenizer(
-            base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0])
+        base_prompt_ids = tokenizer(
+            base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+        base_prompt_length = len(base_prompt_ids)
         base_input_ids = tokenizer(
             base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
-        output_ids = tokenizer(
-            base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+        output_ids = deepcopy(base_input_ids)
 
         # mask prompt in labels
         output_ids[:base_prompt_length] = -100
@@ -140,7 +141,8 @@ def reformat_by_task(
         else:
             intervention_locations = [base_last_location]*len(layers)
 
-        result["input_ids"].append(base_input_ids)
+        result["input_ids_with_ans"].append(base_input_ids)
+        result["input_ids"].append(base_prompt_ids)
         result["intervention_locations"].append(intervention_locations)
         result["labels"].append(output_ids)
         result["id"].append(i)
