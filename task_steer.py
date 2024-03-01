@@ -125,7 +125,6 @@ def main():
     train_dataset, eval_datasets, trigger_tokens = load_task(
         task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
         eval_dataset, seed, eval_batch_size, position, layers)
-    print(eval_datasets)
     print("loaded", len(train_dataset), len(eval_datasets))
     
     # prep train
