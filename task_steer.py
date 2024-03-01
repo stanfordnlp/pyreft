@@ -68,7 +68,7 @@ def main():
     eval_dataset = args.eval_dataset
     save_model = args.save_model
     eval_batch_size = args.eval_batch_size
-    dtype = torch.float16 if device == "cuda" else torch.float32
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
     
     assert task in {"commonsense", "math", "alpaca", "instruct"}
     

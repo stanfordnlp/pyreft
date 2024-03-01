@@ -140,9 +140,9 @@ def reformat_by_task(
         else:
             intervention_locations = [base_last_location]*len(layers)
 
-        result["input_ids"].append(base_input_ids)
+        result["input_ids"].append(base_input_ids.to(device))
         result["intervention_locations"].append(intervention_locations)
-        result["labels"].append(output_ids)
+        result["labels"].append(output_ids.to(device))
         result["id"].append(i)
     return result, task_dataset
 
