@@ -143,6 +143,8 @@ def main():
         intervention_type
     )
     intervenable = pv.IntervenableModel(config, llama)
+    print(intervenable.named_parameters())
+    input()
     intervenable.set_device(device)
     intervenable.disable_model_gradients()
     n_params = intervenable.count_parameters()
