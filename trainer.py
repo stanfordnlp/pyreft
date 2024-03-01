@@ -6,6 +6,7 @@ from datasets import Dataset
 from tqdm import tqdm
 import os
 import torch
+import re
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -75,7 +76,7 @@ class ReftTrainer(Trainer):
     ):
         # run intervened forward pass
         _, cf_outputs = intervenable(
-            {"input_ids": inputs["input_ids_with_ans"]},
+            {"input_ids": inputs["input_ids"]},
             unit_locations={"sources->base": (
                 None,
                 inputs["intervention_locations"].permute(1, 0, 2).tolist()

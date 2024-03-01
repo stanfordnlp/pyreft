@@ -141,8 +141,10 @@ def reformat_by_task(
         else:
             intervention_locations = [base_last_location]*len(layers)
 
-        result["input_ids_with_ans"].append(base_input_ids)
-        result["input_ids"].append(base_prompt_ids)
+        if split == "train":
+            result["input_ids"].append(base_input_ids)
+        else:
+            result["input_ids"].append(base_prompt_ids)
         result["intervention_locations"].append(intervention_locations)
         result["labels"].append(output_ids)
         result["id"].append(i)
