@@ -121,6 +121,7 @@ def compute_metrics(
     eval_iterator = tqdm(eval_dataloader, position=0, leave=True)
     for step, inputs in enumerate(eval_iterator):
         inputs["input_ids"] = inputs["input_ids"].to(device)
+        
         # [layers, batch_size, positions]
         intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).to(device)
 
@@ -128,32 +129,15 @@ def compute_metrics(
         left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
         left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
         intervention_locations += left_padding
-        # print(intervention_locations)
-        # print(inputs["input_ids"].shape)
-        # input()
-
-        # # print example
-        # for i in range(inputs["input_ids"].shape[1]):
-        #     print(f'{tokenizer.decode(inputs["input_ids"][0, i]):<25} {inputs["input_ids"][0, i]:>9} ', end='')
-        #     if i == intervention_locations[0, 0, 0]:
-        #         print(" <---- FIRST")
-        #     elif i == intervention_locations[-1, 0, 0]:
-        #         print(" <---- LAST")
-        #     else:
-        #         print()
-        # input()
 
         # repeat each batch by num_beams times in intervention locations
         # -> [layers, batch_size * num_beams, positions]
-        intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1)
-        print(intervention_locations)
-        print(intervention_locations.shape)
-        input()
+        intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
 
         # set generation args depending on task
         generation_args = {
             "base": {"input_ids": inputs["input_ids"]},
-            "unit_locations": {"sources->base": (None, intervention_locations.tolist())},
+            "unit_locations": {"sources->base": (None, intervention_locations)},
             "intervene_on_prompt": True,
             "eos_token_id": tokenizer.eos_token_id,
             "early_stopping": True,
@@ -165,7 +149,7 @@ def compute_metrics(
             generation_args["temperature"] = 0.1
             generation_args["top_p"] = 0.75
             generation_args["top_k"] = 40
-            generation_args["num_beams"] = 1
+            generation_args["num_beams"] = num_beams
             generation_args["do_sample"] = True
         elif task in ["alpaca", "instruct"]:
             generation_args["max_new_tokens"] = 2048
