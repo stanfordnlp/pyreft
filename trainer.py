@@ -121,7 +121,26 @@ def compute_metrics(
     for step, inputs in enumerate(eval_iterator):
         inputs["input_ids"] = inputs["input_ids"].to(device)
         # [layers, batch_size, positions]
-        intervention_locations = inputs["intervention_locations"].permute(1, 0, 2)
+        intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).to(device)
+
+        # get left padding count, [batch_size], and add to locations
+        left_padding = (inputs["input_ids"] != tokenizer.pad_token_id).float().argmax(dim=1)
+        left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+        intervention_locations += left_padding
+        # print(intervention_locations)
+        # print(inputs["input_ids"].shape)
+        # input()
+
+        # # print example
+        # for i in range(inputs["input_ids"].shape[1]):
+        #     print(f'{tokenizer.decode(inputs["input_ids"][0, i]):<25} {inputs["input_ids"][0, i]:>9} ', end='')
+        #     if i == intervention_locations[0, 0, 0]:
+        #         print(" <---- FIRST")
+        #     elif i == intervention_locations[-1, 0, 0]:
+        #         print(" <---- LAST")
+        #     else:
+        #         print()
+        # input()
 
         # repeat each batch by num_beams times in intervention locations
         # -> [layers, batch_size * num_beams, positions]
