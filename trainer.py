@@ -117,6 +117,7 @@ def compute_metrics(
 
     eval_iterator = tqdm(eval_dataloader, position=0, leave=True)
     for step, inputs in enumerate(eval_iterator):
+        inputs["input_ids"] = inputs["input_ids"].to(device)
         # [layers, batch_size, positions]
         intervention_locations = inputs["intervention_locations"].permute(1, 0, 2)
 
