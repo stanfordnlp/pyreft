@@ -45,6 +45,7 @@ def main():
     parser.add_argument('-eval_batch_size', '--eval_batch_size', type=int, default=4)
     parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
     parser.add_argument('-lr', '--lr', type=float, default=5e-3)
+    parser.add_argument('-wd', '--weight_decay', type=float, default=0.01)
     
     args = parser.parse_args()
 
@@ -68,6 +69,7 @@ def main():
     eval_dataset = args.eval_dataset
     save_model = args.save_model
     eval_batch_size = args.eval_batch_size
+    weight_decay = args.weight_decay
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     
     assert task in {"commonsense", "math", "alpaca", "instruct"}
@@ -171,7 +173,7 @@ def main():
         logging_steps=1,
         learning_rate=lr,
         warmup_steps=20 if task == "math" else 100,
-        weight_decay=0.01,
+        weight_decay=weight_decay,
         report_to="wandb" if is_wandb else None,
         use_cpu=False if device == "cuda" else True,
     )
