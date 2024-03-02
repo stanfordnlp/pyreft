@@ -7,6 +7,9 @@ from tqdm import tqdm
 import os
 import torch
 import re
+import evaluate
+from sklearn.metrics import classification_report
+from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -76,7 +79,10 @@ class ReftTrainer(Trainer):
     ):
         # run intervened forward pass
         _, cf_outputs = intervenable(
-            {"input_ids": inputs["input_ids"]},
+            {
+                "input_ids": inputs["input_ids"],
+                "attention_mask": inputs["attention_mask"]
+            },
             unit_locations={"sources->base": (
                 None,
                 inputs["intervention_locations"].permute(1, 0, 2).tolist()
@@ -101,6 +107,54 @@ class ReftTrainer(Trainer):
         self.model.save(save_directory=f"{output_dir}/intervenable_model")
 
 
+class ReftTrainerForSequenceClassification(ReftTrainer):
+
+    def compute_loss(
+        self,
+        intervenable: pv.IntervenableModel,
+        inputs,
+        return_outputs=False
+    ):
+        # run intervened forward pass
+        _, cf_outputs = intervenable(
+            {
+                "input_ids": inputs["input_ids"],
+                "attention_mask": inputs["attention_mask"]
+            },
+            unit_locations={"sources->base": (
+                None,
+                inputs["intervention_locations"].permute(1, 0, 2).tolist()
+            )}
+        )
+        # classification loss on counterfactual labels
+        logits = cf_outputs.logits
+        labels = inputs["labels"]
+
+        if self.model.model.config.problem_type is None:
+            if self.model.model.num_labels == 1:
+                problem_type = "regression"
+            elif self.model.model.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                problem_type = "single_label_classification"
+            else:
+                problem_type = "multi_label_classification"
+
+        if problem_type == "regression":
+            loss_fct = MSELoss()
+            if self.model.model.num_labels == 1:
+                loss = loss_fct(logits.squeeze(), labels.squeeze())
+            else:
+                loss = loss_fct(logits, labels)
+        elif problem_type == "single_label_classification":
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.model.model.num_labels), labels.view(-1))
+        elif problem_type == "multi_label_classification":
+            loss_fct = BCEWithLogitsLoss()
+            loss = loss_fct(logits, labels)
+
+        # return
+        return (loss, cf_outputs) if return_outputs else loss
+
+
 def compute_metrics(
     task: str,
     dataset_name: str,
@@ -109,99 +163,139 @@ def compute_metrics(
     eval_dataset: Dataset,
     data_items: list,
     trigger_tokens: str,
+    run_name: str,
     batch_size: int=4,
+    data_collator=None
 ):
-    tokenizer.padding_side = "left" # switch padding side for collator
-    data_collator = make_data_collator(tokenizer, intervenable.model)
+    data_collator = data_collator if data_collator is not None else \
+        make_data_collator(tokenizer, intervenable.model)
     eval_dataloader = make_dataloader(eval_dataset, batch_size, data_collator)
-    num_beams = 4 if task in ["math"] else 1
     correct_count = 0
     total_count = 0
     generations = []
-
     eval_iterator = tqdm(eval_dataloader, position=0, leave=True)
+    all_preds = []
+    all_labels = []
+    
+    tokenizer.padding_side = "left" # switch padding side for collator
+    num_beams = 4 if task in ["math"] else 1
+    
     for step, inputs in enumerate(eval_iterator):
-        inputs["input_ids"] = inputs["input_ids"].to(device)
+        for k, v in inputs.items():
+            if v is not None and isinstance(v, torch.Tensor):
+                inputs[k] = v.to(device)
         
         # [layers, batch_size, positions]
         intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).to(device)
 
-        # get left padding count, [batch_size], and add to locations
-        left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
-        left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
-        intervention_locations += left_padding
+        if task == "glue":
 
-        # repeat each batch by num_beams times in intervention locations
-        # -> [layers, batch_size * num_beams, positions]
-        intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
-
-        # set generation args depending on task
-        generation_args = {
-            "base": {"input_ids": inputs["input_ids"]},
-            "unit_locations": {"sources->base": (None, intervention_locations)},
-            "intervene_on_prompt": True,
-            "eos_token_id": tokenizer.eos_token_id,
-            "early_stopping": True,
-        }
-        if task == "commonsense":
-            generation_args["max_new_tokens"] = 10
-        elif task == "math":
-            generation_args["max_new_tokens"] = 256
-            generation_args["temperature"] = 0.1
-            generation_args["top_p"] = 0.75
-            generation_args["top_k"] = 40
-            generation_args["num_beams"] = num_beams
-            generation_args["do_sample"] = True
-        elif task in ["alpaca", "instruct"]:
-            generation_args["max_new_tokens"] = 2048
-            generation_args["temperature"] = 0.7
-            generation_args["top_p"] = 1.0
-            generation_args["do_sample"] = True
-
-        # generate with intervention on prompt
-        _, steered_response = intervenable.generate(**generation_args)
-
-        # detokenize in batch
-        actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
-        for id, pred in zip(inputs["id"].tolist(), actual_preds):
-            example = data_items[id]
-            try:
-                raw_generation = extract_output(pred, trigger_tokens)
-            except:
-                print("get not split based on trigger tokens: ", raw_generation)
-                raw_generation = "WRONG"
-
-            # check if generation is correct
-            answer = example["answer"]
+            _, cf_outputs = intervenable(
+                {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
+                unit_locations={"sources->base": (None, intervention_locations)})
+        
+            # lm loss on counterfactual labels
+            preds = cf_outputs.logits.argmax(dim=-1)
+            labels = inputs["labels"]
+            all_preds += preds.tolist()
+            all_labels += labels.tolist()
+        
+        else:
+        
+            # get left padding count, [batch_size], and add to locations
+            left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
+            left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+            intervention_locations += left_padding
+    
+            # repeat each batch by num_beams times in intervention locations
+            # -> [layers, batch_size * num_beams, positions]
+            intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
+    
+            # set generation args depending on task
+            generation_args = {
+                "base": {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
+                "unit_locations": {"sources->base": (None, intervention_locations)},
+                "intervene_on_prompt": True,
+                "eos_token_id": tokenizer.eos_token_id,
+                "early_stopping": True,
+            }
             if task == "commonsense":
-                generation = raw_generation[:]
-                if generation.strip() == answer.strip():
-                    correct_count += 1
+                generation_args["max_new_tokens"] = 10
             elif task == "math":
-                answer = answer.strip()
-                if dataset_name == "AQuA":
-                    generation = extract_answer_letter(raw_generation)
+                generation_args["max_new_tokens"] = 256
+                generation_args["temperature"] = 0.1
+                generation_args["top_p"] = 0.75
+                generation_args["top_k"] = 40
+                generation_args["num_beams"] = num_beams
+                generation_args["do_sample"] = True
+            elif task in ["alpaca", "instruct", "ultrafeedback"]:
+                generation_args["max_new_tokens"] = 2048
+                generation_args["temperature"] = 0.7
+                generation_args["top_p"] = 1.0
+                generation_args["do_sample"] = True
+    
+            # generate with intervention on prompt
+            _, steered_response = intervenable.generate(**generation_args)
+    
+            # detokenize in batch
+            actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
+            for id, pred in zip(inputs["id"].tolist(), actual_preds):
+                example = data_items[id]
+                try:
+                    raw_generation = extract_output(pred, trigger_tokens)
+                except:
+                    print("get not split based on trigger tokens: ", raw_generation)
+                    raw_generation = "WRONG"
+    
+                # check if generation is correct
+                answer = example["answer"]
+                if task == "commonsense":
+                    generation = raw_generation[:]
                     if generation.strip() == answer.strip():
                         correct_count += 1
+                elif task == "math":
+                    answer = answer.strip()
+                    if dataset_name == "AQuA":
+                        generation = extract_answer_letter(raw_generation)
+                        if generation.strip() == answer.strip():
+                            correct_count += 1
+                    else:
+                        generation = extract_answer_number(raw_generation)
+                        if generation == float(answer):
+                            correct_count += 1
+                
+                # log
+                total_count += 1
+                if task not in ["alpaca", "instruct", "ultrafeedback"]:
+                    metric_str = round(correct_count / total_count, 3)
+                    eval_iterator.set_postfix({"em": metric_str})
+                    generations += [{
+                        "instruction": example["instruction"],
+                        "raw_generation": pred,
+                        "generation": generation,
+                        "answer": answer
+                    }]
                 else:
-                    generation = extract_answer_number(raw_generation)
-                    if generation == float(answer):
-                        correct_count += 1
-            
-            # log
-            total_count += 1
-            if task not in ["alpaca", "instruct"]:
-                metric_str = round(correct_count / total_count, 3)
-                eval_iterator.set_postfix({"em": metric_str})
-                generations += [{
-                    "instruction": example["instruction"],
-                    "raw_generation": pred,
-                    "generation": generation,
-                    "answer": answer
-                }]
-    
+                    generations += [{
+                        "instruction": example["instruction"],
+                        "output": generation,
+                        "dataset": dataset_name,
+                        "generator": run_name
+                    }]
     # compute metrics
-    if task in ["alpaca", "instruct"]:
+    if task == "glue":
+        metric = evaluate.load("glue", dataset_name)
+        def compute_metrics_glue(preds, labels):
+            result = metric.compute(predictions=preds, references=labels)
+            if len(result) > 1:
+                result["combined_score"] = np.mean(list(result.values())).item()
+            return result
+
+        print(classification_report(all_labels, all_preds, digits=3))
+        report = compute_metrics_glue(all_labels, all_preds)
+        print(report)
+        return [], report
+    if task in ["alpaca", "instruct", "ultrafeedback"]:
         return generations, {}
     else:
         return generations, {f"eval/{dataset_name}": correct_count / total_count}

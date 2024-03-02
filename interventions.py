@@ -18,7 +18,7 @@ class LearnedSourceLowRankRotatedSpaceIntervention(
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Parameter(
             torch.rand(kwargs["low_rank_dimension"]), requires_grad=True)
-        self.dropout = torch.nn.Dropout(0.05)
+        self.dropout = torch.nn.Dropout(kwargs["dropout"])
         
     def forward(
         self, base, source=None, subspaces=None
@@ -39,9 +39,10 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"])
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16 if torch.cuda.is_available() else torch.float32)
-        self.act_fn = ACT2FN["silu"]
-        self.dropout = torch.nn.Dropout(0.05)
+            self.embed_dim, kwargs["low_rank_dimension"]).to(
+            kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
+        self.act_fn = ACT2FN["tanh"]
+        self.dropout = torch.nn.Dropout(kwargs["dropout"])
         
     def forward(
         self, base, source=None, subspaces=None
@@ -60,11 +61,13 @@ class ConditionedSourceLowRankIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.proj_layer = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"], bias=False).to(torch.bfloat16 if torch.cuda.is_available() else torch.float32)
+            self.embed_dim, kwargs["low_rank_dimension"], bias=False).to(
+            kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
         self.learned_source = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]).to(torch.bfloat16 if torch.cuda.is_available() else torch.float32)
-        self.act_fn = ACT2FN["silu"]
-        self.dropout = torch.nn.Dropout(0.05)
+            self.embed_dim, kwargs["low_rank_dimension"]).to(
+            kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
+        self.act_fn = ACT2FN["tanh"]
+        self.dropout = torch.nn.Dropout(kwargs["dropout"])
         
     def forward(
         self, base, source=None, subspaces=None

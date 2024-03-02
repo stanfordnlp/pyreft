@@ -1,21 +1,36 @@
 import sys
-sys.path.append("../pyvene/")
+sys.path.append("../../pyvene/")
 
 import torch
 import argparse
 from tqdm import tqdm
-from transformers import DataCollatorForSeq2Seq
-from transformers import AutoTokenizer
+from transformers import (
+    AutoConfig,
+    AutoTokenizer, 
+    AutoModelForCausalLM, 
+    AutoModelForSequenceClassification,
+    DataCollatorForSeq2Seq,
+    DataCollatorWithPadding
+)
 import wandb
 import datetime
 import json
 
 import pyvene as pv
 from data import load_task
-from trainer import ReftTrainer, TrainingArguments, compute_metrics
+from trainer import (
+    ReftTrainer,
+    ReftTrainerForSequenceClassification,
+    TrainingArguments,
+    compute_metrics,
+)
 from interventions import *
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+classification_tasks = {"glue"}
+residual_stream_component_mapping = {
+    "robertaformaskedlm": "roberta.encoder.layer[%s].output"
+}
 
 def main():
     """
@@ -45,6 +60,8 @@ def main():
     parser.add_argument('-eval_batch_size', '--eval_batch_size', type=int, default=4)
     parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
     parser.add_argument('-lr', '--lr', type=float, default=5e-3)
+    parser.add_argument('-dropout', '--dropout', type=float, default=0.05)
+    parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
     
     args = parser.parse_args()
 
@@ -69,8 +86,11 @@ def main():
     save_model = args.save_model
     eval_batch_size = args.eval_batch_size
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    dropout = args.dropout
     
-    assert task in {"commonsense", "math", "alpaca", "instruct"}
+    assert task in {
+        "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue"
+    }
     
     # store/log run details
     print(
@@ -79,14 +99,45 @@ def main():
         f"position: {position}, epoch: {epochs}"
     )
     model_str = model.split("/")[-1]
+    train_dataset_str = train_dataset
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
-    run_name = f"{model_str}.{task}.{now}"
-    
-    # load model
-    config, _, llama = pv.create_llama(model, dtype=dtype)
-    _ = llama.to(device)
-    _ = llama.eval()
-    
+    if train_dataset is not None:
+        run_name = f"{model_str}.{task}.{train_dataset_str}.{now}"
+    else:
+        run_name = f"{model_str}.{task}.{now}"
+
+    # load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
+    tokenizer.pad_token = tokenizer.unk_token
+
+    # load dataset splits
+    train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
+        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
+        eval_dataset, seed, eval_batch_size, position, layers)
+    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
+
+    # load model based on task type.
+    if task in classification_tasks:
+        config = AutoConfig.from_pretrained(
+            model, num_labels=num_labels,
+            finetuning_task=train_dataset_str,
+        )
+        # full precision loading since usually for small models
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model,
+            config=config, # just providing the label
+            torch_dtype=dtype
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            name,
+            torch_dtype=dtype,  # save memory
+        )
+        config = model.config
+    _ = model.to(device)
+    _ = model.eval()
+
     # post-processing the inputs
     if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
         intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
@@ -109,40 +160,45 @@ def main():
             layers = [int(l) for l in layers.split(";")]
     else:
         layers = [l for l in range(config.num_hidden_layers)]
-    assert position in {"last", "first+last"}
+    assert position in {"first", "last", "first+last"}
     if position in {"first+last"}:
         if user_give_all_layers:
             pass
         else:
             layers += layers
     
-    # load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model)
-    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
-    tokenizer.pad_token = tokenizer.unk_token
+    # select collator based on the type
+    if task in classification_tasks:
+        data_collator = DataCollatorWithPadding(
+            tokenizer=tokenizer,
+            padding="longest"
+        )
+    else:
+        data_collator = DataCollatorForSeq2Seq(
+            tokenizer=tokenizer,
+            model=model,
+            label_pad_token_id=-100,
+            padding="longest"
+        )
 
-    # load dataset splits
-    train_dataset, eval_datasets, trigger_tokens = load_task(
-        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
-        eval_dataset, seed, eval_batch_size, position, layers)
-    print("loaded", len(train_dataset), len(eval_datasets))
-    
-    # prep train
-    data_collator = DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        model=llama,
-        label_pad_token_id=-100,
-        padding="longest"
-    )
+    # intervention config based on model type
+    model_arch = model.config.architectures[0].lower()
+    if model_arch in residual_stream_component_mapping:
+        config = pv.IntervenableConfig([{
+            "component": residual_stream_component_mapping[model_arch] % l,
+            "intervention": intervention_type(
+                embed_dim=config.hidden_size, low_rank_dimension=rank,
+                dropout=dropout, dtype=dtype
+            )
+        } for l in layers])
+    else:
+        config = pv.IntervenableConfig([{
+            "layer": l, "component": "block_output",
+            "low_rank_dimension": rank} for l in layers],
+            intervention_type
+        )
 
-    # intervention config
-    config = pv.IntervenableConfig([{
-        "layer": l,
-        "component": "block_output",
-        "low_rank_dimension": rank} for l in layers],
-        intervention_type
-    )
-    intervenable = pv.IntervenableModel(config, llama)
+    intervenable = pv.IntervenableModel(config, model)
     intervenable.set_device(device)
     intervenable.disable_model_gradients()
     n_params = intervenable.count_parameters()
@@ -168,16 +224,18 @@ def main():
         save_strategy="no",
         logging_strategy="steps",
         save_total_limit=1,
-        logging_steps=1,
+        logging_steps=10,
         learning_rate=lr,
-        warmup_steps=20 if task == "math" else 100,
-        weight_decay=0.01,
+        warmup_ratio=0.1,
+        optim="adamw_torch",
+        weight_decay=0.00,
         report_to="wandb" if is_wandb else None,
         use_cpu=False if device == "cuda" else True,
     )
 
     # make trainer
-    trainer = ReftTrainer(
+    trainer_class = ReftTrainerForSequenceClassification if task in classification_tasks else ReftTrainer
+    trainer = trainer_class(
         model=intervenable,
         args=training_args,
         data_collator=data_collator,
@@ -207,12 +265,14 @@ def main():
         eval_dataset, data_items = eval_datasets[dataset_name]
         generations, stats = compute_metrics(
             task, dataset_name, intervenable, tokenizer, eval_dataset, data_items,
-            trigger_tokens, eval_batch_size
+            trigger_tokens, run_name, eval_batch_size, 
+            data_collator if task in classification_tasks else None
         )
 
         # log
         eval_results.update(stats)
         wandb.log(stats)
+        generations = stats if generations is None else generations
         result_json_file_name = f"{output_dir}/{run_name}/{dataset_name}_outputs.json"
         with open(result_json_file_name, 'w') as json_file:
             json.dump(generations, json_file, indent=4)

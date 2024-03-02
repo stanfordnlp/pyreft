@@ -15,6 +15,17 @@ import io
 import re
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+glue_task_to_keys = {
+    "cola": ("sentence", None),
+    "mnli": ("premise", "hypothesis"),
+    "mrpc": ("sentence1", "sentence2"),
+    "qnli": ("question", "sentence"),
+    "qqp": ("question1", "question2"),
+    "rte": ("sentence1", "sentence2"),
+    "sst2": ("sentence", None),
+    "stsb": ("sentence1", "sentence2"),
+    "wnli": ("sentence1", "sentence2"),
+}
 
 def _make_r_io_base(f, mode: str):
     if not isinstance(f, io.IOBase):
@@ -99,56 +110,88 @@ def reformat_by_task(
     """Reformat the dataset based on task template and generate tokenized inputs."""
 
     print("loading data for dataset: ", dataset)
-    task_dataset = jload(f"./datasets/{dataset}/{split}.json")
     result = defaultdict(list)
-    for i, data_item in enumerate(tqdm(task_dataset)):
+    num_labels = None
+    if task == "glue":
+        partition = "train" if split == "train" else "validation"
+        task_dataset = load_dataset(task, dataset)
+        task_dataset = task_dataset[partition]
+        sentence1_key, sentence2_key = glue_task_to_keys[dataset]
 
-        # format task-specific prompt
-        if task == "commonsense":
-            base_prompt = task_prompt_template % (data_item['instruction'])
-            base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.eos_token
-        elif task == "math":
-            # we strip since these are model generated examples.
-            base_prompt = task_prompt_template % (data_item['instruction'])
-            base_input = base_prompt + data_item["output"] + tokenizer.eos_token
-        elif task == "alpaca" or task == "instruct":
-            if data_item['input'] == "":
-                base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
-                base_input = base_prompt + data_item["output"] + tokenizer.eos_token
-            else:
-                base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
-                base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+        # get the number of classification labels
+        is_regression = dataset == "stsb"
+        if not is_regression:
+            label_list = task_dataset.features["label"].names
+            num_labels = len(label_list)
+        else:
+            num_labels = 1
         
-        # tokenize
-        base_prompt_ids = tokenizer(
-            base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
-        base_prompt_length = len(base_prompt_ids)
-        base_input_ids = tokenizer(
-            base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
-        output_ids = deepcopy(base_input_ids)
+        for i, data_item in enumerate(tqdm(task_dataset)):
+            args = (
+                (data_item[sentence1_key],) if sentence2_key is None else (data_item[sentence1_key], data_item[sentence2_key])
+            )
+            base_input_ids = tokenizer(
+                *args, max_length=max_length, truncation=True,
+                return_tensors="pt"
+            )["input_ids"][0]
+            output_ids = data_item["label"]
 
-        # mask prompt in labels
-        output_ids[:base_prompt_length] = -100
-        base_input_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
-        output_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
-        last_position = torch.tensor([base_prompt_length-1,])
-
-        # compute intervention positions
-        base_last_location = last_position.tolist()
-        if position in {"first+last"}:
-            base_first_location = torch.zeros_like(last_position).tolist()
-            intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
-        else:
-            intervention_locations = [base_last_location]*len(layers)
-
-        if split == "train":
+            # CLS token only for now.
+            intervention_locations = [[0]]*len(layers)
             result["input_ids"].append(base_input_ids)
-        else:
-            result["input_ids"].append(base_prompt_ids)
-        result["intervention_locations"].append(intervention_locations)
-        result["labels"].append(output_ids)
-        result["id"].append(i)
-    return result, task_dataset
+            result["intervention_locations"].append(intervention_locations)
+            result["labels"].append(output_ids)
+            result["id"].append(i)
+    else:
+        task_dataset = jload(f"./datasets/{dataset}/{split}.json")
+        for i, data_item in enumerate(tqdm(task_dataset)):
+    
+            # format task-specific prompt
+            if task == "commonsense":
+                base_prompt = task_prompt_template % (data_item['instruction'])
+                base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.eos_token
+            elif task == "math":
+                # we strip since these are model generated examples.
+                base_prompt = task_prompt_template % (data_item['instruction'])
+                base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+            elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
+                if data_item['input'] == "":
+                    base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
+                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+                else:
+                    base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
+                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+            
+            # tokenize
+            base_prompt_ids = tokenizer(
+                base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+            base_prompt_length = len(base_prompt_ids)
+            base_input_ids = tokenizer(
+                base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+            output_ids = deepcopy(base_input_ids)
+    
+            # mask prompt in labels
+            output_ids[:base_prompt_length] = -100
+            base_input_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
+            output_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
+            last_position = torch.tensor([base_prompt_length-1,])
+    
+            # compute intervention positions
+            base_last_location = last_position.tolist()
+            if position in {"first+last"}:
+                base_first_location = torch.zeros_like(last_position).tolist()
+                intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
+            else:
+                intervention_locations = [base_last_location]*len(layers)
+    
+            if split == "train":
+                result["input_ids"].append(base_input_ids)
+            else:
+                result["input_ids"].append(base_prompt_ids)
+            result["intervention_locations"].append(intervention_locations)
+            result["labels"].append(output_ids)
+            result["id"].append(i)
+    return result, task_dataset, num_labels
 
 def load_task(
     task: str,
@@ -191,18 +234,26 @@ def load_task(
         ]
         task_prompt_template = alpaca_prompt_template
         trigger_tokens = "### Response:\n"
-    elif task == "instruct":
+    elif task == "instruct" or task == "ultrafeedback":
         max_length = 2048
         train_datasets = [
             "instruct"
         ]
         task_prompt_template = alpaca_prompt_template
         trigger_tokens = "### Response:\n"
+    elif task == "glue":
+        max_length = 512
+        assert train_dataset is not None
+        train_datasets = [train_dataset]
+        # we will use the full validation split
+        eval_datasets = [train_dataset]
+        task_prompt_template = None
+        trigger_tokens = None
     
     # load data
     raw_train = defaultdict(list)
     for dataset in train_datasets:
-        result, _ = reformat_by_task(
+        result, _, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
             max_length, position, layers, split='train')
         for key in result:
@@ -217,7 +268,7 @@ def load_task(
     # eval
     all_eval_datasets = {}
     for dataset in eval_datasets:
-        result, task_dataset = reformat_by_task(
+        result, task_dataset, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
             max_length, position, layers, split='test')
         eval_dataset = Dataset.from_dict(result)
@@ -225,4 +276,4 @@ def load_task(
             eval_dataset = eval_dataset.select(range(max_n_eval_example))
         all_eval_datasets[dataset] = (eval_dataset, task_dataset)
 
-    return train_dataset, all_eval_datasets, trigger_tokens
+    return train_dataset, all_eval_datasets, trigger_tokens, num_labels
