@@ -133,7 +133,7 @@ def main():
         )
     else:
         model = AutoModelForCausalLM.from_pretrained(
-            name,
+            model,
             torch_dtype=dtype,  # save memory
         )
         config = model.config
