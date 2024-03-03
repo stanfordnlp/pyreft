@@ -1,48 +1,5 @@
 """
 Data loading and preprocessing.
-
-We created a fair way of evaluating our models on GLUE by separating the
-existing validation datasets into two sets. Our models are tuned on 
-validation and tested on the test once.
-
-To replicate our GLUE, you can run the following code.
-
-from datasets import load_dataset, Dataset, concatenate_datasets, DatasetDict
-from transformers import set_seed
-
-glue_task_to_keys = {
-    "cola": ("sentence", None),
-    "mnli": ("premise", "hypothesis"),
-    "mrpc": ("sentence1", "sentence2"),
-    "qnli": ("question", "sentence"),
-    "qqp": ("question1", "question2"),
-    "rte": ("sentence1", "sentence2"),
-    "sst2": ("sentence", None),
-    "stsb": ("sentence1", "sentence2"),
-}
-
-set_seed(666)
-fair_glue = []
-for dataset in list(glue_task_to_keys.keys()):
-    raw_dataset = load_dataset("glue", dataset)
-    if dataset == "mnli":
-        n_sample = 1000
-        combined_validation = concatenate_datasets([raw_dataset["validation_matched"], raw_dataset["validation_mismatched"]])
-        new_splits = combined_validation.train_test_split(test_size=n_sample)
-        new_test, new_validation = new_splits["train"], new_splits["test"]
-    else:
-        if len(raw_dataset["validation"]) > 5000:
-            n_sample = 1000
-        else:
-            n_sample = len(raw_dataset["validation"]) // 2
-        new_splits = raw_dataset["validation"].train_test_split(test_size=n_sample)
-        new_test, new_validation = new_splits["train"], new_splits["test"]
-    new_data = DatasetDict({
-        "train": raw_dataset["train"],
-        "validation": new_validation, 
-        "test": new_test,
-    })
-    new_data.push_to_hub(f"<Your_HF_NAME>/fair_glue_{dataset}")
 """
 
 from datasets import Dataset, load_dataset
@@ -156,7 +113,7 @@ def reformat_by_task(
     result = defaultdict(list)
     num_labels = None
     if task == "glue":
-        task_dataset = load_dataset(f"zhengxuanzenwu/fair_glue_{dataset}")
+        task_dataset = load_dataset(task, dataset)
         task_dataset = task_dataset[split]
         sentence1_key, sentence2_key = glue_task_to_keys[dataset]
 

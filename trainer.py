@@ -292,9 +292,10 @@ def compute_metrics(
             if len(result) > 1:
                 result["combined_score"] = np.mean(list(result.values())).item()
             return result
-
-        print(classification_report(all_labels, all_preds, digits=3))
+        
+        # print(classification_report(all_labels, all_preds, digits=3))
         report = compute_metrics_glue(all_labels, all_preds)
+        print("task metrics: ")
         print(report)
         return [], report
     if task in ["alpaca", "instruct", "ultrafeedback"]:
