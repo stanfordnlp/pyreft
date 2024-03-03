@@ -21,7 +21,7 @@ glue_task_to_keys = {
     "stsb": ("sentence1", "sentence2"),
 }
 
-set_seed(42)
+set_seed(666)
 fair_glue = []
 for dataset in list(glue_task_to_keys.keys()):
     raw_dataset = load_dataset("glue", dataset)
