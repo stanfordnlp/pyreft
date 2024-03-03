@@ -113,9 +113,8 @@ def reformat_by_task(
     result = defaultdict(list)
     num_labels = None
     if task == "glue":
-        partition = "train" if split == "train" else "validation"
         task_dataset = load_dataset(task, dataset)
-        task_dataset = task_dataset[partition]
+        task_dataset = task_dataset[split]
         sentence1_key, sentence2_key = glue_task_to_keys[dataset]
 
         # get the number of classification labels
@@ -200,6 +199,7 @@ def load_task(
     max_n_eval_example: int=None,
     train_dataset: list=None,
     eval_dataset: list=None,
+    test_split: str="validation",
     seed: int=42,
     eval_batch_size: int=1,
     position: str="last",
@@ -270,7 +270,7 @@ def load_task(
     for dataset in eval_datasets:
         result, task_dataset, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-            max_length, position, layers, split='test')
+            max_length, position, layers, split=test_split)
         eval_dataset = Dataset.from_dict(result)
         if max_n_eval_example is not None:
             eval_dataset = eval_dataset.select(range(max_n_eval_example))

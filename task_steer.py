@@ -11,7 +11,8 @@ from transformers import (
     AutoModelForSequenceClassification,
     DataCollatorForSeq2Seq,
     DataCollatorWithPadding,
-    get_linear_schedule_with_warmup
+    get_linear_schedule_with_warmup,
+    set_seed
 )
 import wandb
 import datetime
@@ -65,6 +66,7 @@ def main():
     parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
     parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
+    parser.add_argument('-test_split', '--test_split', type=str, default="validation")
     
     args = parser.parse_args()
 
@@ -75,7 +77,6 @@ def main():
     epochs = args.epochs
     seed = args.seed
     intervention_type = args.intervention_type
-    pv.set_seed(seed)
     max_n_train_example = args.max_n_train_example
     max_n_eval_example = args.max_n_eval_example
     is_wandb = args.is_wandb
@@ -91,6 +92,7 @@ def main():
     weight_decay = args.weight_decay
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     dropout = args.dropout
+    test_split = args.test_split
     
     assert task in {
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue"
@@ -102,11 +104,15 @@ def main():
         f"layers: {layers}, rank: {rank}, "
         f"position: {position}, epoch: {epochs}"
     )
+
+    # everything is guarded by a single seed
+    set_seed(seed)
+
     model_str = model.split("/")[-1]
     train_dataset_str = train_dataset
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
     if train_dataset is not None:
-        run_name = f"{model_str}.{task}.{train_dataset_str}.{now}"
+        run_name = f"{model_str}.{task}.{train_dataset_str}.{test_split}.{now}"
     else:
         run_name = f"{model_str}.{task}.{now}"
 
@@ -118,7 +124,7 @@ def main():
     # load dataset splits
     train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
         task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
-        eval_dataset, seed, eval_batch_size, position, layers)
+        eval_dataset, test_split, seed, eval_batch_size, position, layers)
     print("loaded", len(train_dataset), len(eval_datasets), num_labels)
 
     # load model based on task type.
