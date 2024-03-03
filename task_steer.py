@@ -197,9 +197,12 @@ def main():
     else:
         config = pv.IntervenableConfig([{
             "layer": l, "component": "block_output",
-            "low_rank_dimension": rank} for l in layers],
-            intervention_type
-        )
+            "low_rank_dimension": rank,
+            "intervention": intervention_type(
+                embed_dim=config.hidden_size, low_rank_dimension=rank,
+                dropout=dropout, dtype=dtype
+            )
+        } for l in layers])
 
     reft_model = pv.IntervenableModel(config, model)
     reft_model.set_device(device)
