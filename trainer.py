@@ -168,6 +168,11 @@ def compute_metrics(
     batch_size: int=4,
     data_collator=None
 ):
+    # switch the tokenizer mode first for generation tasks
+    if task != "glue":
+        tokenizer.padding_side = "left" # switch padding side for collator
+        num_beams = 4 if task in ["math"] else 1
+
     data_collator = data_collator if data_collator is not None else \
         make_data_collator(tokenizer, intervenable.model)
     eval_dataloader = make_dataloader(eval_dataset, batch_size, data_collator)
@@ -177,10 +182,6 @@ def compute_metrics(
     eval_iterator = tqdm(eval_dataloader, position=0, leave=True)
     all_preds = []
     all_labels = []
-
-    if task != "glue":
-        tokenizer.padding_side = "left" # switch padding side for collator
-        num_beams = 4 if task in ["math"] else 1
     
     for step, inputs in enumerate(eval_iterator):
         for k, v in inputs.items():
