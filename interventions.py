@@ -41,7 +41,6 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
-        self.act_fn = ACT2FN["tanh"]
         self.dropout = torch.nn.Dropout(kwargs["dropout"])
         
     def forward(
@@ -49,7 +48,7 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
     ):
         rotated_base = self.rotate_layer(base)
         output = base + torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base), self.rotate_layer.weight.T
+            (self.learned_source(base) - rotated_base), self.rotate_layer.weight.T
         )
         return self.dropout(output.to(base.dtype))
     
@@ -66,7 +65,6 @@ class ConditionedSourceLowRankIntervention(
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
-        self.act_fn = ACT2FN["tanh"]
         self.dropout = torch.nn.Dropout(kwargs["dropout"])
         
     def forward(
@@ -74,6 +72,6 @@ class ConditionedSourceLowRankIntervention(
     ):
         proj_base = self.proj_layer(base)
         output = base + torch.matmul(
-            (self.act_fn(self.learned_source(base)) - proj_base), self.proj_layer.weight
+            (self.learned_source(base) - proj_base), self.proj_layer.weight
         )
         return self.dropout(output.to(base.dtype))

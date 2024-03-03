@@ -109,6 +109,7 @@ class ReftTrainer(Trainer):
 
 class ReftTrainerForSequenceClassification(ReftTrainer):
 
+    
     def compute_loss(
         self,
         intervenable: pv.IntervenableModel,
@@ -176,9 +177,10 @@ def compute_metrics(
     eval_iterator = tqdm(eval_dataloader, position=0, leave=True)
     all_preds = []
     all_labels = []
-    
-    tokenizer.padding_side = "left" # switch padding side for collator
-    num_beams = 4 if task in ["math"] else 1
+
+    if task != "glue":
+        tokenizer.padding_side = "left" # switch padding side for collator
+        num_beams = 4 if task in ["math"] else 1
     
     for step, inputs in enumerate(eval_iterator):
         for k, v in inputs.items():

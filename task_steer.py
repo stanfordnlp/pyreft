@@ -10,11 +10,13 @@ from transformers import (
     AutoModelForCausalLM, 
     AutoModelForSequenceClassification,
     DataCollatorForSeq2Seq,
-    DataCollatorWithPadding
+    DataCollatorWithPadding,
+    get_linear_schedule_with_warmup
 )
 import wandb
 import datetime
 import json
+import math
 
 import pyvene as pv
 from data import load_task
@@ -61,7 +63,7 @@ def main():
     parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
     parser.add_argument('-lr', '--lr', type=float, default=5e-3)
     parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
-    parser.add_argument('-dropout', '--dropout', type=float, default=0.05)
+    parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
     
     args = parser.parse_args()
@@ -138,7 +140,6 @@ def main():
         )
         config = model.config
     _ = model.to(device)
-    _ = model.eval()
 
     # post-processing the inputs
     if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
@@ -200,11 +201,12 @@ def main():
             intervention_type
         )
 
-    intervenable = pv.IntervenableModel(config, model)
-    intervenable.set_device(device)
-    intervenable.disable_model_gradients()
-    n_params = intervenable.count_parameters()
-    
+    reft_model = pv.IntervenableModel(config, model)
+    reft_model.set_device(device)
+    reft_model.model.train()  # train enables dropout but no grads
+    reft_model.disable_model_gradients()
+    n_params = reft_model.count_parameters()
+
     # start wandb logging
     run = wandb.init(
         project=f"Steer_LM_{task}", 
@@ -238,7 +240,7 @@ def main():
     # make trainer
     trainer_class = ReftTrainerForSequenceClassification if task in classification_tasks else ReftTrainer
     trainer = trainer_class(
-        model=intervenable,
+        model=reft_model,
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
@@ -256,8 +258,8 @@ def main():
         json.dump(args_dict, json_file, indent=4)
     
     # ensure everything is in eval mode
-    intervenable.model.eval()
-    for k,v in intervenable.interventions.items():
+    reft_model.model.eval()
+    for k,v in reft_model.interventions.items():
         _ = v[0].eval()
 
     # do eval
@@ -266,7 +268,7 @@ def main():
         # split evalset into chunks
         eval_dataset, data_items = eval_datasets[dataset_name]
         generations, stats = compute_metrics(
-            task, dataset_name, intervenable, tokenizer, eval_dataset, data_items,
+            task, dataset_name, reft_model, tokenizer, eval_dataset, data_items,
             trigger_tokens, run_name, eval_batch_size, 
             data_collator if task in classification_tasks else None
         )
