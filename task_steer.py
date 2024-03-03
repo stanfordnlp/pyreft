@@ -48,7 +48,7 @@ def main():
     parser.add_argument('-r', '--rank', type=int, help=8, default=8)
     parser.add_argument('-p', '--position', type=str, help='last', default='last')
     parser.add_argument('-e', '--epochs', type=int, help='1', default=1)
-    parser.add_argument('-is_wandb', '--is_wandb', type=bool, default=False)
+    parser.add_argument('-is_wandb', '--is_wandb', action='store_true')
     parser.add_argument('-save_model', '--save_model', type=bool, default=False)
     parser.add_argument('-max_n_train_example', '--max_n_train_example', type=int, default=None)
     parser.add_argument('-max_n_eval_example', '--max_n_eval_example', type=int, default=None)
@@ -206,13 +206,14 @@ def main():
     n_params = intervenable.count_parameters()
     
     # start wandb logging
-    run = wandb.init(
-        project=f"Steer_LM_{task}", 
-        entity="reft",
-        name=run_name,
-    )
-    run.summary.update(vars(args))
-    wandb.log({"train/n_params": n_params})
+    if is_wandb:
+        run = wandb.init(
+            project=f"Steer_LM_{task}", 
+            entity="reft",
+            name=run_name,
+        )
+        run.summary.update(vars(args))
+        wandb.log({"train/n_params": n_params})
     
     # training args
     training_args = TrainingArguments(
@@ -231,7 +232,7 @@ def main():
         warmup_ratio=0.1,
         optim="adamw_torch",
         weight_decay=weight_decay,
-        report_to="wandb" if is_wandb else None,
+        report_to="wandb" if is_wandb else "none",
         use_cpu=False if device == "cuda" else True,
     )
 
@@ -273,7 +274,8 @@ def main():
 
         # log
         eval_results.update(stats)
-        wandb.log(stats)
+        if is_wandb:
+            wandb.log(stats)
         generations = stats if generations is None else generations
         result_json_file_name = f"{output_dir}/{run_name}/{dataset_name}_outputs.json"
         with open(result_json_file_name, 'w') as json_file:
