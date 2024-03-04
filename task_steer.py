@@ -227,7 +227,7 @@ def main():
         run = wandb.init(
             project=f"Steer_LM_{task}", 
             entity="reft",
-            name="zen_debug."+run_name,
+            name=run_name,
         )
         run.summary.update(vars(args))
         wandb.log(
