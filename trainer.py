@@ -108,7 +108,6 @@ class ReftTrainer(Trainer):
 
 
 class ReftTrainerForSequenceClassification(ReftTrainer):
-
     
     def compute_loss(
         self,
@@ -151,6 +150,12 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
         elif problem_type == "multi_label_classification":
             loss_fct = BCEWithLogitsLoss()
             loss = loss_fct(logits, labels)
+        
+        # extra logging
+        if self.args.report_to == "wandb":
+            for batch_item in range(len(labels)):
+                loss_item = loss[batch_item].item()
+                self.log({"per_item_loss": loss_item})
 
         # return
         return (loss, cf_outputs) if return_outputs else loss
@@ -204,11 +209,23 @@ def compute_metrics(
             all_labels += labels.tolist()
         
         else:
-        
             # get left padding count, [batch_size], and add to locations
             left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
             left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
             intervention_locations += left_padding
+            
+            # for i in range(inputs["input_ids"].shape[0]):
+            #     print("batch num", i)
+            #     for j in range(inputs["input_ids"].shape[1]):
+            #         tok = pv.models.basic_utils.format_token(tokenizer, inputs["input_ids"][i, j])
+            #         print(f"{tok:<20}", end='')
+            #         if intervention_locations[0, i, 0] == j:
+            #             print("<-- FIRST")
+            #         elif intervention_locations[-1, i, 0] == j:
+            #             print("<-- LAST")
+            #         else:
+            #             print()
+            #     input()
     
             # repeat each batch by num_beams times in intervention locations
             # -> [layers, batch_size * num_beams, positions]

@@ -70,6 +70,7 @@ def main():
     
     args = parser.parse_args()
 
+    act_fn = args.act_fn
     model = args.model
     layers = args.layers
     rank = args.rank
@@ -197,7 +198,7 @@ def main():
             "component": residual_stream_component_mapping[model_arch] % l,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype
+                dropout=dropout, dtype=dtype, act_fn=act_fn
             )
         } for l in layers])
     else:
@@ -206,7 +207,7 @@ def main():
             "low_rank_dimension": rank,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype
+                dropout=dropout, dtype=dtype, act_fn=act_fn
             )
         } for l in layers])
 
@@ -238,7 +239,7 @@ def main():
         save_strategy="no",
         logging_strategy="steps",
         save_total_limit=1,
-        logging_steps=10,
+        logging_steps=1,
         learning_rate=lr,
         warmup_ratio=0.1,
         optim="adamw_torch",
