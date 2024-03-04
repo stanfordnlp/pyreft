@@ -234,9 +234,9 @@ def compute_metrics(
                 generation_args["do_sample"] = True
             elif task in ["alpaca", "instruct", "ultrafeedback"]:
                 generation_args["max_length"] = 2048
-                generation_args["temperature"] = 0.7
-                generation_args["top_p"] = 1.0
-                generation_args["do_sample"] = True
+                generation_args["no_repeat_ngram_size"] = 5
+                generation_args["repetition_penalty"] = 1.1
+                generation_args["do_sample"] = False
     
             # generate with intervention on prompt
             _, steered_response = intervenable.generate(**generation_args)
