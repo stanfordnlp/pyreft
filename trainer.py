@@ -227,7 +227,7 @@ def compute_metrics(
                 generation_args["max_new_tokens"] = 10
             elif task == "math":
                 generation_args["max_new_tokens"] = 256
-                generation_args["temperature"] = 0.3
+                generation_args["temperature"] = 0.3 # increase to avoid decoding prob inf error.
                 generation_args["top_p"] = 0.75
                 generation_args["top_k"] = 40
                 generation_args["num_beams"] = num_beams

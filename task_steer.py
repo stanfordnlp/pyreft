@@ -153,8 +153,11 @@ def main():
             torch_dtype=dtype
         )
     else:
-        # load llama model
-        config, _, model = pv.create_llama(model, dtype=dtype)
+        model = AutoModelForCausalLM.from_pretrained(
+            model,
+            torch_dtype=dtype,  # save memory
+        )
+        config = model.config
 
     # load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -214,7 +217,9 @@ def main():
     reft_model.set_device(device)
     reft_model.disable_model_gradients()
 
-    reft_model.model.train()  # train enables dropout but no grads
+    # train enables dropout but no grads.
+    # this line might not be necessary since HF trainer enables this by default.
+    reft_model.model.train()
     n_params = reft_model.count_parameters()
 
     # start wandb logging
@@ -227,88 +232,6 @@ def main():
         run.summary.update(vars(args))
         wandb.log(
             {"train/n_params": n_params})
-
-    #####################################################
-    # 
-    # Test: Start of training loop.
-    #
-    #####################################################
-    # train_dataloader = DataLoader(
-    #     train_dataset, shuffle=True, batch_size=batch_size, collate_fn=data_collator)
-    # t_total = int(len(train_dataloader) * epochs) // gradient_accumulation_steps
-
-    # optimizer = torch.optim.Adam(
-    #     reft_model.get_trainable_parameters(), lr=lr
-    # )
-    # scheduler = get_linear_schedule_with_warmup(
-    #     optimizer, 
-    #     num_warmup_steps=int(t_total*0.1), 
-    #     num_training_steps=t_total
-    # )
-
-    # train_iterator = trange(0, int(epochs), desc="Epoch")
-    # global_step = 0
-    # for epoch in train_iterator:
-    #     total_step = 0
-    #     epoch_iterator = tqdm(
-    #         train_dataloader, desc=f"Epoch: {epoch}", position=0, leave=True
-    #     )
-    #     for step, inputs in enumerate(epoch_iterator):
-    #         for k, v in inputs.items():
-    #             if v is not None and isinstance(v, torch.Tensor):
-    #                 inputs[k] = v.to(device)
-            
-    #         _, cf_outputs = reft_model(
-    #             {
-    #                 "input_ids": inputs["input_ids"],
-    #                 "attention_mask": inputs["attention_mask"]
-    #             },
-    #             unit_locations={"sources->base": (
-    #                 None,
-    #                 inputs["intervention_locations"].permute(1, 0, 2).tolist()
-    #             )}
-    #         )
-
-    #         # lm loss on counterfactual labels
-    #         lm_logits = cf_outputs.logits
-    #         labels = inputs["labels"]
-    #         shift_logits = lm_logits[..., :-1, :].contiguous()
-    #         shift_labels = labels[..., 1:].contiguous()
-    #         # Flatten the tokens
-    #         loss_fct = CrossEntropyLoss()
-    #         loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-    #         loss_str = round(loss.item(), 2)
-    #         epoch_iterator.set_postfix({"loss": loss_str})
-    #         if gradient_accumulation_steps > 1:
-    #             loss = loss / gradient_accumulation_steps
-    #         loss.backward()
-    #         if (total_step % gradient_accumulation_steps == 0) or (total_step == len(train_dataloader) - 1):
-    #             if not (gradient_accumulation_steps > 1 and total_step == 0):
-    #                 if is_wandb:
-    #                     wandb.log({
-    #                         "train/loss": loss_str,
-    #                         "train/learning_rate": scheduler.get_last_lr()[0]}, step=global_step)
-    #                 optimizer.step()
-    #                 scheduler.step()
-    #                 # if do model.zero_grad() make sure model implements this.
-    #                 optimizer.zero_grad()
-    #                 global_step += 1
-    #         total_step += 1
-    #####################################################
-    # 
-    # Test: End of training loop.
-    #
-    #####################################################
-
-    t_total = int(math.ceil(len(train_dataset)/(batch_size*gradient_accumulation_steps)) * epochs)
-    optimizer = torch.optim.Adam(
-        reft_model.get_trainable_parameters(), lr=lr
-    )
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, 
-        num_warmup_steps=int(t_total*0.1), 
-        num_training_steps=t_total
-    )
 
     # # training args
     training_args = TrainingArguments(
@@ -325,8 +248,11 @@ def main():
         logging_steps=1,
         learning_rate=lr,
         warmup_ratio=0.1,
+        optim="adamw_torch",
+        weight_decay=weight_decay,
         report_to="wandb" if is_wandb else "none",
         use_cpu=False if device == "cuda" else True,
+        seed=seed
     )
 
     # make trainer
@@ -339,7 +265,6 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=None,
         compute_metrics=None,
-        optimizers=(optimizer, scheduler),
     )
     trainer.train()
 
