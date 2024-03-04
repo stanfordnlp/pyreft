@@ -3,7 +3,7 @@ sys.path.append("../../pyvene/")
 
 import torch
 import argparse
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from transformers import (
     AutoConfig,
     AutoTokenizer, 
@@ -18,6 +18,8 @@ import wandb
 import datetime
 import json
 import math
+from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader
 
 import pyvene as pv
 from data import load_task
@@ -108,6 +110,7 @@ def main():
     # everything is guarded by a single seed
     set_seed(seed)
 
+    model_name = model
     model_str = model.split("/")[-1]
     train_dataset_str = train_dataset
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -116,45 +119,6 @@ def main():
     else:
         run_name = f"{model_str}.{task}.{now}"
 
-    # load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model)
-    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
-    tokenizer.pad_token = tokenizer.unk_token
-
-    # load dataset splits
-    train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
-        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
-        eval_dataset, test_split, seed, eval_batch_size, position, layers)
-    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
-
-    # load model based on task type.
-    if task in classification_tasks:
-        config = AutoConfig.from_pretrained(
-            model, num_labels=num_labels,
-            finetuning_task=train_dataset_str,
-        )
-        # full precision loading since usually for small models
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model,
-            config=config, # just providing the label
-            torch_dtype=dtype
-        )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(
-            model,
-            torch_dtype=dtype,  # save memory
-        )
-        config = model.config
-    _ = model.to(device)
-
-    # post-processing the inputs
-    if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
-        intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
-    elif intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
-        intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
-    elif intervention_type == "ConditionedSourceLowRankIntervention":
-        intervention_type = ConditionedSourceLowRankIntervention
-    
     # which layers to intervene on
     user_give_all_layers = False
     if layers != "all":
@@ -175,6 +139,42 @@ def main():
             pass
         else:
             layers += layers
+
+    # load model based on task type.
+    if task in classification_tasks:
+        config = AutoConfig.from_pretrained(
+            model, num_labels=num_labels,
+            finetuning_task=train_dataset_str,
+        )
+        # full precision loading since usually for small models
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model,
+            config=config, # just providing the label
+            torch_dtype=dtype
+        )
+    else:
+        # load llama model
+        config, _, model = pv.create_llama(model, dtype=dtype)
+
+    # load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
+    tokenizer.pad_token = tokenizer.unk_token
+    _ = model.to(device)
+
+    # load dataset splits
+    train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
+        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
+        eval_dataset, test_split, seed, eval_batch_size, position, layers)
+    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
+
+    # post-processing the inputs
+    if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
+        intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
+    elif intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
+        intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
+    elif intervention_type == "ConditionedSourceLowRankIntervention":
+        intervention_type = ConditionedSourceLowRankIntervention
     
     # select collator based on the type
     if task in classification_tasks:
@@ -212,8 +212,9 @@ def main():
 
     reft_model = pv.IntervenableModel(config, model)
     reft_model.set_device(device)
-    reft_model.model.train()  # train enables dropout but no grads
     reft_model.disable_model_gradients()
+
+    reft_model.model.train()  # train enables dropout but no grads
     n_params = reft_model.count_parameters()
 
     # start wandb logging
@@ -221,12 +222,95 @@ def main():
         run = wandb.init(
             project=f"Steer_LM_{task}", 
             entity="reft",
-            name=run_name,
+            name="zen_debug."+run_name,
         )
         run.summary.update(vars(args))
-        wandb.log({"train/n_params": n_params})
-    
-    # training args
+        wandb.log(
+            {"train/n_params": n_params})
+
+    #####################################################
+    # 
+    # Test: Start of training loop.
+    #
+    #####################################################
+    # train_dataloader = DataLoader(
+    #     train_dataset, shuffle=True, batch_size=batch_size, collate_fn=data_collator)
+    # t_total = int(len(train_dataloader) * epochs) // gradient_accumulation_steps
+
+    # optimizer = torch.optim.Adam(
+    #     reft_model.get_trainable_parameters(), lr=lr
+    # )
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optimizer, 
+    #     num_warmup_steps=int(t_total*0.1), 
+    #     num_training_steps=t_total
+    # )
+
+    # train_iterator = trange(0, int(epochs), desc="Epoch")
+    # global_step = 0
+    # for epoch in train_iterator:
+    #     total_step = 0
+    #     epoch_iterator = tqdm(
+    #         train_dataloader, desc=f"Epoch: {epoch}", position=0, leave=True
+    #     )
+    #     for step, inputs in enumerate(epoch_iterator):
+    #         for k, v in inputs.items():
+    #             if v is not None and isinstance(v, torch.Tensor):
+    #                 inputs[k] = v.to(device)
+            
+    #         _, cf_outputs = reft_model(
+    #             {
+    #                 "input_ids": inputs["input_ids"],
+    #                 "attention_mask": inputs["attention_mask"]
+    #             },
+    #             unit_locations={"sources->base": (
+    #                 None,
+    #                 inputs["intervention_locations"].permute(1, 0, 2).tolist()
+    #             )}
+    #         )
+
+    #         # lm loss on counterfactual labels
+    #         lm_logits = cf_outputs.logits
+    #         labels = inputs["labels"]
+    #         shift_logits = lm_logits[..., :-1, :].contiguous()
+    #         shift_labels = labels[..., 1:].contiguous()
+    #         # Flatten the tokens
+    #         loss_fct = CrossEntropyLoss()
+    #         loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+    #         loss_str = round(loss.item(), 2)
+    #         epoch_iterator.set_postfix({"loss": loss_str})
+    #         if gradient_accumulation_steps > 1:
+    #             loss = loss / gradient_accumulation_steps
+    #         loss.backward()
+    #         if (total_step % gradient_accumulation_steps == 0) or (total_step == len(train_dataloader) - 1):
+    #             if not (gradient_accumulation_steps > 1 and total_step == 0):
+    #                 if is_wandb:
+    #                     wandb.log({
+    #                         "train/loss": loss_str,
+    #                         "train/learning_rate": scheduler.get_last_lr()[0]}, step=global_step)
+    #                 optimizer.step()
+    #                 scheduler.step()
+    #                 # if do model.zero_grad() make sure model implements this.
+    #                 optimizer.zero_grad()
+    #                 global_step += 1
+    #         total_step += 1
+    #####################################################
+    # 
+    # Test: End of training loop.
+    #
+    #####################################################
+
+    t_total = int(math.ceil(len(train_dataset)/(batch_size*gradient_accumulation_steps)) * epochs)
+    optimizer = torch.optim.Adam(
+        reft_model.get_trainable_parameters(), lr=lr
+    )
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, 
+        num_warmup_steps=int(t_total*0.1), 
+        num_training_steps=t_total
+    )
+
+    # # training args
     training_args = TrainingArguments(
         output_dir=f"{output_dir}/{run_name}",
         run_name=run_name,
@@ -238,11 +322,9 @@ def main():
         save_strategy="no",
         logging_strategy="steps",
         save_total_limit=1,
-        logging_steps=10,
+        logging_steps=1,
         learning_rate=lr,
         warmup_ratio=0.1,
-        optim="adamw_torch",
-        weight_decay=weight_decay,
         report_to="wandb" if is_wandb else "none",
         use_cpu=False if device == "cuda" else True,
     )
@@ -251,27 +333,29 @@ def main():
     trainer_class = ReftTrainerForSequenceClassification if task in classification_tasks else ReftTrainer
     trainer = trainer_class(
         model=reft_model,
+        tokenizer=tokenizer,
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
         eval_dataset=None,
         compute_metrics=None,
-        tokenizer=tokenizer,
+        optimizers=(optimizer, scheduler),
     )
     trainer.train()
-    
+
     # dump config
     args_dict = vars(args)
     args_dict["n_params"] = n_params
     json_file_name = f"{output_dir}/{run_name}/args.json"
     with open(json_file_name, 'w') as json_file:
         json.dump(args_dict, json_file, indent=4)
-    
+
     # ensure everything is in eval mode
     reft_model.model.eval()
     for k,v in reft_model.interventions.items():
         _ = v[0].eval()
 
+    print({"n_params": n_params})
     # do eval
     eval_results = {}
     for dataset_name in eval_datasets:
