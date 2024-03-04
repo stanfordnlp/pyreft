@@ -105,6 +105,7 @@ def reformat_by_task(
     max_length: int,
     position: str="last",
     layers: int=[1],
+    train_on_inputs: bool=False,
     split: str='train'
 ) -> tuple:
     """Reformat the dataset based on task template and generate tokenized inputs."""
@@ -170,7 +171,8 @@ def reformat_by_task(
             output_ids = deepcopy(base_input_ids)
     
             # mask prompt in labels
-            output_ids[:base_prompt_length] = -100
+            if not train_on_inputs:
+                output_ids[:base_prompt_length] = -100
             base_input_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
             output_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
             last_position = torch.tensor([base_prompt_length-1,])
@@ -204,6 +206,7 @@ def load_task(
     eval_batch_size: int=1,
     position: str="last",
     layers: int=[1],
+    train_on_inputs: bool=False
 ):
     # config
     if task == "commonsense":
@@ -255,7 +258,7 @@ def load_task(
     for dataset in train_datasets:
         result, _, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-            max_length, position, layers, split='train')
+            max_length, position, layers, train_on_inputs, split='train')
         for key in result:
             raw_train[key].extend(result[key])
         del _ # remove the task_dataset variable from memory
@@ -270,7 +273,7 @@ def load_task(
     for dataset in eval_datasets:
         result, task_dataset, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-            max_length, position, layers, split=test_split)
+            max_length, position, layers, False, split=test_split)
         eval_dataset = Dataset.from_dict(result)
         if max_n_eval_example is not None:
             eval_dataset = eval_dataset.select(range(max_n_eval_example))

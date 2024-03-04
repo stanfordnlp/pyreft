@@ -69,6 +69,7 @@ def main():
     parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
     parser.add_argument('-test_split', '--test_split', type=str, default="validation")
+    parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
     
     args = parser.parse_args()
 
@@ -95,6 +96,7 @@ def main():
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     dropout = args.dropout
     test_split = args.test_split
+    train_on_inputs = args.train_on_inputs
     
     assert task in {
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue"
@@ -104,7 +106,7 @@ def main():
     print(
         f"task: {task}, model: {model}, intervention_type: {intervention_type}, "
         f"layers: {layers}, rank: {rank}, "
-        f"position: {position}, epoch: {epochs}"
+        f"position: {position}, epoch: {epochs}, train_on_inputs: {train_on_inputs}"
     )
 
     # everything is guarded by a single seed
@@ -168,7 +170,7 @@ def main():
     # load dataset splits
     train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
         task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
-        eval_dataset, test_split, seed, eval_batch_size, position, layers)
+        eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs)
     print("loaded", len(train_dataset), len(eval_datasets), num_labels)
 
     # post-processing the inputs
