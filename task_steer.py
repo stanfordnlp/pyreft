@@ -54,6 +54,7 @@ def main():
     parser.add_argument('-p', '--position', type=str, help='last', default='last')
     parser.add_argument('-e', '--epochs', type=int, help='1', default=1)
     parser.add_argument('-is_wandb', '--is_wandb', action='store_true')
+    parser.add_argument('-wandb_name', '--wandb_name', type=str, default="reft")
     parser.add_argument('-save_model', '--save_model', type=bool, default=False)
     parser.add_argument('-max_n_train_example', '--max_n_train_example', type=int, default=None)
     parser.add_argument('-max_n_eval_example', '--max_n_eval_example', type=int, default=None)
@@ -98,6 +99,7 @@ def main():
     dropout = args.dropout
     test_split = args.test_split
     train_on_inputs = args.train_on_inputs
+    wandb_name = args.wandb_name
     
     assert task in {
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue"
@@ -228,8 +230,8 @@ def main():
     # start wandb logging
     if is_wandb:
         run = wandb.init(
-            project=f"Steer_LM_{task}", 
-            entity="reft",
+            project=f"MyReFT_{task}", 
+            entity=wandb_name,
             name=run_name,
         )
         run.summary.update(vars(args))
