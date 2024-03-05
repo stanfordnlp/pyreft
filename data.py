@@ -297,21 +297,21 @@ def load_task(
             "MultiArith", "gsm8k", "SVAMP", "mawps", "AddSub", "AQuA", "SingleEq", 
         ] if eval_dataset is None else [eval_dataset]
         task_prompt_template = alpaca_prompt_no_input_template
-        trigger_tokens = "### Response:\n"
+        trigger_tokens = "### Response:"
     elif task == "alpaca":
         max_length = 512
         train_datasets = [
             "alpaca_data_cleaned"
         ]
         task_prompt_template = alpaca_prompt_template
-        trigger_tokens = "### Response:\n"
+        trigger_tokens = "### Response:"
     elif task == "instruct" or task == "ultrafeedback":
         max_length = 2048
         train_datasets = [
             "instruct"
         ]
         task_prompt_template = alpaca_prompt_template
-        trigger_tokens = "### Response:\n"
+        trigger_tokens = "### Response:"
     elif task == "glue":
         max_length = 512
         assert train_dataset is not None
