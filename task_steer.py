@@ -113,7 +113,18 @@ def finetune(
         else:
             layers += layers
 
-    # load model based on task type.
+    # load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
+    tokenizer.pad_token = tokenizer.unk_token
+
+    # load dataset splits
+    train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
+        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
+        eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs)
+    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
+    
+        # load model based on task type.
     if task in classification_tasks:
         config = AutoConfig.from_pretrained(
             model, num_labels=num_labels,
@@ -131,18 +142,7 @@ def finetune(
             torch_dtype=dtype,  # save memory
         )
         config = model.config
-
-    # load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
-    tokenizer.pad_token = tokenizer.unk_token
     _ = model.to(device)
-
-    # load dataset splits
-    train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
-        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
-        eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs)
-    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
 
     # post-processing the inputs
     if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
