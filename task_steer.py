@@ -3,7 +3,7 @@ sys.path.append("../../pyvene/")
 
 import torch
 import argparse
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from transformers import (
     AutoConfig,
     AutoTokenizer, 
@@ -18,6 +18,8 @@ import wandb
 import datetime
 import json
 import math
+from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader
 
 import pyvene as pv
 from data import load_task
@@ -67,6 +69,7 @@ def main():
     parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
     parser.add_argument('-test_split', '--test_split', type=str, default="validation")
+    parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
     
     args = parser.parse_args()
 
@@ -94,6 +97,7 @@ def main():
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     dropout = args.dropout
     test_split = args.test_split
+    train_on_inputs = args.train_on_inputs
     
     assert task in {
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue"
@@ -103,12 +107,13 @@ def main():
     print(
         f"task: {task}, model: {model}, intervention_type: {intervention_type}, "
         f"layers: {layers}, rank: {rank}, "
-        f"position: {position}, epoch: {epochs}"
+        f"position: {position}, epoch: {epochs}, train_on_inputs: {train_on_inputs}"
     )
 
     # everything is guarded by a single seed
     set_seed(seed)
 
+    model_name = model
     model_str = model.split("/")[-1]
     train_dataset_str = train_dataset
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -117,45 +122,6 @@ def main():
     else:
         run_name = f"{model_str}.{task}.{now}"
 
-    # load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model)
-    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
-    tokenizer.pad_token = tokenizer.unk_token
-
-    # load dataset splits
-    train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
-        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
-        eval_dataset, test_split, seed, eval_batch_size, position, layers)
-    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
-
-    # load model based on task type.
-    if task in classification_tasks:
-        config = AutoConfig.from_pretrained(
-            model, num_labels=num_labels,
-            finetuning_task=train_dataset_str,
-        )
-        # full precision loading since usually for small models
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model,
-            config=config, # just providing the label
-            torch_dtype=dtype
-        )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(
-            model,
-            torch_dtype=dtype,  # save memory
-        )
-        config = model.config
-    _ = model.to(device)
-
-    # post-processing the inputs
-    if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
-        intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
-    elif intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
-        intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
-    elif intervention_type == "ConditionedSourceLowRankIntervention":
-        intervention_type = ConditionedSourceLowRankIntervention
-    
     # which layers to intervene on
     user_give_all_layers = False
     if layers != "all":
@@ -176,6 +142,45 @@ def main():
             pass
         else:
             layers += layers
+
+    # load model based on task type.
+    if task in classification_tasks:
+        config = AutoConfig.from_pretrained(
+            model, num_labels=num_labels,
+            finetuning_task=train_dataset_str,
+        )
+        # full precision loading since usually for small models
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model,
+            config=config, # just providing the label
+            torch_dtype=dtype
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model,
+            torch_dtype=dtype,  # save memory
+        )
+        config = model.config
+
+    # load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
+    tokenizer.pad_token = tokenizer.unk_token
+    _ = model.to(device)
+
+    # load dataset splits
+    train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
+        task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
+        eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs)
+    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
+
+    # post-processing the inputs
+    if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
+        intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
+    elif intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
+        intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
+    elif intervention_type == "ConditionedSourceLowRankIntervention":
+        intervention_type = ConditionedSourceLowRankIntervention
     
     # select collator based on the type
     if task in classification_tasks:
@@ -213,8 +218,11 @@ def main():
 
     reft_model = pv.IntervenableModel(config, model)
     reft_model.set_device(device)
-    reft_model.model.train()  # train enables dropout but no grads
     reft_model.disable_model_gradients()
+
+    # train enables dropout but no grads.
+    # this line might not be necessary since HF trainer enables this by default.
+    reft_model.model.train()
     n_params = reft_model.count_parameters()
 
     # start wandb logging
@@ -225,9 +233,10 @@ def main():
             name=run_name,
         )
         run.summary.update(vars(args))
-        wandb.log({"train/n_params": n_params})
-    
-    # training args
+        wandb.log(
+            {"train/n_params": n_params})
+
+    # # training args
     training_args = TrainingArguments(
         output_dir=f"{output_dir}/{run_name}",
         run_name=run_name,
@@ -246,33 +255,35 @@ def main():
         weight_decay=weight_decay,
         report_to="wandb" if is_wandb else "none",
         use_cpu=False if device == "cuda" else True,
+        seed=seed
     )
 
     # make trainer
     trainer_class = ReftTrainerForSequenceClassification if task in classification_tasks else ReftTrainer
     trainer = trainer_class(
         model=reft_model,
+        tokenizer=tokenizer,
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
         eval_dataset=None,
         compute_metrics=None,
-        tokenizer=tokenizer,
     )
     trainer.train()
-    
+
     # dump config
     args_dict = vars(args)
     args_dict["n_params"] = n_params
     json_file_name = f"{output_dir}/{run_name}/args.json"
     with open(json_file_name, 'w') as json_file:
         json.dump(args_dict, json_file, indent=4)
-    
+
     # ensure everything is in eval mode
     reft_model.model.eval()
     for k,v in reft_model.interventions.items():
         _ = v[0].eval()
 
+    print({"n_params": n_params})
     # do eval
     eval_results = {}
     for dataset_name in eval_datasets:

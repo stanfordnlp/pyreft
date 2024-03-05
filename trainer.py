@@ -77,6 +77,7 @@ class ReftTrainer(Trainer):
         inputs,
         return_outputs=False
     ):
+        
         # run intervened forward pass
         _, cf_outputs = intervenable(
             {
@@ -230,7 +231,7 @@ def compute_metrics(
             # repeat each batch by num_beams times in intervention locations
             # -> [layers, batch_size * num_beams, positions]
             intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
-    
+            
             # set generation args depending on task
             generation_args = {
                 "base": {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
@@ -243,16 +244,16 @@ def compute_metrics(
                 generation_args["max_new_tokens"] = 10
             elif task == "math":
                 generation_args["max_new_tokens"] = 256
-                generation_args["temperature"] = 0.1
+                generation_args["temperature"] = 0.3 # increase to avoid decoding prob inf error.
                 generation_args["top_p"] = 0.75
                 generation_args["top_k"] = 40
                 generation_args["num_beams"] = num_beams
                 generation_args["do_sample"] = True
             elif task in ["alpaca", "instruct", "ultrafeedback"]:
-                generation_args["max_new_tokens"] = 2048
-                generation_args["temperature"] = 0.7
-                generation_args["top_p"] = 1.0
-                generation_args["do_sample"] = True
+                generation_args["max_length"] = 2048
+                generation_args["no_repeat_ngram_size"] = 5
+                generation_args["repetition_penalty"] = 1.1
+                generation_args["do_sample"] = False
     
             # generate with intervention on prompt
             _, steered_response = intervenable.generate(**generation_args)
