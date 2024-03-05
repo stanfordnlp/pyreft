@@ -271,12 +271,15 @@ def load_task(
     # eval
     all_eval_datasets = {}
     for dataset in eval_datasets:
-        result, task_dataset, num_labels = reformat_by_task(
-            task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-            max_length, position, layers, False, split=test_split)
-        eval_dataset = Dataset.from_dict(result)
-        if max_n_eval_example is not None:
-            eval_dataset = eval_dataset.select(range(max_n_eval_example))
-        all_eval_datasets[dataset] = (eval_dataset, task_dataset)
+        test_splits = test_split.split(";")
+        all_eval_datasets[dataset] = {}
+        for split in test_splits:
+            result, task_dataset, num_labels = reformat_by_task(
+                task, dataset, task_prompt_template, trigger_tokens, tokenizer,
+                max_length, position, layers, False, split=split)
+            eval_dataset = Dataset.from_dict(result)
+            if max_n_eval_example is not None:
+                eval_dataset = eval_dataset.select(range(max_n_eval_example))
+            all_eval_datasets[dataset][split] = (eval_dataset, task_dataset)
 
     return train_dataset, all_eval_datasets, trigger_tokens, num_labels

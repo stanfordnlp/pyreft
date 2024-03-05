@@ -167,7 +167,8 @@ def compute_metrics(
     trigger_tokens: str,
     run_name: str,
     batch_size: int=4,
-    data_collator=None
+    data_collator=None,
+    split=None,
 ):
     # switch the tokenizer mode first for generation tasks
     if task != "glue":
@@ -309,7 +310,11 @@ def compute_metrics(
         
         # print(classification_report(all_labels, all_preds, digits=3))
         report = compute_metrics_glue(all_labels, all_preds)
-        print("task metrics: ")
+        print_str = "task metrics "
+        if split:
+            report = {split + "_" + k: v for k, v in report.items()}
+            print_str += "[" + split + "]"
+        print_str += ":"
         print(report)
         return [], report
     if task in ["alpaca", "instruct", "ultrafeedback"]:

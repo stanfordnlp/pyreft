@@ -258,21 +258,22 @@ def finetune(
     eval_results = {}
     for dataset_name in eval_datasets:
         # split evalset into chunks
-        eval_dataset, data_items = eval_datasets[dataset_name]
-        generations, stats = compute_metrics(
-            task, dataset_name, reft_model, tokenizer, eval_dataset, data_items,
-            trigger_tokens, run_name, eval_batch_size, 
-            data_collator if task in classification_tasks else None
-        )
+        for split, (eval_dataset, data_items) in eval_datasets[dataset_name].items():
+            generations, stats = compute_metrics(
+                task, dataset_name, reft_model, tokenizer, eval_dataset, data_items,
+                trigger_tokens, run_name, eval_batch_size, 
+                data_collator if task in classification_tasks else None,
+                split,
+            )
 
-        # log
-        eval_results.update(stats)
-        if is_wandb:
-            wandb.log(stats)
-        generations = stats if generations is None else generations
-        result_json_file_name = f"{output_dir}/{run_name}/{dataset_name}_outputs.json"
-        with open(result_json_file_name, 'w') as json_file:
-            json.dump(generations, json_file, indent=4)
+            # log
+            eval_results.update(stats)
+            if is_wandb:
+                wandb.log(stats)
+            generations = stats if generations is None else generations
+            result_json_file_name = f"{output_dir}/{run_name}/{dataset_name}_{split}_outputs.json"
+            with open(result_json_file_name, 'w') as json_file:
+                json.dump(generations, json_file, indent=4)
 
     # log final eval stats
     result_json_file_name = f"{output_dir}/{run_name}/eval_results.json"
