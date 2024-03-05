@@ -289,7 +289,7 @@ def load_task(
         task_prompt_template = "%s\n"
         trigger_tokens = "the correct answer is "
     elif task == "math":
-        max_length = 256
+        max_length = 512
         train_datasets = [
             "math_10k"
         ] if train_dataset is None else [train_dataset]

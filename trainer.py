@@ -244,9 +244,10 @@ def compute_metrics(
                 generation_args["num_beams"] = num_beams
                 generation_args["do_sample"] = True
             elif task == "math":
-                # align with https://github.com/AGI-Edgerunners/LLM-Adapters
-                generation_args["max_new_tokens"] = 128
-                generation_args["temperature"] = 0.1
+                # slightly changed to optimize our performance on top of
+                # https://github.com/AGI-Edgerunners/LLM-Adapters
+                generation_args["max_new_tokens"] = 256
+                generation_args["temperature"] = 0.3
                 generation_args["top_p"] = 0.75
                 generation_args["top_k"] = 40
                 generation_args["num_beams"] = num_beams
