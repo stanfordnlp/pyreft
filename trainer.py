@@ -151,12 +151,6 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
         elif problem_type == "multi_label_classification":
             loss_fct = BCEWithLogitsLoss()
             loss = loss_fct(logits, labels)
-        
-        # extra logging
-        if self.args.report_to == "wandb":
-            for batch_item in range(len(labels)):
-                loss_item = loss[batch_item].item()
-                self.log({"per_item_loss": loss_item})
 
         # return
         return (loss, cf_outputs) if return_outputs else loss
