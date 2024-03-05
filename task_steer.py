@@ -198,8 +198,8 @@ def finetune(
     # start wandb logging
     if is_wandb:
         run = wandb.init(
-            project=f"Steer_LM_{task}", 
-            entity="reft",
+            project=f"MyReFT_{task}", 
+            entity=wandb_name,
             name=run_name,
         )
         run.summary.update(vars(args))

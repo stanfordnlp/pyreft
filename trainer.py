@@ -172,7 +172,7 @@ def compute_metrics(
     # switch the tokenizer mode first for generation tasks
     if task != "glue":
         tokenizer.padding_side = "left" # switch padding side for collator
-        num_beams = 4 if task in ["math"] else 1
+        num_beams = 4 if task in ["commonsense", "math"] else 1
 
     data_collator = data_collator if data_collator is not None else \
         make_data_collator(tokenizer, intervenable.model)
@@ -236,15 +236,23 @@ def compute_metrics(
                 "early_stopping": True,
             }
             if task == "commonsense":
-                generation_args["max_new_tokens"] = 10
+                # align with https://github.com/AGI-Edgerunners/LLM-Adapters
+                generation_args["max_new_tokens"] = 32
+                generation_args["temperature"] = 0.1
+                generation_args["top_p"] = 0.75
+                generation_args["top_k"] = 40
+                generation_args["num_beams"] = num_beams
+                generation_args["do_sample"] = True
             elif task == "math":
-                generation_args["max_new_tokens"] = 256
-                generation_args["temperature"] = 0.3 # increase to avoid decoding prob inf error.
+                # align with https://github.com/AGI-Edgerunners/LLM-Adapters
+                generation_args["max_new_tokens"] = 128
+                generation_args["temperature"] = 0.1
                 generation_args["top_p"] = 0.75
                 generation_args["top_k"] = 40
                 generation_args["num_beams"] = num_beams
                 generation_args["do_sample"] = True
             elif task in ["alpaca", "instruct", "ultrafeedback"]:
+                # align with https://arxiv.org/abs/2402.15179
                 generation_args["max_length"] = 2048
                 generation_args["no_repeat_ngram_size"] = 5
                 generation_args["repetition_penalty"] = 1.1
@@ -277,7 +285,7 @@ def compute_metrics(
                             correct_count += 1
                     else:
                         generation = extract_answer_number(raw_generation)
-                        if generation == float(answer):
+                        if abs(float(answer) - generation) <= 0.001:
                             correct_count += 1
                 
                 # log
