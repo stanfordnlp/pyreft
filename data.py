@@ -234,8 +234,14 @@ def reformat_by_task(
                 # mask prompt in labels
                 if not train_on_inputs:
                     output_ids[:base_prompt_length] = -100
-                base_input_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
-                output_ids[-1] = tokenizer.eos_token_id # enforce the last token to be eos
+
+                if (
+                        base_input_ids[-1] != tokenizer.eos_token_id
+                        and len(base_input_ids) < max_length
+                ):
+                    base_input_ids.append(tokenizer.eos_token_id)
+                    output_ids.append(tokenizer.eos_token_id)
+                
                 last_position = torch.tensor([base_prompt_length-1,])
         
                 # compute intervention positions
