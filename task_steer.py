@@ -37,70 +37,38 @@ residual_stream_component_mapping = {
     "robertaformaskedlm": "roberta.encoder.layer[%s].output"
 }
 
-def main():
+def finetune(
+    act_fn: str,
+    model: str,
+    layers: str,
+    rank: int,
+    position: str,
+    epochs: int,
+    seed: int,
+    intervention_type: str,
+    max_n_train_example: int,
+    max_n_eval_example: int,
+    is_wandb: bool,
+    gradient_accumulation_steps: int,
+    batch_size: int,
+    output_dir: str,
+    task: str,
+    lr: float,
+    train_dataset: str,
+    eval_dataset: str,
+    save_model: bool,
+    eval_batch_size: int,
+    weight_decay: float,
+    dropout: float,
+    test_split: str,
+    train_on_inputs: bool,
+    args,
+    dtype: torch.dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+):
     """
     Generic Representation Finetuning.
     """
 
-    parser = argparse.ArgumentParser(description="A simple script that takes different arguments.")
-    
-    parser.add_argument('-task', '--task', type=str, default=None)
-    parser.add_argument('-train_dataset', '--train_dataset', type=str, default=None)
-    parser.add_argument('-eval_dataset', '--eval_dataset', type=str, default=None)
-    parser.add_argument('-model', '--model', type=str, help='yahma/llama-7b-hf', default='yahma/llama-7b-hf')
-    parser.add_argument('-seed', '--seed', type=int, help='42', default=42)
-    parser.add_argument('-l', '--layers', type=str, help='2;10;18;26', default='2;10;18;26')
-    parser.add_argument('-r', '--rank', type=int, help=8, default=8)
-    parser.add_argument('-p', '--position', type=str, help='last', default='last')
-    parser.add_argument('-e', '--epochs', type=int, help='1', default=1)
-    parser.add_argument('-is_wandb', '--is_wandb', action='store_true')
-    parser.add_argument('-wandb_name', '--wandb_name', type=str, default="reft")
-    parser.add_argument('-save_model', '--save_model', type=bool, default=False)
-    parser.add_argument('-max_n_train_example', '--max_n_train_example', type=int, default=None)
-    parser.add_argument('-max_n_eval_example', '--max_n_eval_example', type=int, default=None)
-    parser.add_argument(
-        '-type', '--intervention_type', type=str, 
-        help='LearnedSourceLowRankRotatedSpaceIntervention', default="LearnedSourceLowRankRotatedSpaceIntervention")
-    parser.add_argument('-gradient_accumulation_steps', '--gradient_accumulation_steps', type=int, default=4)
-    parser.add_argument('-batch_size', '--batch_size', type=int, default=4)
-    parser.add_argument('-eval_batch_size', '--eval_batch_size', type=int, default=4)
-    parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
-    parser.add_argument('-lr', '--lr', type=float, default=5e-3)
-    parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
-    parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
-    parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
-    parser.add_argument('-test_split', '--test_split', type=str, default="validation")
-    parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
-    
-    args = parser.parse_args()
-
-    act_fn = args.act_fn
-    model = args.model
-    layers = args.layers
-    rank = args.rank
-    position = args.position
-    epochs = args.epochs
-    seed = args.seed
-    intervention_type = args.intervention_type
-    max_n_train_example = args.max_n_train_example
-    max_n_eval_example = args.max_n_eval_example
-    is_wandb = args.is_wandb
-    gradient_accumulation_steps = args.gradient_accumulation_steps
-    batch_size = args.batch_size
-    output_dir = args.output_dir
-    task = args.task
-    lr = args.lr
-    train_dataset = args.train_dataset
-    eval_dataset = args.eval_dataset
-    save_model = args.save_model
-    eval_batch_size = args.eval_batch_size
-    weight_decay = args.weight_decay
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    dropout = args.dropout
-    test_split = args.test_split
-    train_on_inputs = args.train_on_inputs
-    wandb_name = args.wandb_name
-    
     assert task in {
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue"
     }
@@ -312,5 +280,41 @@ def main():
     with open(result_json_file_name, 'w') as json_file:
         json.dump(eval_results, json_file, indent=4)
         
+
+def main():
+    parser = argparse.ArgumentParser(description="A simple script that takes different arguments.")
+    
+    parser.add_argument('-task', '--task', type=str, default=None)
+    parser.add_argument('-train_dataset', '--train_dataset', type=str, default=None)
+    parser.add_argument('-eval_dataset', '--eval_dataset', type=str, default=None)
+    parser.add_argument('-model', '--model', type=str, help='yahma/llama-7b-hf', default='yahma/llama-7b-hf')
+    parser.add_argument('-seed', '--seed', type=int, help='42', default=42)
+    parser.add_argument('-l', '--layers', type=str, help='2;10;18;26', default='2;10;18;26')
+    parser.add_argument('-r', '--rank', type=int, help=8, default=8)
+    parser.add_argument('-p', '--position', type=str, help='last', default='last')
+    parser.add_argument('-e', '--epochs', type=int, help='1', default=1)
+    parser.add_argument('-is_wandb', '--is_wandb', action='store_true')
+    parser.add_argument('-save_model', '--save_model', type=bool, default=False)
+    parser.add_argument('-max_n_train_example', '--max_n_train_example', type=int, default=None)
+    parser.add_argument('-max_n_eval_example', '--max_n_eval_example', type=int, default=None)
+    parser.add_argument(
+        '-type', '--intervention_type', type=str, 
+        help='LearnedSourceLowRankRotatedSpaceIntervention', default="LearnedSourceLowRankRotatedSpaceIntervention")
+    parser.add_argument('-gradient_accumulation_steps', '--gradient_accumulation_steps', type=int, default=4)
+    parser.add_argument('-batch_size', '--batch_size', type=int, default=4)
+    parser.add_argument('-eval_batch_size', '--eval_batch_size', type=int, default=4)
+    parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
+    parser.add_argument('-lr', '--lr', type=float, default=5e-3)
+    parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
+    parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
+    parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
+    parser.add_argument('-test_split', '--test_split', type=str, default="validation")
+    parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
+    
+    args = parser.parse_args()
+
+    finetune(**vars(args), args=args)
+
+
 if __name__ == "__main__":
     main()
