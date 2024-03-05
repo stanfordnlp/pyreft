@@ -49,6 +49,7 @@ def finetune(
     max_n_train_example: int,
     max_n_eval_example: int,
     is_wandb: bool,
+    wandb_name: str,
     gradient_accumulation_steps: int,
     batch_size: int,
     output_dir: str,
@@ -124,7 +125,7 @@ def finetune(
         eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs)
     print("loaded", len(train_dataset), len(eval_datasets), num_labels)
     
-        # load model based on task type.
+    # load model based on task type.
     if task in classification_tasks:
         config = AutoConfig.from_pretrained(
             model, num_labels=num_labels,
@@ -198,8 +199,8 @@ def finetune(
     # start wandb logging
     if is_wandb:
         run = wandb.init(
-            project=f"Steer_LM_{task}", 
-            entity="reft",
+            project=f"MyReFT_{task}", 
+            entity=wandb_name,
             name=run_name,
         )
         run.summary.update(vars(args))
@@ -280,6 +281,10 @@ def finetune(
     eval_results["n_params"] = n_params
     with open(result_json_file_name, 'w') as json_file:
         json.dump(eval_results, json_file, indent=4)
+    
+    # save model
+    if save_model:
+        reft_model.save(f"{output_dir}/{run_name}")
         
 
 def main():
@@ -295,7 +300,8 @@ def main():
     parser.add_argument('-p', '--position', type=str, help='last', default='last')
     parser.add_argument('-e', '--epochs', type=int, help='1', default=1)
     parser.add_argument('-is_wandb', '--is_wandb', action='store_true')
-    parser.add_argument('-save_model', '--save_model', type=bool, default=False)
+    parser.add_argument('-wandb_name', '--wandb_name', type=str, default="reft")
+    parser.add_argument('-save_model', '--save_model', action='store_true')
     parser.add_argument('-max_n_train_example', '--max_n_train_example', type=int, default=None)
     parser.add_argument('-max_n_eval_example', '--max_n_eval_example', type=int, default=None)
     parser.add_argument(
