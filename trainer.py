@@ -143,9 +143,9 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
         if problem_type == "regression":
             loss_fct = MSELoss()
             if self.model.model.num_labels == 1:
-                loss = loss_fct(logits.squeeze(), labels.squeeze())
+                loss = loss_fct(logits.squeeze(), labels.squeeze().to(torch.bfloat16))
             else:
-                loss = loss_fct(logits, labels)
+                loss = loss_fct(logits, labels.to(torch.bfloat16))
         elif problem_type == "single_label_classification":
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.model.model.num_labels), labels.view(-1))
@@ -200,7 +200,11 @@ def compute_metrics(
                 unit_locations={"sources->base": (None, intervention_locations)})
         
             # lm loss on counterfactual labels
-            preds = cf_outputs.logits.argmax(dim=-1)
+            if dataset_name != "stsb":
+                preds = cf_outputs.logits.argmax(dim=-1)
+            else:
+                preds = cf_outputs.logits.squeeze(dim=1)
+            
             labels = inputs["labels"]
             all_preds += preds.tolist()
             all_labels += labels.tolist()
