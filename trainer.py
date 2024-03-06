@@ -63,13 +63,13 @@ def make_data_collator(tokenizer, model) -> DataCollatorForSeq2Seq:
     )
 
 
-def make_dataloader(dataset: Dataset, batch_size: int, collate_fn: DataCollatorForSeq2Seq) -> DataLoader:
-    return DataLoader(dataset, shuffle=True, batch_size=batch_size, collate_fn=collate_fn)
+def make_dataloader(dataset: Dataset, batch_size: int, collate_fn: DataCollatorForSeq2Seq, shuffle: bool) -> DataLoader:
+    return DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=collate_fn)
 
 
 class ReftTrainer(Trainer):
     def get_train_dataloader(self) -> DataLoader:
-        return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator)
+        return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator, shuffle=True)
 
 
     def compute_loss(
@@ -143,9 +143,9 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
         if problem_type == "regression":
             loss_fct = MSELoss()
             if self.model.model.num_labels == 1:
-                loss = loss_fct(logits.squeeze(), labels.squeeze())
+                loss = loss_fct(logits.squeeze(), labels.squeeze().to(torch.bfloat16))
             else:
-                loss = loss_fct(logits, labels)
+                loss = loss_fct(logits, labels.to(torch.bfloat16))
         elif problem_type == "single_label_classification":
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.model.model.num_labels), labels.view(-1))
@@ -177,7 +177,7 @@ def compute_metrics(
 
     data_collator = data_collator if data_collator is not None else \
         make_data_collator(tokenizer, intervenable.model)
-    eval_dataloader = make_dataloader(eval_dataset, batch_size, data_collator)
+    eval_dataloader = make_dataloader(eval_dataset, batch_size, data_collator, shuffle=False)
     correct_count = 0
     total_count = 0
     generations = []
@@ -200,7 +200,11 @@ def compute_metrics(
                 unit_locations={"sources->base": (None, intervention_locations)})
         
             # lm loss on counterfactual labels
-            preds = cf_outputs.logits.argmax(dim=-1)
+            if dataset_name != "stsb":
+                preds = cf_outputs.logits.argmax(dim=-1)
+            else:
+                preds = cf_outputs.logits.squeeze(dim=1)
+            
             labels = inputs["labels"]
             all_preds += preds.tolist()
             all_labels += labels.tolist()
@@ -254,8 +258,8 @@ def compute_metrics(
                 generation_args["num_beams"] = num_beams
                 generation_args["do_sample"] = True
             elif task in ["alpaca", "instruct", "ultrafeedback"]:
-                # align with https://arxiv.org/abs/2402.15179
                 generation_args["max_length"] = 2048
+                # align with https://arxiv.org/abs/2402.15179
                 generation_args["no_repeat_ngram_size"] = 5
                 generation_args["repetition_penalty"] = 1.1
                 generation_args["do_sample"] = False
@@ -265,6 +269,7 @@ def compute_metrics(
     
             # detokenize in batch
             actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
+            
             for id, pred in zip(inputs["id"].tolist(), actual_preds):
                 example = data_items[id]
                 try:
@@ -274,12 +279,13 @@ def compute_metrics(
                     raw_generation = "WRONG"
     
                 # check if generation is correct
-                answer = example["answer"]
                 if task == "commonsense":
+                    answer = example["answer"]
                     generation = raw_generation[:]
                     if generation.strip() == answer.strip():
                         correct_count += 1
                 elif task == "math":
+                    answer = example["answer"]
                     answer = answer.strip()
                     if dataset_name == "AQuA":
                         generation = extract_answer_letter(raw_generation)
@@ -304,7 +310,8 @@ def compute_metrics(
                 else:
                     generations += [{
                         "instruction": example["instruction"],
-                        "output": generation,
+                        "raw_generation": pred,
+                        "output": raw_generation,
                         "dataset": dataset_name,
                         "generator": run_name
                     }]
