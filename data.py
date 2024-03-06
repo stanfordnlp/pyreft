@@ -144,7 +144,9 @@ def reformat_by_task(
     position: str="last",
     layers: int=[1],
     train_on_inputs: bool=False,
-    split: str='train'
+    split: str='train',
+    max_n_example: int=None,
+    seed: int=42
 ) -> tuple:
     """Reformat the dataset based on task template and generate tokenized inputs."""
 
@@ -154,6 +156,12 @@ def reformat_by_task(
     if task == "glue":
         task_dataset = load_dataset(task, dataset)
         task_dataset = task_dataset[split]
+
+        if split == "train":
+            task_dataset = task_dataset.shuffle(seed=seed)
+        if max_n_example is not None:
+            task_dataset = task_dataset.select(range(max_n_example))
+        
         sentence1_key, sentence2_key = glue_task_to_keys[dataset]
 
         # get the number of classification labels
@@ -181,8 +189,21 @@ def reformat_by_task(
             result["labels"].append(output_ids)
             result["id"].append(i)
     else:
-        data_path = f"./datasets/{dataset}/{split}.json"
-        task_dataset = load_dataset("json", data_files=data_path)["train"]
+        if (task == "alpaca" or task == "instruct" or task == "ultrafeedback") and split != "train":
+            if dataset == "alpaca_eval":
+                # alpaca eval test script for now
+                task_dataset = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")[split]
+            else:
+                pass # not implemented yet
+        else:
+            data_path = f"./datasets/{dataset}/{split}.json"
+            task_dataset = load_dataset("json", data_files=data_path)["train"]
+
+        if split == "train":
+            task_dataset = task_dataset.shuffle(seed=seed)
+        if max_n_example is not None:
+            task_dataset = task_dataset.select(range(max_n_example))
+        
         for i, data_item in enumerate(tqdm(task_dataset)):
             
             if task == "commonsense" or task == "math":
@@ -217,30 +238,30 @@ def reformat_by_task(
                 result["id"].append(i)
 
             elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
-                if data_item['input'] == "":
+                if 'input' not in data_item or data_item['input'] == "":
                     base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
-                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
                 else:
                     base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
-                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+
                 # tokenize
                 base_prompt_ids = tokenizer(
                     base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
                 base_prompt_length = len(base_prompt_ids)
-                base_input_ids = tokenizer(
-                    base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
-                output_ids = deepcopy(base_input_ids)
-        
-                # mask prompt in labels
-                if not train_on_inputs:
-                    output_ids[:base_prompt_length] = -100
-
-                if (
-                        base_input_ids[-1] != tokenizer.eos_token_id
-                        and len(base_input_ids) < max_length
-                ):
-                    base_input_ids.append(tokenizer.eos_token_id)
-                    output_ids.append(tokenizer.eos_token_id)
+                if split == "train":
+                    base_input = base_prompt + data_item["output"]
+                    base_input_ids = tokenizer(
+                        base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+                    output_ids = deepcopy(base_input_ids)
+                    # mask prompt in labels
+                    if not train_on_inputs:
+                        output_ids[:base_prompt_length] = -100
+    
+                    if (
+                            base_input_ids[-1] != tokenizer.eos_token_id
+                            and len(base_input_ids) < max_length
+                    ):
+                        base_input_ids.append(tokenizer.eos_token_id)
+                        output_ids.append(tokenizer.eos_token_id)
                 
                 last_position = torch.tensor([base_prompt_length-1,])
         
@@ -254,10 +275,10 @@ def reformat_by_task(
         
                 if split == "train":
                     result["input_ids"].append(base_input_ids)
+                    result["labels"].append(output_ids)
                 else:
                     result["input_ids"].append(base_prompt_ids)
                 result["intervention_locations"].append(intervention_locations)
-                result["labels"].append(output_ids)
                 result["id"].append(i)
 
     return result, task_dataset, num_labels
@@ -274,11 +295,12 @@ def load_task(
     eval_batch_size: int=1,
     position: str="last",
     layers: int=[1],
-    train_on_inputs: bool=False
+    train_on_inputs: bool=False,
+    max_length: int=512,
 ):
     # config
     if task == "commonsense":
-        max_length = 512
+        max_length = max_length
         train_datasets = [
             "boolq", "piqa", "social_i_qa", "hellaswag", 
             "winogrande", "ARC-Easy", "ARC-Challenge", "openbookqa"
@@ -289,7 +311,7 @@ def load_task(
         task_prompt_template = "%s\n"
         trigger_tokens = "the correct answer is "
     elif task == "math":
-        max_length = 512
+        max_length = max_length
         train_datasets = [
             "math_10k"
         ] if train_dataset is None else [train_dataset]
@@ -299,21 +321,19 @@ def load_task(
         task_prompt_template = alpaca_prompt_no_input_template
         trigger_tokens = "### Response:"
     elif task == "alpaca":
-        max_length = 512
-        train_datasets = [
-            "alpaca_data_cleaned"
-        ]
+        max_length = max_length
+        train_datasets = ["alpaca_data_cleaned"]
+        eval_datasets = ["alpaca_eval"]
         task_prompt_template = alpaca_prompt_template
         trigger_tokens = "### Response:"
     elif task == "instruct" or task == "ultrafeedback":
-        max_length = 2048
-        train_datasets = [
-            "instruct"
-        ]
+        max_length = max_length
+        train_datasets = [task]
+        eval_datasets = ["alpaca_eval"]
         task_prompt_template = alpaca_prompt_template
         trigger_tokens = "### Response:"
     elif task == "glue":
-        max_length = 512
+        max_length = max_length
         assert train_dataset is not None
         train_datasets = [train_dataset]
         # we will use the full validation split
@@ -326,16 +346,14 @@ def load_task(
     for dataset in train_datasets:
         result, _, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-            max_length, position, layers, train_on_inputs, split='train')
+            max_length, position, layers, train_on_inputs, split='train',
+            max_n_example=max_n_train_example, seed=seed
+        )
         for key in result:
             raw_train[key].extend(result[key])
         del _ # remove the task_dataset variable from memory
-    
-    # make dataset obj
-    train_dataset = Dataset.from_dict(raw_train).shuffle(seed=seed)
-    if max_n_train_example is not None:
-        train_dataset = train_dataset.select(range(max_n_train_example))
-    
+    train_dataset = Dataset.from_dict(raw_train)
+
     # eval
     all_eval_datasets = {}
     for dataset in eval_datasets:
@@ -344,10 +362,10 @@ def load_task(
         for split in test_splits:
             result, task_dataset, num_labels = reformat_by_task(
                 task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-                max_length, position, layers, False, split=split)
+                max_length, position, layers, False, split=split, 
+                max_n_example=max_n_eval_example
+            )
             eval_dataset = Dataset.from_dict(result)
-            if max_n_eval_example is not None:
-                eval_dataset = eval_dataset.select(range(max_n_eval_example))
             all_eval_datasets[dataset][split] = (eval_dataset, task_dataset)
 
     return train_dataset, all_eval_datasets, trigger_tokens, num_labels
