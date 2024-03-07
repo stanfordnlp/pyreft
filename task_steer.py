@@ -65,7 +65,6 @@ def finetune(
     eval_batch_size: int,
     warmup_ratio: float,
     weight_decay: float,
-    warmup_ratio: float,
     dropout: float,
     test_split: str,
     train_on_inputs: bool,
