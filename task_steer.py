@@ -62,9 +62,11 @@ def finetune(
     eval_batch_size: int,
     warmup_ratio: float,
     weight_decay: float,
+    warmup_ratio: float,
     dropout: float,
     test_split: str,
     train_on_inputs: bool,
+    max_length: int,
     args,
     dtype: torch.dtype=torch.bfloat16 if device == "cuda" else torch.float32,
 ):
@@ -81,6 +83,7 @@ def finetune(
         f"task: {task}, model: {model}, intervention_type: {intervention_type}, "
         f"layers: {layers}, rank: {rank}, "
         f"position: {position}, epoch: {epochs}, train_on_inputs: {train_on_inputs}"
+        f"max_length: {max_length}"
     )
 
     # everything is guarded by a single seed
@@ -125,7 +128,9 @@ def finetune(
     # load dataset splits
     train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
         task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
-        eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs)
+        eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs,
+        max_length
+    )
     print("loaded", len(train_dataset), len(eval_datasets), num_labels)
     
     # load model based on task type.
@@ -264,6 +269,7 @@ def finetune(
     for dataset_name in eval_datasets:
         # split evalset into chunks
         for split, (eval_dataset, data_items) in eval_datasets[dataset_name].items():
+            
             generations, stats = compute_metrics(
                 task, dataset_name, reft_model, tokenizer, eval_dataset, data_items,
                 trigger_tokens, run_name, eval_batch_size, 
@@ -314,15 +320,16 @@ def main():
     parser.add_argument('-gradient_accumulation_steps', '--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('-batch_size', '--batch_size', type=int, default=4)
     parser.add_argument('-eval_batch_size', '--eval_batch_size', type=int, default=4)
-    parser.add_argument('-warmup_ratio', '--warmup_ratio', type=float, default=0.1)
     parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
     parser.add_argument('-lr', '--lr', type=float, default=5e-3)
     parser.add_argument('-schedule', '--schedule', type=str, default='linear')
+    parser.add_argument('-wu', '--warmup_ratio', type=float, default=0.00)
     parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
     parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
     parser.add_argument('-test_split', '--test_split', type=str, default="validation")
     parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
+    parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
     
     args = parser.parse_args()
 
