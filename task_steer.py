@@ -65,6 +65,7 @@ def finetune(
     test_split: str,
     train_on_inputs: bool,
     max_length: int,
+    use_normalized_template: bool,
     args,
     dtype: torch.dtype=torch.bfloat16 if device == "cuda" else torch.float32,
 ):
@@ -126,7 +127,7 @@ def finetune(
     train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
         task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
         eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs,
-        max_length
+        max_length, use_normalized_template
     )
     print("loaded", len(train_dataset), len(eval_datasets), num_labels)
     
@@ -325,6 +326,7 @@ def main():
     parser.add_argument('-test_split', '--test_split', type=str, default="validation")
     parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
     parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
+    parser.add_argument('-nt', '--use_normalized_template', action='store_true')
     
     args = parser.parse_args()
 
