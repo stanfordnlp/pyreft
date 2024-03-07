@@ -408,6 +408,6 @@ def load_task(
                 max_n_example=max_n_eval_example
             )
             eval_dataset = Dataset.from_dict(result)
-            all_eval_datasets[dataset][split] = (eval_dataset, task_dataset)
+            all_eval_datasets[dataset][split] = [eval_dataset, task_dataset]
 
     return train_dataset, all_eval_datasets, trigger_tokens, num_labels
