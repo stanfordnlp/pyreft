@@ -55,10 +55,12 @@ def finetune(
     output_dir: str,
     task: str,
     lr: float,
+    schedule: str,
     train_dataset: str,
     eval_dataset: str,
     save_model: bool,
     eval_batch_size: int,
+    warmup_ratio: float,
     weight_decay: float,
     dropout: float,
     test_split: str,
@@ -106,7 +108,8 @@ def finetune(
         else:
             layers = [int(l) for l in layers.split(";")]
     else:
-        layers = [l for l in range(config.num_hidden_layers)]
+        temp_config = AutoConfig.from_pretrained(model)
+        layers = [l for l in range(temp_config.num_hidden_layers)]
     assert position in {"first", "last", "first+last"}
     if position in {"first+last"}:
         if user_give_all_layers:
@@ -220,8 +223,9 @@ def finetune(
         logging_strategy="steps",
         save_total_limit=1,
         logging_steps=1,
+        lr_scheduler_type=schedule,
         learning_rate=lr,
-        warmup_ratio=0.1,
+        warmup_ratio=warmup_ratio,
         optim="adamw_torch",
         weight_decay=weight_decay,
         report_to="wandb" if is_wandb else "none",
@@ -310,8 +314,10 @@ def main():
     parser.add_argument('-gradient_accumulation_steps', '--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('-batch_size', '--batch_size', type=int, default=4)
     parser.add_argument('-eval_batch_size', '--eval_batch_size', type=int, default=4)
+    parser.add_argument('-warmup_ratio', '--warmup_ratio', type=float, default=0.1)
     parser.add_argument('-output_dir', '--output_dir', type=str, default="./official_results")
     parser.add_argument('-lr', '--lr', type=float, default=5e-3)
+    parser.add_argument('-schedule', '--schedule', type=str, default='linear')
     parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
     parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
