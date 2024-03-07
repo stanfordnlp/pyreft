@@ -72,6 +72,7 @@ def finetune(
     use_normalized_template: bool,
     metric_for_best_model: str,
     logging_steps: int,
+    wandb_dir: str,
     args,
     dtype: torch.dtype=torch.bfloat16 if device == "cuda" else torch.float32,
 ):
@@ -242,6 +243,7 @@ def finetune(
             project=f"MyReFT_{task}", 
             entity=wandb_name,
             name=run_name,
+            dir=wandb_dir,
         )
         run.summary.update(vars(args))
         wandb.log(
@@ -367,6 +369,7 @@ def main():
     parser.add_argument('-nt', '--use_normalized_template', action='store_true')
     parser.add_argument('-metric_for_best_model', '--metric_for_best_model', type=str, default="accuracy")
     parser.add_argument('-logging_steps', '--logging_steps', type=int, help=1, default=1)
+    parser.add_argument('-wandb_dir', '--wandb_dir', type=str, default='wandb')
     
     args = parser.parse_args()
 
