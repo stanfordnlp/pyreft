@@ -144,6 +144,7 @@ def reformat_by_task(
     position: str="last",
     layers: int=[1],
     train_on_inputs: bool=False,
+    use_normalized_template: bool=False,
     split: str='train',
     max_n_example: int=None,
     seed: int=42
@@ -206,10 +207,51 @@ def reformat_by_task(
         
         for i, data_item in enumerate(tqdm(task_dataset)):
             
-            if task == "commonsense" or task == "math":
+            if use_normalized_template:
+                # format task-specific prompt
+                if task == "commonsense":
+                    base_prompt = task_prompt_template % (data_item['instruction'])
+                    base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.eos_token
+                elif task == "math":
+                    # we strip since these are model generated examples.
+                    base_prompt = task_prompt_template % (data_item['instruction'])
+                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+                elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
+                    if 'input' not in data_item or data_item['input'] == "":
+                        base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
+                    else:
+                        base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
+                    base_input = base_prompt + data_item["output"]
+                
+                # tokenize
+                base_prompt_ids = tokenizer(
+                    base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+                base_prompt_length = len(base_prompt_ids)
                 if split == "train":
-                    # for this subroutine, we follow the setup of
-                    # https://github.com/AGI-Edgerunners/LLM-Adapters
+                    base_input_ids = tokenizer(
+                        base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+                    output_ids = deepcopy(base_input_ids)
+                    # mask prompt in labels
+                    if not train_on_inputs:
+                        output_ids[:base_prompt_length] = -100
+                    if (
+                            base_input_ids[-1] != tokenizer.eos_token_id
+                            and len(base_input_ids) < max_length
+                    ):
+                        base_input_ids.append(tokenizer.eos_token_id)
+                        output_ids.append(tokenizer.eos_token_id)
+                        
+                result["input_ids"].append(base_input_ids)
+                if split == "train":
+                    result["labels"].append(output_ids)
+                last_position = torch.tensor([base_prompt_length-1,])
+
+            else:
+                # for this subroutine, we follow the setup of
+                # https://github.com/AGI-Edgerunners/LLM-Adapters
+                # this is for the commonsense and math reasoning tasks only
+                assert (task == "commonsense" or task == "math")
+                if split == "train":
                     tokenized_full_prompt, user_prompt_len = \
                         generate_and_tokenize_prompt(
                             tokenizer, data_item,
@@ -219,67 +261,21 @@ def reformat_by_task(
                     result["input_ids"].append(tokenized_full_prompt["input_ids"])
                     result["labels"].append(tokenized_full_prompt["labels"])
                 else:
-                    # for this subroutine, we follow the setup of
-                    # https://github.com/AGI-Edgerunners/LLM-Adapters
                     prompt = generate_prompt_for_generate(data_item.get('instruction'), input=None)
                     tokenized_user_prompt = tokenizer(prompt)
                     user_prompt_len = len(tokenized_user_prompt["input_ids"])
                     result["input_ids"].append(tokenized_user_prompt["input_ids"])
-
                 last_position = torch.tensor([user_prompt_len-1,])
-                # compute intervention positions
-                base_last_location = last_position.tolist()
-                if position in {"first+last"}:
-                    base_first_location = torch.zeros_like(last_position).tolist()
-                    intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
-                else:
-                    intervention_locations = [base_last_location]*len(layers)
-                result["intervention_locations"].append(intervention_locations)
-                result["id"].append(i)
-
-            elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
-                if 'input' not in data_item or data_item['input'] == "":
-                    base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
-                else:
-                    base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
-
-                # tokenize
-                base_prompt_ids = tokenizer(
-                    base_prompt, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
-                base_prompt_length = len(base_prompt_ids)
-                if split == "train":
-                    base_input = base_prompt + data_item["output"]
-                    base_input_ids = tokenizer(
-                        base_input, max_length=max_length, truncation=True, return_tensors="pt")["input_ids"][0]
-                    output_ids = deepcopy(base_input_ids)
-                    # mask prompt in labels
-                    if not train_on_inputs:
-                        output_ids[:base_prompt_length] = -100
-    
-                    if (
-                            base_input_ids[-1] != tokenizer.eos_token_id
-                            and len(base_input_ids) < max_length
-                    ):
-                        base_input_ids.append(tokenizer.eos_token_id)
-                        output_ids.append(tokenizer.eos_token_id)
                 
-                last_position = torch.tensor([base_prompt_length-1,])
-        
-                # compute intervention positions
-                base_last_location = last_position.tolist()
-                if position in {"first+last"}:
-                    base_first_location = torch.zeros_like(last_position).tolist()
-                    intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
-                else:
-                    intervention_locations = [base_last_location]*len(layers)
-        
-                if split == "train":
-                    result["input_ids"].append(base_input_ids)
-                    result["labels"].append(output_ids)
-                else:
-                    result["input_ids"].append(base_prompt_ids)
-                result["intervention_locations"].append(intervention_locations)
-                result["id"].append(i)
+            # compute intervention positions
+            base_last_location = last_position.tolist()
+            if position in {"first+last"}:
+                base_first_location = torch.zeros_like(last_position).tolist()
+                intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
+            else:
+                intervention_locations = [base_last_location]*len(layers)
+            result["intervention_locations"].append(intervention_locations)
+            result["id"].append(i)
 
     return result, task_dataset, num_labels
 
@@ -297,6 +293,7 @@ def load_task(
     layers: int=[1],
     train_on_inputs: bool=False,
     max_length: int=512,
+    use_normalized_template: bool=False,
 ):
     # config
     if task == "commonsense":
@@ -346,8 +343,8 @@ def load_task(
     for dataset in train_datasets:
         result, _, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-            max_length, position, layers, train_on_inputs, split='train',
-            max_n_example=max_n_train_example, seed=seed
+            max_length, position, layers, train_on_inputs, use_normalized_template, 
+            split='train', max_n_example=max_n_train_example, seed=seed
         )
         for key in result:
             raw_train[key].extend(result[key])
@@ -362,10 +359,10 @@ def load_task(
         for split in test_splits:
             result, task_dataset, num_labels = reformat_by_task(
                 task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-                max_length, position, layers, False, split=split, 
+                max_length, position, layers, False, use_normalized_template, split=split, 
                 max_n_example=max_n_eval_example
             )
             eval_dataset = Dataset.from_dict(result)
-            all_eval_datasets[dataset][split] = (eval_dataset, task_dataset)
+            all_eval_datasets[dataset][split] = [eval_dataset, task_dataset]
 
     return train_dataset, all_eval_datasets, trigger_tokens, num_labels

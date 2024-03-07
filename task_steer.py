@@ -14,10 +14,13 @@ from transformers import (
     get_linear_schedule_with_warmup,
     set_seed
 )
+from transformers.trainer_utils import EvalPrediction
 import wandb
+import evaluate
 import datetime
 import json
 import math
+import numpy as np
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 
@@ -67,6 +70,8 @@ def finetune(
     test_split: str,
     train_on_inputs: bool,
     max_length: int,
+    use_normalized_template: bool,
+    metric_for_best_model: str,
     args,
     dtype: torch.dtype=torch.bfloat16 if device == "cuda" else torch.float32,
 ):
@@ -82,7 +87,7 @@ def finetune(
     print(
         f"task: {task}, model: {model}, intervention_type: {intervention_type}, "
         f"layers: {layers}, rank: {rank}, "
-        f"position: {position}, epoch: {epochs}, train_on_inputs: {train_on_inputs}"
+        f"position: {position}, epoch: {epochs}, train_on_inputs: {train_on_inputs}, "
         f"max_length: {max_length}"
     )
 
@@ -124,15 +129,42 @@ def finetune(
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.padding_side = "right" # we will use right padding for training with teacher-forcing
     tokenizer.pad_token = tokenizer.unk_token
-
+    
     # load dataset splits
     train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
         task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
         eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs,
-        max_length
+        max_length, use_normalized_template
     )
-    print("loaded", len(train_dataset), len(eval_datasets), num_labels)
-    
+    print("loaded", train_dataset, eval_datasets, num_labels)
+    if task == "glue":
+        # we repartition the eval_datatsets into [1] 50% validation + [2] 50% test
+        # we select the best model on [1] during training
+        # we test the selected model on [2] to ensure fairness
+        to_split_eval_datasets = eval_datasets[train_dataset_str]["validation"][0]
+        if len(to_split_eval_datasets) > 5000:
+            in_train_n_eval_sample = 1000
+        else:
+            in_train_n_eval_sample = len(to_split_eval_datasets) // 2
+
+        new_splits = to_split_eval_datasets.train_test_split(test_size=in_train_n_eval_sample)
+        in_test_eval_datasets, in_train_eval_datasets = new_splits["train"], new_splits["test"]
+        eval_datasets[train_dataset_str]["validation"][0] = in_test_eval_datasets
+        print("GLUE validation split (in training): ", in_train_eval_datasets)
+        print("GLUE validation split (testing): ", eval_datasets[train_dataset_str]["validation"][0])
+
+        is_regression = train_dataset_str == "stsb"
+        metric = evaluate.load("glue", train_dataset_str)
+        # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
+        # predictions and label_ids field) and has to return a dictionary string to float.
+        def in_training_compute_metrics(p: EvalPrediction):
+            preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+            preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
+            result = metric.compute(predictions=preds, references=p.label_ids)
+            if len(result) > 1:
+                result["combined_score"] = np.mean(list(result.values())).item()
+            return result
+
     # load model based on task type.
     if task in classification_tasks:
         config = AutoConfig.from_pretrained(
@@ -223,10 +255,12 @@ def finetune(
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=eval_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
-        evaluation_strategy="no",
-        save_strategy="no",
+        evaluation_strategy="epoch" if task == "glue" else "no",
+        save_strategy="epoch" if task == "glue" else "no",
+        metric_for_best_model=metric_for_best_model if task == "glue" else None,
+        load_best_model_at_end=True if task == "glue" else False,
         logging_strategy="steps",
-        save_total_limit=1,
+        save_total_limit=1, # for GLUE, it will save 2 at max.
         logging_steps=1,
         lr_scheduler_type=schedule,
         learning_rate=lr,
@@ -246,8 +280,8 @@ def finetune(
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
-        eval_dataset=None,
-        compute_metrics=None,
+        eval_dataset=in_train_eval_datasets if task == "glue" else None,
+        compute_metrics=in_training_compute_metrics if task == "glue" else None,
     )
     trainer.train()
 
@@ -330,6 +364,8 @@ def main():
     parser.add_argument('-test_split', '--test_split', type=str, default="validation")
     parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
     parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
+    parser.add_argument('-nt', '--use_normalized_template', action='store_true')
+    parser.add_argument('-metric_for_best_model', '--metric_for_best_model', type=str, default="accuracy")
     
     args = parser.parse_args()
 
