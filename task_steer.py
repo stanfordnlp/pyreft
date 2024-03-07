@@ -39,6 +39,12 @@ classification_tasks = {"glue"}
 residual_stream_component_mapping = {
     "robertaformaskedlm": "roberta.encoder.layer[%s].output"
 }
+dtype_mapping = {
+    "float32": torch.float32,
+    "float16": torch.float16,
+    "bfloat16": torch.bfloat16,
+    "float8": "float8",
+}
 
 def finetune(
     act_fn: str,
@@ -65,15 +71,14 @@ def finetune(
     eval_batch_size: int,
     warmup_ratio: float,
     weight_decay: float,
-    warmup_ratio: float,
     dropout: float,
     test_split: str,
     train_on_inputs: bool,
     max_length: int,
     use_normalized_template: bool,
     metric_for_best_model: str,
+    dtype: str,
     args,
-    dtype: torch.dtype=torch.bfloat16 if device == "cuda" else torch.float32,
 ):
     """
     Generic Representation Finetuning.
@@ -82,6 +87,7 @@ def finetune(
     assert task in {
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue"
     }
+    dtype = dtype_mapping[dtype]
     
     # store/log run details
     print(
@@ -170,20 +176,26 @@ def finetune(
         config = AutoConfig.from_pretrained(
             model, num_labels=num_labels,
             finetuning_task=train_dataset_str,
+            load_in_8bit=True if dtype == "float8" else False,
+            device_map=device
         )
         # full precision loading since usually for small models
         model = AutoModelForSequenceClassification.from_pretrained(
             model,
             config=config, # just providing the label
-            torch_dtype=dtype
+            torch_dtype=dtype if dtype != "float8" else None,
+            load_in_8bit=True if dtype == "float8" else False,
+            device_map=device
         )
     else:
         model = AutoModelForCausalLM.from_pretrained(
             model,
-            torch_dtype=dtype,  # save memory
+            torch_dtype=dtype if dtype != "float8" else None,  # save memory
+            load_in_8bit=True if dtype == "float8" else False,
+            device_map=device
         )
         config = model.config
-    _ = model.to(device)
+    dtype = torch.bfloat16 if dtype == "float8" else dtype
 
     # post-processing the inputs
     if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
@@ -366,6 +378,7 @@ def main():
     parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
     parser.add_argument('-nt', '--use_normalized_template', action='store_true')
     parser.add_argument('-metric_for_best_model', '--metric_for_best_model', type=str, default="accuracy")
+    parser.add_argument('-dtype', '--dtype', type=str, default="bfloat16" if device == "cuda" else "float32")
     
     args = parser.parse_args()
 
