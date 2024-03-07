@@ -9,7 +9,6 @@ import torch
 import re
 import evaluate
 import numpy as np
-from sklearn.metrics import classification_report
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers.utils import logging
 from transformers.trainer_utils import (
@@ -397,7 +396,6 @@ def compute_metrics(
                 result["combined_score"] = np.mean(list(result.values())).item()
             return result
         
-        # print(classification_report(all_labels, all_preds, digits=3))
         report = compute_metrics_glue(all_labels, all_preds)
         print_str = "task metrics "
         if split:
