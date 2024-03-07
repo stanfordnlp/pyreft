@@ -22,8 +22,8 @@ python task_steer.py -task glue \
 -e 10 \
 -lr 1e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation_matched \
 -max_length 256 \
@@ -44,8 +44,8 @@ python task_steer.py -task glue \
 -e 10 \
 -lr 1e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
@@ -66,8 +66,8 @@ python task_steer.py -task glue \
 -e 20 \
 -lr 2e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
@@ -88,8 +88,8 @@ python task_steer.py -task glue \
 -e 20 \
 -lr 1e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
@@ -110,8 +110,8 @@ python task_steer.py -task glue \
 -e 10 \
 -lr 1e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
@@ -132,8 +132,8 @@ python task_steer.py -task glue \
 -e 10 \
 -lr 1e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
@@ -154,8 +154,8 @@ python task_steer.py -task glue \
 -e 20 \
 -lr 5e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
@@ -176,8 +176,8 @@ python task_steer.py -task glue \
 -e 10 \
 -lr 5e-3 \
 -type ConditionedSourceLowRankIntervention \
--batch_size 16 \
--gradient_accumulation_steps 2 \
+-batch_size 32 \
+-gradient_accumulation_steps 1 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
