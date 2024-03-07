@@ -71,6 +71,7 @@ def finetune(
     max_length: int,
     use_normalized_template: bool,
     metric_for_best_model: str,
+    logging_steps: int,
     args,
     dtype: torch.dtype=torch.bfloat16 if device == "cuda" else torch.float32,
 ):
@@ -140,7 +141,7 @@ def finetune(
         # we repartition the eval_datatsets into [1] 50% validation + [2] 50% test
         # we select the best model on [1] during training
         # we test the selected model on [2] to ensure fairness
-        to_split_eval_datasets = eval_datasets[train_dataset_str]["validation"][0]
+        to_split_eval_datasets = eval_datasets[train_dataset_str][test_split][0]
         if len(to_split_eval_datasets) > 5000:
             in_train_n_eval_sample = 1000
         else:
@@ -148,9 +149,9 @@ def finetune(
 
         new_splits = to_split_eval_datasets.train_test_split(test_size=in_train_n_eval_sample)
         in_test_eval_datasets, in_train_eval_datasets = new_splits["train"], new_splits["test"]
-        eval_datasets[train_dataset_str]["validation"][0] = in_test_eval_datasets
+        eval_datasets[train_dataset_str][test_split][0] = in_test_eval_datasets
         print("GLUE validation split (in training): ", in_train_eval_datasets)
-        print("GLUE validation split (testing): ", eval_datasets[train_dataset_str]["validation"][0])
+        print("GLUE validation split (testing): ", eval_datasets[train_dataset_str][test_split][0])
 
         is_regression = train_dataset_str == "stsb"
         metric = evaluate.load("glue", train_dataset_str)
@@ -260,7 +261,7 @@ def finetune(
         load_best_model_at_end=True if task == "glue" else False,
         logging_strategy="steps",
         save_total_limit=1, # for GLUE, it will save 2 at max.
-        logging_steps=1,
+        logging_steps=logging_steps,
         lr_scheduler_type=schedule,
         learning_rate=lr,
         warmup_ratio=warmup_ratio,
@@ -365,6 +366,7 @@ def main():
     parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
     parser.add_argument('-nt', '--use_normalized_template', action='store_true')
     parser.add_argument('-metric_for_best_model', '--metric_for_best_model', type=str, default="accuracy")
+    parser.add_argument('-logging_steps', '--logging_steps', type=int, help=1, default=1)
     
     args = parser.parse_args()
 
