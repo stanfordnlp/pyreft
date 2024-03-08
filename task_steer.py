@@ -42,6 +42,7 @@ residual_stream_component_mapping = {
 
 def finetune(
     act_fn: str,
+    add_bias: bool,
     model: str,
     layers: str,
     rank: int,
@@ -186,14 +187,11 @@ def finetune(
         config = model.config
     _ = model.to(device)
 
-    # post-processing the inputs
-    if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
-        intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
-    elif intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
+    if intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
         intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
     elif intervention_type == "ConditionedSourceLowRankIntervention":
         intervention_type = ConditionedSourceLowRankIntervention
-    
+        
     # select collator based on the type
     if task in classification_tasks:
         data_collator = DataCollatorWithPadding(
@@ -215,7 +213,8 @@ def finetune(
             "component": residual_stream_component_mapping[model_arch] % l,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype, act_fn=act_fn
+                dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
+                add_bias=add_bias
             )
         } for l in layers])
     else:
@@ -224,7 +223,8 @@ def finetune(
             "low_rank_dimension": rank,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype, act_fn=act_fn
+                dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
+                add_bias=add_bias
             )
         } for l in layers])
 
@@ -363,6 +363,7 @@ def main():
     parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
     parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
+    parser.add_argument('-add_bias', '--add_bias', action='store_true')
     parser.add_argument('-test_split', '--test_split', type=str, default="validation")
     parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
     parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
