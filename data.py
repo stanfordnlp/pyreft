@@ -184,7 +184,7 @@ def reformat_by_task(
             output_ids = data_item["label"]
 
             # CLS token only for now.
-            intervention_locations = [[0]]*len(layers)
+            intervention_locations = [[0]]*(len(layers)+1)
             result["input_ids"].append(base_input_ids)
             result["intervention_locations"].append(intervention_locations)
             result["labels"].append(output_ids)

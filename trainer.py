@@ -221,12 +221,17 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
     def save_model(self, output_dir, _internal_call):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        self.model.save(save_directory=f"{output_dir}/intervenable_model")
+        self.model.save_intervention(
+            save_directory=f"{output_dir}/intervenable_model", 
+            include_model=True
+        )
 
     def _load_best_model(self):
         logger.info(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
-        model = self.model
-        model.load_intervention(f"{self.state.best_model_checkpoint}/intervenable_model")
+        self.model.load_intervention(
+            f"{self.state.best_model_checkpoint}/intervenable_model", 
+            include_model=True
+        )
 
 def compute_metrics(
     task: str,

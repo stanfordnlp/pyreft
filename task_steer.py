@@ -40,6 +40,8 @@ residual_stream_component_mapping = {
     "robertaformaskedlm": "roberta.encoder.layer[%s].output"
 }
 
+
+
 def finetune(
     act_fn: str,
     add_bias: bool,
@@ -71,6 +73,7 @@ def finetune(
     train_on_inputs: bool,
     max_length: int,
     use_normalized_template: bool,
+    allow_cls_grad: bool,
     metric_for_best_model: str,
     logging_steps: int,
     wandb_dir: str,
@@ -90,7 +93,7 @@ def finetune(
         f"task: {task}, model: {model}, intervention_type: {intervention_type}, "
         f"layers: {layers}, rank: {rank}, "
         f"position: {position}, epoch: {epochs}, train_on_inputs: {train_on_inputs}, "
-        f"max_length: {max_length}"
+        f"max_length: {max_length}, allow_cls_grad: {allow_cls_grad}"
     )
 
     # everything is guarded by a single seed
@@ -209,14 +212,15 @@ def finetune(
     # intervention config based on model type
     model_arch = model.config.architectures[0].lower()
     if model_arch in residual_stream_component_mapping:
-        config = pv.IntervenableConfig([{
+        intervention_list = [{
             "component": residual_stream_component_mapping[model_arch] % l,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
                 dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
                 add_bias=add_bias
             )
-        } for l in layers])
+        } for l in layers]
+        config = pv.IntervenableConfig(intervention_list)
     else:
         config = pv.IntervenableConfig([{
             "layer": l, "component": "block_output",
@@ -232,10 +236,17 @@ def finetune(
     reft_model.set_device(device)
     reft_model.disable_model_gradients()
 
+    # for GLUE tasks, we enable gradients on the classifier head.
+    # the parameter will be counted as well.
+    if task == "glue" and allow_cls_grad:
+        for param in reft_model.model.classifier.parameters():
+            # reft_model with HF trainer will automatically pick up these params to optimize
+            param.requires_grad = True
+
     # train enables dropout but no grads.
     # this line might not be necessary since HF trainer enables this by default.
     reft_model.model.train()
-    n_params = reft_model.count_parameters()
+    n_params = reft_model.count_parameters(include_model=False)
 
     # start wandb logging
     if is_wandb:
@@ -368,6 +379,7 @@ def main():
     parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
     parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
     parser.add_argument('-nt', '--use_normalized_template', action='store_true')
+    parser.add_argument('-allow_cls_grad', '--allow_cls_grad', action='store_true')
     parser.add_argument('-metric_for_best_model', '--metric_for_best_model', type=str, default="accuracy")
     parser.add_argument('-logging_steps', '--logging_steps', type=int, help=1, default=1)
     parser.add_argument('-wandb_dir', '--wandb_dir', type=str, default='wandb')
