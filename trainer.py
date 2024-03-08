@@ -263,13 +263,13 @@ def compute_metrics(
                     inputs[k] = v.to(device)
             
             # [layers, batch_size, positions]
-            intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).tolist()
+            intervention_locations = inputs["intervention_locations"].permute(1, 0, 2)
     
             if task == "glue":
     
                 _, cf_outputs = intervenable(
                     {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
-                    unit_locations={"sources->base": (None, intervention_locations)})
+                    unit_locations={"sources->base": (None, intervention_locations.tolist())})
             
                 # lm loss on counterfactual labels
                 if dataset_name != "stsb":
