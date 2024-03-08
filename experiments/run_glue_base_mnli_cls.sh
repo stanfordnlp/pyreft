@@ -33,5 +33,6 @@ python task_steer.py -task glue \
 --weight_decay 0.0001 \
 --warmup_ratio 0.06 \
 --logging_steps 20 \
+--add_bias \
 --allow_cls_grad
 
