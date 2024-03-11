@@ -241,9 +241,11 @@ def reformat_by_task(
                         base_input_ids.append(tokenizer.eos_token_id)
                         output_ids.append(tokenizer.eos_token_id)
                         
-                result["input_ids"].append(base_input_ids)
                 if split == "train":
+                    result["input_ids"].append(base_input_ids)
                     result["labels"].append(output_ids)
+                else:
+                    result["input_ids"].append(base_prompt_ids)
                 last_position = torch.tensor([base_prompt_length-1,])
 
             else:
