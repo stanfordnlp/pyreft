@@ -195,7 +195,7 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
                         inputs[k] = v.to(device)
                 
                 # [layers, batch_size, positions]
-                intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).to(device)
+                intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).tolist()
                 _, cf_outputs = intervenable(
                     {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
                     unit_locations={"sources->base": (None, intervention_locations)})
@@ -221,12 +221,17 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
     def save_model(self, output_dir, _internal_call):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        self.model.save(save_directory=f"{output_dir}/intervenable_model")
+        self.model.save_intervention(
+            save_directory=f"{output_dir}/intervenable_model", 
+            include_model=True
+        )
 
     def _load_best_model(self):
         logger.info(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
-        model = self.model
-        model.load_intervention(f"{self.state.best_model_checkpoint}/intervenable_model")
+        self.model.load_intervention(
+            f"{self.state.best_model_checkpoint}/intervenable_model", 
+            include_model=True
+        )
 
 def compute_metrics(
     task: str,
@@ -263,13 +268,13 @@ def compute_metrics(
                     inputs[k] = v.to(device)
             
             # [layers, batch_size, positions]
-            intervention_locations = inputs["intervention_locations"].permute(1, 0, 2).to(device)
+            intervention_locations = inputs["intervention_locations"].permute(1, 0, 2)
     
             if task == "glue":
     
                 _, cf_outputs = intervenable(
                     {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
-                    unit_locations={"sources->base": (None, intervention_locations)})
+                    unit_locations={"sources->base": (None, intervention_locations.tolist())})
             
                 # lm loss on counterfactual labels
                 if dataset_name != "stsb":

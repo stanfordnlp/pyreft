@@ -46,8 +46,11 @@ dtype_mapping = {
     "float8": "float8",
 }
 
+
+
 def finetune(
     act_fn: str,
+    add_bias: bool,
     model: str,
     layers: str,
     rank: int,
@@ -76,8 +79,11 @@ def finetune(
     train_on_inputs: bool,
     max_length: int,
     use_normalized_template: bool,
+    allow_cls_grad: bool,
     metric_for_best_model: str,
     dtype: str,
+    logging_steps: int,
+    wandb_dir: str,
     args,
 ):
     """
@@ -94,7 +100,7 @@ def finetune(
         f"task: {task}, model: {model}, intervention_type: {intervention_type}, "
         f"layers: {layers}, rank: {rank}, "
         f"position: {position}, epoch: {epochs}, train_on_inputs: {train_on_inputs}, "
-        f"max_length: {max_length}"
+        f"max_length: {max_length}, allow_cls_grad: {allow_cls_grad}"
     )
 
     # everything is guarded by a single seed
@@ -147,7 +153,7 @@ def finetune(
         # we repartition the eval_datatsets into [1] 50% validation + [2] 50% test
         # we select the best model on [1] during training
         # we test the selected model on [2] to ensure fairness
-        to_split_eval_datasets = eval_datasets[train_dataset_str]["validation"][0]
+        to_split_eval_datasets = eval_datasets[train_dataset_str][test_split][0]
         if len(to_split_eval_datasets) > 5000:
             in_train_n_eval_sample = 1000
         else:
@@ -155,9 +161,9 @@ def finetune(
 
         new_splits = to_split_eval_datasets.train_test_split(test_size=in_train_n_eval_sample)
         in_test_eval_datasets, in_train_eval_datasets = new_splits["train"], new_splits["test"]
-        eval_datasets[train_dataset_str]["validation"][0] = in_test_eval_datasets
+        eval_datasets[train_dataset_str][test_split][0] = in_test_eval_datasets
         print("GLUE validation split (in training): ", in_train_eval_datasets)
-        print("GLUE validation split (testing): ", eval_datasets[train_dataset_str]["validation"][0])
+        print("GLUE validation split (testing): ", eval_datasets[train_dataset_str][test_split][0])
 
         is_regression = train_dataset_str == "stsb"
         metric = evaluate.load("glue", train_dataset_str)
@@ -197,14 +203,11 @@ def finetune(
         config = model.config
     dtype = torch.bfloat16 if dtype == "float8" else dtype
 
-    # post-processing the inputs
-    if intervention_type == "LearnedSourceLowRankRotatedSpaceIntervention":
-        intervention_type = LearnedSourceLowRankRotatedSpaceIntervention
-    elif intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
+    if intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
         intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
     elif intervention_type == "ConditionedSourceLowRankIntervention":
         intervention_type = ConditionedSourceLowRankIntervention
-    
+        
     # select collator based on the type
     if task in classification_tasks:
         data_collator = DataCollatorWithPadding(
@@ -222,20 +225,23 @@ def finetune(
     # intervention config based on model type
     model_arch = model.config.architectures[0].lower()
     if model_arch in residual_stream_component_mapping:
-        config = pv.IntervenableConfig([{
+        intervention_list = [{
             "component": residual_stream_component_mapping[model_arch] % l,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype, act_fn=act_fn
+                dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
+                add_bias=add_bias
             )
-        } for l in layers])
+        } for l in layers]
+        config = pv.IntervenableConfig(intervention_list)
     else:
         config = pv.IntervenableConfig([{
             "layer": l, "component": "block_output",
             "low_rank_dimension": rank,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype, act_fn=act_fn
+                dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
+                add_bias=add_bias
             )
         } for l in layers])
 
@@ -243,10 +249,17 @@ def finetune(
     reft_model.set_device(device)
     reft_model.disable_model_gradients()
 
+    # for GLUE tasks, we enable gradients on the classifier head.
+    # the parameter will be counted as well.
+    if task == "glue" and allow_cls_grad:
+        for param in reft_model.model.classifier.parameters():
+            # reft_model with HF trainer will automatically pick up these params to optimize
+            param.requires_grad = True
+
     # train enables dropout but no grads.
     # this line might not be necessary since HF trainer enables this by default.
     reft_model.model.train()
-    n_params = reft_model.count_parameters()
+    n_params = reft_model.count_parameters(include_model=False)
 
     # start wandb logging
     if is_wandb:
@@ -254,6 +267,7 @@ def finetune(
             project=f"MyReFT_{task}", 
             entity=wandb_name,
             name=run_name,
+            dir=wandb_dir,
         )
         run.summary.update(vars(args))
         wandb.log(
@@ -273,7 +287,7 @@ def finetune(
         load_best_model_at_end=True if task == "glue" else False,
         logging_strategy="steps",
         save_total_limit=1, # for GLUE, it will save 2 at max.
-        logging_steps=1,
+        logging_steps=logging_steps,
         lr_scheduler_type=schedule,
         learning_rate=lr,
         warmup_ratio=warmup_ratio,
@@ -373,12 +387,16 @@ def main():
     parser.add_argument('-wd', '--weight_decay', type=float, default=0.00)
     parser.add_argument('-dropout', '--dropout', type=float, default=0.00)
     parser.add_argument('-act_fn', '--act_fn', type=str, default=None)
+    parser.add_argument('-add_bias', '--add_bias', action='store_true')
     parser.add_argument('-test_split', '--test_split', type=str, default="validation")
     parser.add_argument('-train_on_inputs', '--train_on_inputs', action='store_true')
     parser.add_argument('-max_length', '--max_length', type=int, help=512, default=512)
     parser.add_argument('-nt', '--use_normalized_template', action='store_true')
+    parser.add_argument('-allow_cls_grad', '--allow_cls_grad', action='store_true')
     parser.add_argument('-metric_for_best_model', '--metric_for_best_model', type=str, default="accuracy")
     parser.add_argument('-dtype', '--dtype', type=str, default="bfloat16" if device == "cuda" else "float32")
+    parser.add_argument('-logging_steps', '--logging_steps', type=int, help=1, default=1)
+    parser.add_argument('-wandb_dir', '--wandb_dir', type=str, default='wandb')
     
     args = parser.parse_args()
 

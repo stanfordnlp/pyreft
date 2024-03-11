@@ -184,7 +184,7 @@ def reformat_by_task(
             output_ids = data_item["label"]
 
             # CLS token only for now.
-            intervention_locations = [[0]]*len(layers)
+            intervention_locations = [[0]]*(len(layers)+1)
             result["input_ids"].append(base_input_ids)
             result["intervention_locations"].append(intervention_locations)
             result["labels"].append(output_ids)
@@ -241,7 +241,6 @@ def reformat_by_task(
                         base_input_ids.append(tokenizer.eos_token_id)
                         output_ids.append(tokenizer.eos_token_id)
                         
-                if split == "train":
                     result["input_ids"].append(base_input_ids)
                     result["labels"].append(output_ids)
                 else:
