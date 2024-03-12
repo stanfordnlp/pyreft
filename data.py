@@ -274,12 +274,13 @@ def reformat_by_task(
                     result["input_ids"].append(tokenized_user_prompt["input_ids"])
                 last_position = torch.tensor([user_prompt_len-1,])
                 middle_position = torch.tensor([(user_prompt_len-1)//2,])
-                base_first_location = torch.zeros_like(last_position).tolist()
-                
+            
             # compute intervention positions
+            base_first_location = torch.zeros_like(last_position).tolist()
+            base_middle_location = middle_position.tolist()
             base_last_location = last_position.tolist()
             if position in {"first+middle+last"}:
-                intervention_locations = [base_first_location]*(len(layers)//3)+[middle_position]*(len(layers)//3)+[base_last_location]*(len(layers)//3)
+                intervention_locations = [base_first_location]*(len(layers)//3)+[base_middle_location]*(len(layers)//3)+[base_last_location]*(len(layers)//3)
             elif position in {"first+last"}:
                 intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
             else:
