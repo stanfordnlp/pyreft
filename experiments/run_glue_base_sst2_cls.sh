@@ -16,12 +16,12 @@ python task_steer.py -task glue \
 -train_dataset sst2 \
 -model FacebookAI/roberta-base \
 -seed $RANDOM_SEED \
--l "1;3;5;7;9;11" \
+-l "5;6;11+5;6;10" \
 -r 2 \
--p first \
--e 20 \
--lr 2e-3 \
--type ConditionedSourceLowRankIntervention \
+-p first+last \
+-e 6 \
+-lr 9e-4 \
+-type ConditionedSourceLowRankRotatedSpaceIntervention \
 -gradient_accumulation_steps 1 \
 -batch_size 32 \
 -eval_batch_size 32 \
@@ -30,9 +30,10 @@ python task_steer.py -task glue \
 --is_wandb \
 --wandb_name wuzhengx \
 --metric_for_best_model accuracy \
---weight_decay 0.0001 \
---warmup_ratio 0.06 \
+--weight_decay 0.0000 \
+--warmup_ratio 0.00 \
 --logging_steps 20 \
+--allow_cls_grad \
 --add_bias \
---allow_cls_grad
-
+--dropout 0.05 \
+--schedule constant

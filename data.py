@@ -185,7 +185,8 @@ def reformat_by_task(
 
             last_position = torch.tensor([len(base_input_ids)-1,])
             base_first_location = torch.zeros_like(last_position).tolist()
-            base_last_location = last_position.tolist()
+            base_last_location = torch.ones_like(last_position).tolist()
+            # base_last_location = last_position.tolist()
             if position in {"first+last"}:
                 intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
             else:
