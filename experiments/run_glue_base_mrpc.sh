@@ -32,4 +32,6 @@ python task_steer.py -task glue \
 --metric_for_best_model accuracy \
 --weight_decay 0.0001 \
 --warmup_ratio 0.06 \
---logging_steps 20
+--logging_steps 20 \
+--add_bias
+

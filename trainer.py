@@ -380,7 +380,7 @@ def compute_metrics(
                         eval_iterator.set_postfix({"em": metric_str})
                         generations += [{
                             "instruction": example["instruction"],
-                            "raw_generation": pred,
+                            "raw_generation": raw_generation,
                             "generation": generation,
                             "answer": answer
                         }]

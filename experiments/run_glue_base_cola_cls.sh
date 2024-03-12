@@ -20,7 +20,7 @@ python task_steer.py -task glue \
 -r 2 \
 -p first \
 -e 40 \
--lr 2e-3 \
+-lr 3e-3 \
 -type ConditionedSourceLowRankIntervention \
 -gradient_accumulation_steps 1 \
 -batch_size 32 \
@@ -31,7 +31,8 @@ python task_steer.py -task glue \
 --wandb_name wuzhengx \
 --metric_for_best_model matthews_correlation \
 --weight_decay 0.001 \
---warmup_ratio 0.06 \
+--dropout 0.0 \
+--warmup_ratio 0.03 \
 --logging_steps 20 \
 --add_bias \
 --allow_cls_grad

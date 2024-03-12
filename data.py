@@ -183,8 +183,14 @@ def reformat_by_task(
             )["input_ids"][0]
             output_ids = data_item["label"]
 
-            # CLS token only for now.
-            intervention_locations = [[0]]*(len(layers)+1)
+            last_position = torch.tensor([len(base_input_ids)-1,])
+            base_first_location = torch.zeros_like(last_position).tolist()
+            base_last_location = last_position.tolist()
+            if position in {"first+last"}:
+                intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
+            else:
+                intervention_locations = [base_first_location]*len(layers)
+
             result["input_ids"].append(base_input_ids)
             result["intervention_locations"].append(intervention_locations)
             result["labels"].append(output_ids)

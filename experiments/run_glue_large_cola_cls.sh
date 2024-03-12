@@ -13,25 +13,25 @@ fi
 RANDOM_SEED=$1
 
 python task_steer.py -task glue \
--train_dataset qnli \
--model FacebookAI/roberta-base \
+-train_dataset cola \
+-model FacebookAI/roberta-large \
 -seed $RANDOM_SEED \
--l "1;3;5;7;9;11" \
--r 2 \
+-l "5;11" \
+-r 4 \
 -p first \
--e 20 \
--lr 3e-3 \
--type ConditionedSourceLowRankIntervention \
--gradient_accumulation_steps 1 \
--batch_size 32 \
+-e 30 \
+-lr 5e-4 \
+-type ConditionedSourceLowRankRotatedSpaceIntervention \
+-gradient_accumulation_steps 2 \
+-batch_size 16 \
 -eval_batch_size 32 \
 -test_split validation \
 -max_length 256 \
 --is_wandb \
 --wandb_name wuzhengx \
---metric_for_best_model accuracy \
---weight_decay 0.0001 \
---warmup_ratio 0.06 \
+--metric_for_best_model matthews_correlation \
+--weight_decay 0.000 \
+--warmup_ratio 0.00 \
 --logging_steps 20 \
 --add_bias \
 --allow_cls_grad

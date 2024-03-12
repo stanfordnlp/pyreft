@@ -19,8 +19,8 @@ python task_steer.py -task glue \
 -l "1;3;5;7;9;11" \
 -r 2 \
 -p first \
--e 40 \
--lr 1e-3 \
+-e 20 \
+-lr 2e-3 \
 -type ConditionedSourceLowRankIntervention \
 -gradient_accumulation_steps 1 \
 -batch_size 32 \

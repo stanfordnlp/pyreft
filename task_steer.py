@@ -251,7 +251,7 @@ def finetune(
     # start wandb logging
     if is_wandb:
         run = wandb.init(
-            project=f"MyReFT_{task}", 
+            project=f"08Mar_Overnight_MyReFT_{task}", 
             entity=wandb_name,
             name=run_name,
             dir=wandb_dir,

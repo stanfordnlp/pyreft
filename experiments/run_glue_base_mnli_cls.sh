@@ -20,7 +20,7 @@ python task_steer.py -task glue \
 -r 2 \
 -p first \
 -e 20 \
--lr 1e-3 \
+-lr 2e-3 \
 -type ConditionedSourceLowRankIntervention \
 -gradient_accumulation_steps 1 \
 -batch_size 32 \
