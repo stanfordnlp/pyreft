@@ -123,8 +123,8 @@ def finetune(
     else:
         temp_config = AutoConfig.from_pretrained(model)
         layers = [l for l in range(temp_config.num_hidden_layers)]
-    assert position in {"first", "last", "first+last"}
-    if position in {"first+last"}:
+    assert position in {"first", "last", "first+last", "first+middle+last"}
+    if position in {"first+last", "first+middle+last"}:
         if user_give_all_layers:
             pass
         else:
