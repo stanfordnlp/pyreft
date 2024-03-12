@@ -252,7 +252,7 @@ def reformat_by_task(
                 else:
                     result["input_ids"].append(base_prompt_ids)
                 last_position = torch.tensor([base_prompt_length-1,])
-                middle_position = torch.tensor([(user_prompt_len-1)//2,])
+                middle_position = torch.tensor([(base_prompt_length-1)//2,])
             else:
                 # for this subroutine, we follow the setup of
                 # https://github.com/AGI-Edgerunners/LLM-Adapters
