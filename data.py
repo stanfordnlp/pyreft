@@ -273,8 +273,13 @@ def reformat_by_task(
             if position in {"first+last"}:
                 base_first_location = torch.zeros_like(last_position).tolist()
                 intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
-            else:
+            elif position == "last":
                 intervention_locations = [base_last_location]*len(layers)
+            elif position == "first":
+                base_first_location = torch.zeros_like(last_position).tolist()
+                intervention_locations = [base_first_location]*len(layers)
+            else:
+                raise ValueError(f"Unrecognized position: {position}")
             result["intervention_locations"].append(intervention_locations)
             result["id"].append(i)
 
