@@ -84,6 +84,7 @@ def finetune(
     dtype: str,
     logging_steps: int,
     wandb_dir: str,
+    wandb_proj: str,
     args,
 ):
     """
@@ -264,7 +265,7 @@ def finetune(
     # start wandb logging
     if is_wandb:
         run = wandb.init(
-            project=f"MyReFT_{task}", 
+            project=f"{wandb_proj}_{task}", 
             entity=wandb_name,
             name=run_name,
             dir=wandb_dir,
@@ -397,6 +398,7 @@ def main():
     parser.add_argument('-dtype', '--dtype', type=str, default="bfloat16" if device == "cuda" else "float32")
     parser.add_argument('-logging_steps', '--logging_steps', type=int, help=1, default=1)
     parser.add_argument('-wandb_dir', '--wandb_dir', type=str, default='wandb')
+    parser.add_argument('-wandb_proj', '--wandb_proj', type=str, default='MyReFT')
     
     args = parser.parse_args()
 
