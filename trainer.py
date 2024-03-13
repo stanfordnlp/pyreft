@@ -20,7 +20,16 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 logger = logging.get_logger(__name__)
 
-
+def is_float(element: any) -> bool:
+    #If you expect None to be passed:
+    if element is None: 
+        return False
+    try:
+        float(element)
+        return True
+    except ValueError:
+        return False
+        
 def extract_answer_number(sentence: str) -> float:
     sentence = sentence.replace(',', '')
     pred = [s for s in re.findall(r'-?\d+\.?\d*', sentence)]
@@ -364,7 +373,7 @@ def compute_metrics(
                     elif task == "math":
                         answer = example["answer"]
                         answer = answer.strip()
-                        if dataset_name == "AQuA":
+                        if not is_float(answer): # assuming this is from AQuA:
                             generation = extract_answer_letter(raw_generation)
                             if generation.strip() == answer.strip():
                                 correct_count += 1
