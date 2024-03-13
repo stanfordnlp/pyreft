@@ -190,12 +190,22 @@ def reformat_by_task(
             result["labels"].append(output_ids)
             result["id"].append(i)
     else:
-        if (task == "alpaca" or task == "instruct" or task == "ultrafeedback") and split != "train":
+        if task in ["alpaca", "instruct", "ultrafeedback"] and split != "train":
             if dataset == "alpaca_eval":
                 # alpaca eval test script for now
                 task_dataset = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")[split]
             else:
                 pass # not implemented yet
+        elif task == "gsm8k":
+            dataset = load_dataset("gsm8k", "main")
+            train_size = len(dataset["train"])
+            test_size = len(dataset["test"])
+            if split == "train":
+                task_dataset = dataset["train"].select(range(train_size - test_size))
+            elif split == "validation":
+                task_dataset = dataset["train"].select(range(train_size - test_size, train_size))
+            elif split == "test":
+                task_dataset = dataset["test"]
         else:
             data_path = f"./datasets/{dataset}/{split}.json"
             task_dataset = load_dataset("json", data_files=data_path)["train"]
@@ -222,6 +232,15 @@ def reformat_by_task(
                     else:
                         base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
                     base_input = base_prompt + data_item["output"]
+                elif task == "gsm8k":
+                    # setup is from https://github.com/yxli2123/LoftQ/
+                    base_prompt = task_prompt_template % (
+                        "Answer the above question. First think step by step and then answer the final number.",
+                        data_item['question']
+                    )
+                    base_input = base_prompt + data_item["answer"].replace("####", "The final answer is: ")
+                else:
+                    raise ValueError(f"Unrecognized task: {task}")
                 
                 # tokenize
                 base_prompt_ids = tokenizer(
@@ -244,6 +263,7 @@ def reformat_by_task(
                     result["input_ids"].append(base_input_ids)
                     result["labels"].append(output_ids)
                 else:
+                    print("Assuming test split for now")
                     result["input_ids"].append(base_prompt_ids)
                 last_position = torch.tensor([base_prompt_length-1,])
 
@@ -343,6 +363,14 @@ def load_task(
         eval_datasets = [train_dataset]
         task_prompt_template = None
         trigger_tokens = None
+    elif task == "gsm8k":
+        max_length = max_length
+        train_datasets = [task]
+        eval_datasets = [task]
+        task_prompt_template = alpaca_prompt_template
+        trigger_tokens = "### Response:"
+    else:
+        raise ValueError(f"Unrecognized task: {task}")
     
     # load data
     raw_train = defaultdict(list)
