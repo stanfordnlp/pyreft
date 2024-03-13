@@ -389,14 +389,13 @@ def compute_metrics(
                         eval_iterator.set_postfix({"em": metric_str})
                         generations += [{
                             "instruction": example["instruction"],
-                            "raw_generation": pred,
+                            "raw_generation": raw_generation,
                             "generation": generation,
                             "answer": answer
                         }]
                     else:
                         generations += [{
                             "instruction": example["instruction"],
-                            "raw_generation": pred,
                             "output": raw_generation,
                             "dataset": dataset_name,
                             "generator": run_name
