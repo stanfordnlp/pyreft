@@ -1,6 +1,6 @@
 experiments/run_glue_base_cls.sh
-datasets/*
 *result*/
+datasets/ultrafeedback
 wandb/
 *.out
 zen.py
