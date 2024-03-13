@@ -323,7 +323,6 @@ def load_task(
 ):
     # config
     if task == "commonsense":
-        max_length = max_length
         train_datasets = [
             "boolq", "piqa", "social_i_qa", "hellaswag", 
             "winogrande", "ARC-Easy", "ARC-Challenge", "openbookqa"
@@ -334,7 +333,6 @@ def load_task(
         task_prompt_template = "%s\n"
         trigger_tokens = "the correct answer is "
     elif task == "math":
-        max_length = max_length
         train_datasets = [
             "math_10k"
         ] if train_dataset is None else [train_dataset]
@@ -344,19 +342,16 @@ def load_task(
         task_prompt_template = alpaca_prompt_no_input_template
         trigger_tokens = "### Response:"
     elif task == "alpaca":
-        max_length = max_length
         train_datasets = ["alpaca_data_cleaned"]
         eval_datasets = ["alpaca_eval"]
         task_prompt_template = alpaca_prompt_template
         trigger_tokens = "### Response:"
     elif task == "instruct" or task == "ultrafeedback":
-        max_length = max_length
         train_datasets = [task]
         eval_datasets = ["alpaca_eval"]
         task_prompt_template = alpaca_prompt_template
         trigger_tokens = "### Response:"
     elif task == "glue":
-        max_length = max_length
         assert train_dataset is not None
         train_datasets = [train_dataset]
         # we will use the full validation split
@@ -364,7 +359,6 @@ def load_task(
         task_prompt_template = None
         trigger_tokens = None
     elif task == "gsm8k":
-        max_length = max_length
         train_datasets = [task]
         eval_datasets = [task]
         task_prompt_template = alpaca_prompt_template
