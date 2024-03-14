@@ -85,6 +85,7 @@ def finetune(
     logging_steps: int,
     wandb_dir: str,
     wandb_proj: str,
+    share_weights: bool,
     args,
 ):
     """
@@ -117,26 +118,21 @@ def finetune(
         run_name = f"{model_str}.{task}.{now}"
 
     # which layers to intervene on
-    user_give_all_layers = False
     if layers != "all":
         if "+" in layers:
-            parsed_layers = []
-            for l in layers.split("+"):
-                for ll in l.split(";"):
-                    parsed_layers += [int(ll)]
-            user_give_all_layers = True
-            layers = parsed_layers
+            raise ValueError("We disallow + now. Layers will be shared cross positions.")
         else:
             layers = [int(l) for l in layers.split(";")]
     else:
         temp_config = AutoConfig.from_pretrained(model)
         layers = [l for l in range(temp_config.num_hidden_layers)]
-    assert position in {"first", "last", "first+last"}
-    if position in {"first+last"}:
-        if user_give_all_layers:
-            pass
-        else:
-            layers += layers
+
+    # position str takes the following formats:
+    # f1 -> first token; f2 -> first two tokens.
+    # f1+l1 -> first and last tokens; f2+l2 -> first and last two tokens.
+    # fn or ln shares the same intervention.
+    if "+" in position and not share_weights:
+        layers += layers
 
     # load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -147,7 +143,7 @@ def finetune(
     train_dataset, eval_datasets, trigger_tokens, num_labels = load_task(
         task, tokenizer, max_n_train_example, max_n_eval_example, train_dataset,
         eval_dataset, test_split, seed, eval_batch_size, position, layers, train_on_inputs,
-        max_length, use_normalized_template
+        max_length, use_normalized_template, share_weights
     )
     print("loaded", train_dataset, eval_datasets, num_labels)
     if task == "glue":
@@ -231,7 +227,7 @@ def finetune(
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
                 dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
-                add_bias=add_bias
+                add_bias=add_bias, keep_last_dim=True
             )
         } for l in layers]
         config = pv.IntervenableConfig(intervention_list)
@@ -242,7 +238,7 @@ def finetune(
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
                 dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
-                add_bias=add_bias
+                add_bias=add_bias, keep_last_dim=True
             )
         } for l in layers])
 
@@ -399,6 +395,7 @@ def main():
     parser.add_argument('-logging_steps', '--logging_steps', type=int, help=1, default=1)
     parser.add_argument('-wandb_dir', '--wandb_dir', type=str, default='wandb')
     parser.add_argument('-wandb_proj', '--wandb_proj', type=str, default='MyReFT')
+    parser.add_argument('-sw', '--share_weights', action='store_true')
     
     args = parser.parse_args()
 
