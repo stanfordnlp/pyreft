@@ -134,6 +134,20 @@ def chunk(iterable, chunksize):
         raise Exception(f"Unrecognizable type of iterable for batchification: {type(iterable)}")
 
 
+def get_intervention_locations(share_weights, position, last_position, _first_n, _last_n, layers):
+    first_n = min(last_position//2, _first_n)
+    last_n = min(last_position//2, _last_n)
+    if share_weights or "+" not in position:
+        position_list = [i for i in range(first_n)] + \
+        [i for i in range(last_position - last_n, last_position)]
+        intervention_locations = [position_list]*len(layers)
+    else:
+        intervention_locations = \
+            [[i for i in range(first_n)]]*(len(layers)//2) + \
+            [[i for i in range(last_position - last_n, last_position)]]*(len(layers)//2)
+    return intervention_locations
+
+
 def reformat_by_task(
     task: str,
     dataset: str,
@@ -141,10 +155,11 @@ def reformat_by_task(
     trigger_tokens: str,
     tokenizer: AutoTokenizer,
     max_length: int,
-    position: str="last",
+    position: str="f1+l1",
     layers: int=[1],
     train_on_inputs: bool=False,
     use_normalized_template: bool=False,
+    share_weights: bool=False,
     split: str='train',
     max_n_example: int=None,
     seed: int=42
@@ -154,6 +169,17 @@ def reformat_by_task(
     print("loading data for dataset: ", dataset)
     result = defaultdict(list)
     num_labels = None
+
+    first_n, last_n = 0, 0
+    if "+" in position:
+        first_n = int(position.split("+")[0].strip("f"))
+        last_n = int(position.split("+")[1].strip("l"))
+    else:
+        if "f" in position:
+            first_n = int(position.strip("f"))
+        elif "l" in position:
+            last_n = int(position.strip("l"))
+    
     if task == "glue":
         task_dataset = load_dataset(task, dataset)
         task_dataset = task_dataset[split]
@@ -182,9 +208,11 @@ def reformat_by_task(
                 return_tensors="pt"
             )["input_ids"][0]
             output_ids = data_item["label"]
+            last_position = len(base_input_ids)
 
-            # CLS token only for now.
-            intervention_locations = [[0]]*(len(layers)+1)
+            intervention_locations = get_intervention_locations(
+                share_weights, position, last_position, first_n, last_n, layers)
+
             result["input_ids"].append(base_input_ids)
             result["intervention_locations"].append(intervention_locations)
             result["labels"].append(output_ids)
@@ -201,9 +229,11 @@ def reformat_by_task(
             train_size = len(dataset["train"])
             test_size = len(dataset["test"])
             if split == "train":
-                task_dataset = dataset["train"].select(range(train_size - test_size))
+                # fixed split, last 300 as our dev
+                task_dataset = dataset["train"].select(range(train_size - 300))
             elif split == "validation":
-                task_dataset = dataset["train"].select(range(train_size - test_size, train_size))
+                # fixed split, last 300 as our dev
+                task_dataset = dataset["train"].select(range(train_size - 300, train_size))
             elif split == "test":
                 task_dataset = dataset["test"]
         else:
@@ -238,7 +268,8 @@ def reformat_by_task(
                         "Answer the above question. First think step by step and then answer the final number.",
                         data_item['question']
                     )
-                    base_input = base_prompt + data_item["answer"].replace("####", "The final answer is: ")
+                    base_input = base_prompt + data_item["answer"].replace("####", "The final answer is: ") + \
+                        tokenizer.eos_token
                 else:
                     raise ValueError(f"Unrecognized task: {task}")
                 
@@ -253,19 +284,13 @@ def reformat_by_task(
                     # mask prompt in labels
                     if not train_on_inputs:
                         output_ids[:base_prompt_length] = -100
-                    if (
-                            base_input_ids[-1] != tokenizer.eos_token_id
-                            and len(base_input_ids) < max_length
-                    ):
-                        base_input_ids.append(tokenizer.eos_token_id)
-                        output_ids.append(tokenizer.eos_token_id)
                         
                     result["input_ids"].append(base_input_ids)
                     result["labels"].append(output_ids)
                 else:
-                    print("Assuming test split for now")
+                    # print("Assuming test split for now")
                     result["input_ids"].append(base_prompt_ids)
-                last_position = torch.tensor([base_prompt_length-1,])
+                last_position = base_prompt_length
 
             else:
                 # for this subroutine, we follow the setup of
@@ -286,20 +311,10 @@ def reformat_by_task(
                     tokenized_user_prompt = tokenizer(prompt)
                     user_prompt_len = len(tokenized_user_prompt["input_ids"])
                     result["input_ids"].append(tokenized_user_prompt["input_ids"])
-                last_position = torch.tensor([user_prompt_len-1,])
-                
-            # compute intervention positions
-            base_last_location = last_position.tolist()
-            if position in {"first+last"}:
-                base_first_location = torch.zeros_like(last_position).tolist()
-                intervention_locations = [base_first_location]*(len(layers)//2)+[base_last_location]*(len(layers)//2)
-            elif position == "last":
-                intervention_locations = [base_last_location]*len(layers)
-            elif position == "first":
-                base_first_location = torch.zeros_like(last_position).tolist()
-                intervention_locations = [base_first_location]*len(layers)
-            else:
-                raise ValueError(f"Unrecognized position: {position}")
+                last_position = user_prompt_len
+
+            intervention_locations = get_intervention_locations(
+                share_weights, position, last_position, first_n, last_n, layers)
             result["intervention_locations"].append(intervention_locations)
             result["id"].append(i)
 
@@ -320,6 +335,7 @@ def load_task(
     train_on_inputs: bool=False,
     max_length: int=512,
     use_normalized_template: bool=False,
+    share_weights: bool=False,
 ):
     # config
     if task == "commonsense":
@@ -377,7 +393,7 @@ def load_task(
     for dataset in train_datasets:
         result, _, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-            max_length, position, layers, train_on_inputs, use_normalized_template, 
+            max_length, position, layers, train_on_inputs, use_normalized_template, share_weights,
             split='train', max_n_example=max_n_train_example, seed=seed
         )
         for key in result:
@@ -393,8 +409,8 @@ def load_task(
         for split in test_splits:
             result, task_dataset, num_labels = reformat_by_task(
                 task, dataset, task_prompt_template, trigger_tokens, tokenizer,
-                max_length, position, layers, False, use_normalized_template, split=split, 
-                max_n_example=max_n_eval_example
+                max_length, position, layers, False, use_normalized_template, share_weights,
+                split=split, max_n_example=max_n_eval_example
             )
             eval_dataset = Dataset.from_dict(result)
             all_eval_datasets[dataset][split] = [eval_dataset, task_dataset]
