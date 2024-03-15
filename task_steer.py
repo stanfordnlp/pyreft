@@ -29,6 +29,7 @@ from data import load_task
 from trainer import (
     ReftTrainer,
     ReftTrainerForSequenceClassification,
+    ReftDataCollator,
     TrainingArguments,
     compute_metrics,
 )
@@ -207,17 +208,18 @@ def finetune(
         
     # select collator based on the type
     if task in classification_tasks:
-        data_collator = DataCollatorWithPadding(
+        data_collator_fn = DataCollatorWithPadding(
             tokenizer=tokenizer,
             padding="longest"
         )
     else:
-        data_collator = DataCollatorForSeq2Seq(
+        data_collator_fn = DataCollatorForSeq2Seq(
             tokenizer=tokenizer,
             model=model,
             label_pad_token_id=-100,
             padding="longest"
         )
+    data_collator = ReftDataCollator(data_collator=data_collator_fn)
 
     # intervention config based on model type
     model_arch = model.config.architectures[0].lower()
