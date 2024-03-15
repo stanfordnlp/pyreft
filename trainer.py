@@ -1,8 +1,16 @@
 import pyvene as pv
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from transformers import Trainer, TrainingArguments, DataCollatorForSeq2Seq, AutoTokenizer
+from transformers import (
+    Trainer,
+    TrainingArguments,
+    DataCollator,
+    DataCollatorForSeq2Seq,
+    AutoTokenizer
+)
 from datasets import Dataset
+from dataclasses import dataclass
+from typing import Dict, Optional, Sequence
 from tqdm import tqdm
 import os
 import torch
@@ -66,15 +74,28 @@ def extract_output(pred, trigger=''):
     output = pred[start+len(trigger):].lstrip() # left strip any whitespaces
     return output
 
+@dataclass
+class ReftDataCollator(object):
+    """Collate examples for ReFT."""
 
-def make_data_collator(tokenizer, model) -> DataCollatorForSeq2Seq:
-    return DataCollatorForSeq2Seq(
+    data_collator: DataCollator
+
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        batch_inputs = self.data_collator(instances)
+        max_seq_length = batch_inputs["input_ids"].shape[-1]
+        batch_inputs["intervention_locations"] = batch_inputs["intervention_locations"][..., :max_seq_length]
+        return batch_inputs
+
+
+def make_data_collator(tokenizer, model) -> ReftDataCollator:
+    data_collator_fn = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
         model=model,
         label_pad_token_id=-100,
         padding="longest",
         max_length=2048,
     )
+    return ReftDataCollator(data_collator=data_collator_fn)
 
 
 def make_dataloader(dataset: Dataset, batch_size: int, collate_fn: DataCollatorForSeq2Seq, shuffle: bool) -> DataLoader:
@@ -299,6 +320,7 @@ def compute_metrics(
                 left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
                 left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
                 intervention_locations += left_padding
+                intervention_locations -= 1 # offset for the sink padding
                 
                 # for i in range(inputs["input_ids"].shape[0]):
                 #     print("batch num", i)
@@ -311,8 +333,8 @@ def compute_metrics(
                 #             print("<-- LAST")
                 #         else:
                 #             print()
-                #     input()
-        
+                #     fail()
+                
                 # repeat each batch by num_beams times in intervention locations
                 # -> [layers, batch_size * num_beams, positions]
                 intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
@@ -394,8 +416,9 @@ def compute_metrics(
                     if task not in ["alpaca", "instruct", "ultrafeedback"]:
                         metric_str = round(correct_count / total_count, 3)
                         eval_iterator.set_postfix({"em": metric_str})
+                        instruction = example["question"] if task == "gsm8k" else example["instruction"]
                         generations += [{
-                            "instruction": example["instruction"],
+                            "instruction": instruction,
                             "raw_generation": raw_generation,
                             "generation": generation,
                             "answer": answer

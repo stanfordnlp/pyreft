@@ -136,18 +136,33 @@ def chunk(iterable, chunksize):
 
 
 def get_intervention_locations(share_weights, position, last_position, _first_n, _last_n, layers, pad_mode="last"):
+
     first_n = min(last_position // 2, _first_n)
     last_n = min(last_position // 2, _last_n)
+
     pad_amount = (_first_n - first_n) + (_last_n - last_n)
     pad_position = -1 if pad_mode == "first" else last_position
     if share_weights or "+" not in position:
-        position_list = [i for i in range(first_n)] + [pad_position for _ in range(pad_amount)] + \
-        [i for i in range(last_position - last_n, last_position)]
+        position_list = [i for i in range(first_n)] + \
+            [i for i in range(last_position - last_n, last_position)] + \
+            [pad_position for _ in range(pad_amount)]
         intervention_locations = [position_list]*len(layers)
     else:
-        intervention_locations = \
-            [[i for i in range(first_n)]]*(len(layers)//2) + [pad_position for _ in range(pad_amount)] + \
-            [[i for i in range(last_position - last_n, last_position)]]*(len(layers)//2)
+        left_pad_amount = (_first_n - first_n)
+        right_pad_amount = (_last_n - last_n)
+        left_intervention_locations = [i for i in range(first_n)] + [pad_position for _ in range(left_pad_amount)]
+        right_intervention_locations = [i for i in range(last_position - last_n, last_position)] + \
+            [pad_position for _ in range(right_pad_amount)]
+        # after padding, there could be still length diff, we need to do another check
+        left_len = len(left_intervention_locations)
+        right_len = len(right_intervention_locations)
+        if left_len > right_len:
+            right_intervention_locations += [pad_position for _ in range(left_len-right_len)]
+        else:
+            left_intervention_locations += [pad_position for _ in range(right_len-left_len)]
+        intervention_locations = [left_intervention_locations]*(len(layers)//2) + \
+            [right_intervention_locations]*(len(layers)//2)
+    
     return intervention_locations
 
 
@@ -335,7 +350,7 @@ def reformat_by_task(
             # add a single padding token BEFORE input_ids and fix everything
             result["input_ids"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["input_ids"][-1]))
             if split == "train":
-                result["labels"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["labels"][-1]))
+                result["labels"][-1] = torch.cat((torch.tensor([-100]), result["labels"][-1]))
             result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
             result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
 
