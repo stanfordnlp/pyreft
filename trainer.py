@@ -372,7 +372,10 @@ def compute_metrics(
                     generation_args["do_sample"] = False
                 elif task == "gsm8k":
                     generation_args["max_new_tokens"] = 256
-                    generation_args["do_sample"] = False
+                    generation_args["temperature"] = 0.8
+                    generation_args["top_p"] = 0.95
+                    generation_args["top_k"] = 40
+                    generation_args["do_sample"] = True
 
                 # generate with intervention on prompt
                 _, steered_response = intervenable.generate(**generation_args)
