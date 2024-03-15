@@ -80,7 +80,7 @@ def create_directory(path):
         print(f"Directory '{path}' already exists.")
 
 
-def tokenize(tokenizer, prompt, add_eos_token=True, cutoff_len=256):
+def tokenize(tokenizer, prompt, add_eos_token=True, cutoff_len=255):
     # there's probably a way to do this with the tokenizer settings
     # but again, gotta move fast
     result = tokenizer(
@@ -359,6 +359,7 @@ def load_task(
     share_weights: bool=False,
 ):
     # config
+    max_length -= 1
     assert task in task_config, f"Unrecognized task: {task}"
     train_datasets = task_config[task]["train_datasets"] if train_dataset is None else [train_dataset]
     if task == "glue":
