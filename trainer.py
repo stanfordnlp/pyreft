@@ -408,7 +408,7 @@ def compute_metrics(
                     elif task == "gsm8k":
                         answer = example["answer"].split("####")[-1].strip()
                         generation = extract_answer_number(raw_generation)
-                        if abs(float(answer) - generation) <= 0.001:
+                        if abs(float(extract_answer_number(answer)) - generation) <= 0.001:
                             correct_count += 1
                             
                     # log
