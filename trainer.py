@@ -92,7 +92,6 @@ class ReftTrainer(Trainer):
         inputs,
         return_outputs=False
     ):
-
         # run intervened forward pass
         _, cf_outputs = intervenable(
             {

@@ -226,7 +226,6 @@ def reformat_by_task(
             
             # add a single padding token AFTER input_ids and fix everything
             result["input_ids"][-1] = torch.cat((result["input_ids"][-1], torch.tensor([tokenizer.pad_token_id,])))
-            result["labels"][-1] = torch.cat((result["labels"][-1], torch.tensor([tokenizer.pad_token_id,])))
             result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
 
     else:
@@ -362,7 +361,10 @@ def load_task(
     # config
     assert task in task_config, f"Unrecognized task: {task}"
     train_datasets = task_config[task]["train_datasets"] if train_dataset is None else [train_dataset]
-    eval_datasets = task_config[task]["eval_datasets"] if eval_dataset is None else [eval_dataset]
+    if task == "glue":
+        eval_datasets = [train_dataset]
+    else:
+        eval_datasets = task_config[task]["eval_datasets"] if eval_dataset is None else [eval_dataset]
     task_prompt_template = task_config[task]["task_prompt_template"]
     trigger_tokens = task_config[task]["trigger_tokens"]
     
