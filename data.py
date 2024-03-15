@@ -224,9 +224,10 @@ def reformat_by_task(
             result["labels"].append(output_ids)
             result["id"].append(i)
             
-            # add a single padding token after input_ids and fix everything
-            result["input_ids"][-1] = result["input_ids"][-1] + [tokenizer.pad_token_id]
-            result["labels"][-1] = result["labels"][-1] + [tokenizer.pad_token_id]
+            # add a single padding token AFTER input_ids and fix everything
+            result["input_ids"][-1] = torch.cat((result["input_ids"][-1], torch.tensor([tokenizer.pad_token_id,])))
+            result["labels"][-1] = torch.cat((result["labels"][-1], torch.tensor([tokenizer.pad_token_id,])))
+            result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
 
     else:
         # set up datasets
@@ -332,11 +333,12 @@ def reformat_by_task(
             result["intervention_locations"].append(intervention_locations)
             result["id"].append(i)
             
-            # add a single padding token before input_ids and fix everything
-            result["input_ids"][-1] = [tokenizer.pad_token_id] + result["input_ids"][-1]
-            if len(result["labels"]) == len(result["input_ids"]):
-                result["labels"][-1] = [tokenizer.pad_token_id] + result["labels"][-1]
+            # add a single padding token BEFORE input_ids and fix everything
+            result["input_ids"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["input_ids"][-1]))
+            if split == "train":
+                result["labels"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["labels"][-1]))
             result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
+            result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
 
     return result, task_dataset, num_labels
 
