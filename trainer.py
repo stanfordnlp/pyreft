@@ -348,7 +348,10 @@ def compute_metrics(
                     generation_args["no_repeat_ngram_size"] = 5
                     generation_args["repetition_penalty"] = 1.1
                     generation_args["do_sample"] = False
-        
+                elif task == "gsm8k":
+                    generation_args["max_new_tokens"] = 256
+                    generation_args["do_sample"] = False
+
                 # generate with intervention on prompt
                 _, steered_response = intervenable.generate(**generation_args)
         
@@ -380,7 +383,12 @@ def compute_metrics(
                             generation = extract_answer_number(raw_generation)
                             if abs(float(answer) - generation) <= 0.001:
                                 correct_count += 1
-                    
+                    elif task == "gsm8k":
+                        answer = example["answer"].split("####")[-1].strip()
+                        generation = extract_answer_number(raw_generation)
+                        if abs(float(answer) - generation) <= 0.001:
+                            correct_count += 1
+                            
                     # log
                     total_count += 1
                     if task not in ["alpaca", "instruct", "ultrafeedback"]:
