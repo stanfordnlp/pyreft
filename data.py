@@ -5,6 +5,7 @@ Data loading and preprocessing.
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 from collections import defaultdict
+from task_config import task_config
 from copy import deepcopy
 from templates import *
 from tqdm import tqdm
@@ -134,16 +135,18 @@ def chunk(iterable, chunksize):
         raise Exception(f"Unrecognizable type of iterable for batchification: {type(iterable)}")
 
 
-def get_intervention_locations(share_weights, position, last_position, _first_n, _last_n, layers):
-    first_n = min(last_position//2, _first_n)
-    last_n = min(last_position//2, _last_n)
+def get_intervention_locations(share_weights, position, last_position, _first_n, _last_n, layers, pad_mode="last"):
+    first_n = min(last_position // 2, _first_n)
+    last_n = min(last_position // 2, _last_n)
+    pad_amount = (_first_n - first_n) + (_last_n - last_n)
+    pad_position = -1 if pad_mode == "first" else last_position
     if share_weights or "+" not in position:
-        position_list = [i for i in range(first_n)] + \
+        position_list = [i for i in range(first_n)] + [pad_position for _ in range(pad_amount)] + \
         [i for i in range(last_position - last_n, last_position)]
         intervention_locations = [position_list]*len(layers)
     else:
         intervention_locations = \
-            [[i for i in range(first_n)]]*(len(layers)//2) + \
+            [[i for i in range(first_n)]]*(len(layers)//2) + [pad_position for _ in range(pad_amount)] + \
             [[i for i in range(last_position - last_n, last_position)]]*(len(layers)//2)
     return intervention_locations
 
@@ -170,6 +173,7 @@ def reformat_by_task(
     result = defaultdict(list)
     num_labels = None
 
+    # parse position
     first_n, last_n = 0, 0
     if "+" in position:
         first_n = int(position.split("+")[0].strip("f"))
@@ -200,34 +204,41 @@ def reformat_by_task(
             num_labels = 1
         
         for i, data_item in enumerate(tqdm(task_dataset)):
-            args = (
-                (data_item[sentence1_key],) if sentence2_key is None else (data_item[sentence1_key], data_item[sentence2_key])
-            )
-            base_input_ids = tokenizer(
-                *args, max_length=max_length, truncation=True,
-                return_tensors="pt"
-            )["input_ids"][0]
+
+            # tokenize
+            args = ((data_item[sentence1_key],)
+                    if sentence2_key is None
+                    else (data_item[sentence1_key], data_item[sentence2_key]))
+            base_input_ids = tokenizer(*args, max_length=max_length, truncation=True,
+                                       return_tensors="pt")["input_ids"][0]
             output_ids = data_item["label"]
+
+            # get intervention locations
             last_position = len(base_input_ids)
-
             intervention_locations = get_intervention_locations(
-                share_weights, position, last_position, first_n, last_n, layers)
+                share_weights, position, last_position, first_n, last_n, layers, pad_mode="last")
 
+            # append to result
             result["input_ids"].append(base_input_ids)
             result["intervention_locations"].append(intervention_locations)
             result["labels"].append(output_ids)
             result["id"].append(i)
+            
+            # add a single padding token after input_ids and fix everything
+            result["input_ids"][-1] = result["input_ids"][-1] + [tokenizer.pad_token_id]
+            result["labels"][-1] = result["labels"][-1] + [tokenizer.pad_token_id]
+
     else:
+        # set up datasets
         if task in ["alpaca", "instruct", "ultrafeedback"] and split != "train":
             if dataset == "alpaca_eval":
                 # alpaca eval test script for now
                 task_dataset = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")[split]
             else:
-                pass # not implemented yet
+                raise NotImplementedError() # not implemented yet
         elif task == "gsm8k":
             dataset = load_dataset("gsm8k", "main")
             train_size = len(dataset["train"])
-            test_size = len(dataset["test"])
             if split == "train":
                 # fixed split, last 300 as our dev
                 task_dataset = dataset["train"].select(range(train_size - 300))
@@ -240,20 +251,22 @@ def reformat_by_task(
             data_path = f"./datasets/{dataset}/{split}.json"
             task_dataset = load_dataset("json", data_files=data_path)["train"]
 
+        # format splits
         if split == "train":
             task_dataset = task_dataset.shuffle(seed=seed)
         if max_n_example is not None:
             task_dataset = task_dataset.select(range(max_n_example))
         
+        # tokenize and intervene
         for i, data_item in enumerate(tqdm(task_dataset)):
             
-            if use_normalized_template:
-                # format task-specific prompt
+            if use_normalized_template: # format task-specific prompt
+
+                # set up prompt
                 if task == "commonsense":
                     base_prompt = task_prompt_template % (data_item['instruction'])
                     base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.eos_token
-                elif task == "math":
-                    # we strip since these are model generated examples.
+                elif task == "math": # we strip since these are model generated examples.
                     base_prompt = task_prompt_template % (data_item['instruction'])
                     base_input = base_prompt + data_item["output"] + tokenizer.eos_token
                 elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
@@ -262,8 +275,7 @@ def reformat_by_task(
                     else:
                         base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
                     base_input = base_prompt + data_item["output"]
-                elif task == "gsm8k":
-                    # setup is from https://github.com/yxli2123/LoftQ/
+                elif task == "gsm8k": # setup is from https://github.com/yxli2123/LoftQ/
                     base_prompt = task_prompt_template % (
                         "Answer the above question. First think step by step and then answer the final number.",
                         data_item['question']
@@ -293,6 +305,7 @@ def reformat_by_task(
                 last_position = base_prompt_length
 
             else:
+
                 # for this subroutine, we follow the setup of
                 # https://github.com/AGI-Edgerunners/LLM-Adapters
                 # this is for the commonsense and math reasoning tasks only
@@ -313,10 +326,17 @@ def reformat_by_task(
                     result["input_ids"].append(tokenized_user_prompt["input_ids"])
                 last_position = user_prompt_len
 
+            # get intervention locations
             intervention_locations = get_intervention_locations(
-                share_weights, position, last_position, first_n, last_n, layers)
+                share_weights, position, last_position, first_n, last_n, layers, pad_mode="first")
             result["intervention_locations"].append(intervention_locations)
             result["id"].append(i)
+            
+            # add a single padding token before input_ids and fix everything
+            result["input_ids"][-1] = [tokenizer.pad_token_id] + result["input_ids"][-1]
+            if len(result["labels"]) == len(result["input_ids"]):
+                result["labels"][-1] = [tokenizer.pad_token_id] + result["labels"][-1]
+            result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
 
     return result, task_dataset, num_labels
 
@@ -338,55 +358,11 @@ def load_task(
     share_weights: bool=False,
 ):
     # config
-    if task == "commonsense":
-        max_length = max_length
-        train_datasets = [
-            "boolq", "piqa", "social_i_qa", "hellaswag", 
-            "winogrande", "ARC-Easy", "ARC-Challenge", "openbookqa"
-        ] if train_dataset is None else [train_dataset]
-        eval_datasets = [
-            "boolq", "piqa", "social_i_qa", "hellaswag", "winogrande", "ARC-Easy", "ARC-Challenge", "openbookqa"
-        ] if eval_dataset is None else [eval_dataset]
-        task_prompt_template = "%s\n"
-        trigger_tokens = "the correct answer is "
-    elif task == "math":
-        max_length = max_length
-        train_datasets = [
-            "math_10k"
-        ] if train_dataset is None else [train_dataset]
-        eval_datasets = [
-            "MultiArith", "gsm8k", "SVAMP", "mawps", "AddSub", "AQuA", "SingleEq", 
-        ] if eval_dataset is None else [eval_dataset]
-        task_prompt_template = alpaca_prompt_no_input_template
-        trigger_tokens = "### Response:"
-    elif task == "alpaca":
-        max_length = max_length
-        train_datasets = ["alpaca_data_cleaned"]
-        eval_datasets = ["alpaca_eval"]
-        task_prompt_template = alpaca_prompt_template
-        trigger_tokens = "### Response:"
-    elif task == "instruct" or task == "ultrafeedback":
-        max_length = max_length
-        train_datasets = [task]
-        eval_datasets = ["alpaca_eval"]
-        task_prompt_template = alpaca_prompt_template
-        trigger_tokens = "### Response:"
-    elif task == "glue":
-        max_length = max_length
-        assert train_dataset is not None
-        train_datasets = [train_dataset]
-        # we will use the full validation split
-        eval_datasets = [train_dataset]
-        task_prompt_template = None
-        trigger_tokens = None
-    elif task == "gsm8k":
-        max_length = max_length
-        train_datasets = [task]
-        eval_datasets = [task]
-        task_prompt_template = alpaca_prompt_template
-        trigger_tokens = "### Response:"
-    else:
-        raise ValueError(f"Unrecognized task: {task}")
+    assert task in task_config, f"Unrecognized task: {task}"
+    train_datasets = task_config[task]["train_datasets"] if train_dataset is None else [train_dataset]
+    eval_datasets = task_config[task]["eval_datasets"] if eval_dataset is None else [eval_dataset]
+    task_prompt_template = task_config[task]["task_prompt_template"]
+    trigger_tokens = task_config[task]["trigger_tokens"]
     
     # load data
     raw_train = defaultdict(list)
