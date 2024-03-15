@@ -1,8 +1,16 @@
 import pyvene as pv
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from transformers import Trainer, TrainingArguments, DataCollatorForSeq2Seq, AutoTokenizer
+from transformers import (
+    Trainer,
+    TrainingArguments,
+    DataCollator,
+    DataCollatorForSeq2Seq,
+    AutoTokenizer
+)
 from datasets import Dataset
+from dataclasses import dataclass
+from typing import Dict, Optional, Sequence
 from tqdm import tqdm
 import os
 import torch
@@ -20,6 +28,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 logger = logging.get_logger(__name__)
 
+
 def is_float(element: any) -> bool:
     #If you expect None to be passed:
     if element is None: 
@@ -29,7 +38,8 @@ def is_float(element: any) -> bool:
         return True
     except ValueError:
         return False
-        
+
+
 def extract_answer_number(sentence: str) -> float:
     sentence = sentence.replace(',', '')
     pred = [s for s in re.findall(r'-?\d+\.?\d*', sentence)]
@@ -67,14 +77,28 @@ def extract_output(pred, trigger=''):
     return output
 
 
-def make_data_collator(tokenizer, model) -> DataCollatorForSeq2Seq:
-    return DataCollatorForSeq2Seq(
+@dataclass
+class ReftDataCollator(object):
+    """Collate examples for ReFT."""
+
+    data_collator: DataCollator
+    
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        batch_inputs = self.data_collator(instances)
+        max_seq_length = batch_inputs["input_ids"].shape[-1]
+        batch_inputs["intervention_locations"] = batch_inputs["intervention_locations"][..., :max_seq_length]
+        return batch_inputs
+
+
+def make_data_collator(tokenizer, model) -> ReftDataCollator:
+    data_collator_fn = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
         model=model,
         label_pad_token_id=-100,
         padding="longest",
         max_length=2048,
     )
+    return ReftDataCollator(data_collator=data_collator_fn)
 
 
 def make_dataloader(dataset: Dataset, batch_size: int, collate_fn: DataCollatorForSeq2Seq, shuffle: bool) -> DataLoader:
@@ -131,6 +155,7 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
         inputs,
         return_outputs=False
     ):
+
         # run intervened forward pass
         _, cf_outputs = intervenable(
             {

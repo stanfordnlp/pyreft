@@ -4,11 +4,14 @@ sys.path.append("../../pyvene/")
 import torch
 import argparse
 from tqdm import tqdm, trange
+from dataclasses import dataclass
+from typing import Dict, Optional, Sequence
 from transformers import (
     AutoConfig,
     AutoTokenizer, 
     AutoModelForCausalLM, 
     AutoModelForSequenceClassification,
+    DataCollator,
     DataCollatorForSeq2Seq,
     DataCollatorWithPadding,
     get_linear_schedule_with_warmup,
@@ -27,6 +30,7 @@ from torch.utils.data import DataLoader
 import pyvene as pv
 from data import load_task
 from trainer import (
+    ReftDataCollator,
     ReftTrainer,
     ReftTrainerForSequenceClassification,
     TrainingArguments,
@@ -47,8 +51,7 @@ dtype_mapping = {
 }
 
 
-
-def finetune(
+def reftune(
     act_fn: str,
     add_bias: bool,
     model: str,
@@ -207,18 +210,19 @@ def finetune(
         
     # select collator based on the type
     if task in classification_tasks:
-        data_collator = DataCollatorWithPadding(
+        data_collator_fn = DataCollatorWithPadding(
             tokenizer=tokenizer,
             padding="longest"
         )
     else:
-        data_collator = DataCollatorForSeq2Seq(
+        data_collator_fn = DataCollatorForSeq2Seq(
             tokenizer=tokenizer,
             model=model,
             label_pad_token_id=-100,
             padding="longest"
         )
-
+    data_collator = ReftDataCollator(data_collator=data_collator_fn)
+    
     # intervention config based on model type
     model_arch = model.config.architectures[0].lower()
     if model_arch in residual_stream_component_mapping:
@@ -399,7 +403,7 @@ def main():
     
     args = parser.parse_args()
 
-    finetune(**vars(args), args=args)
+    reftune(**vars(args), args=args)
 
 
 if __name__ == "__main__":

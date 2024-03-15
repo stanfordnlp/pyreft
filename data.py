@@ -134,17 +134,31 @@ def chunk(iterable, chunksize):
         raise Exception(f"Unrecognizable type of iterable for batchification: {type(iterable)}")
 
 
-def get_intervention_locations(share_weights, position, last_position, _first_n, _last_n, layers):
-    first_n = min(last_position//2, _first_n)
-    last_n = min(last_position//2, _last_n)
+def pad_with_last_element(padding_list, max_length):
+    padding_element = padding_list[-1]
+    pads = [padding_element for i in range(max_length - len(padding_list))]
+    return padding_list + pads
+
+
+# batch_size * num_int * num_position
+# [[[a,b,c], [a,b,c]], [[a,b,c], [a,b,c]]]
+
+def get_intervention_locations(share_weights, position, last_position, _first_n, _last_n, layers, max_length):
+    first_n = min(last_position, _first_n)
+    last_n = min(last_position, _last_n)
     if share_weights or "+" not in position:
         position_list = [i for i in range(first_n)] + \
         [i for i in range(last_position - last_n, last_position)]
-        intervention_locations = [position_list]*len(layers)
+        # we pad till the max length
+        padded_position_list = pad_with_last_element(position_list, max_length)
+        intervention_locations = [padded_position_list]*len(layers)
     else:
-        intervention_locations = \
-            [[i for i in range(first_n)]]*(len(layers)//2) + \
-            [[i for i in range(last_position - last_n, last_position)]]*(len(layers)//2)
+        assert len(layers) % 2 == 0
+        left_locations = [i for i in range(first_n)]
+        right_locations = [i for i in range(last_position - last_n, last_position)]
+        padded_left_locations = pad_with_last_element(left_locations, max_length)
+        padded_right_locations = pad_with_last_element(right_locations, max_length)
+        intervention_locations = [padded_left_locations]*(len(layers)//2) + [padded_right_locations]*(len(layers)//2)
     return intervention_locations
 
 
@@ -211,7 +225,7 @@ def reformat_by_task(
             last_position = len(base_input_ids)
 
             intervention_locations = get_intervention_locations(
-                share_weights, position, last_position, first_n, last_n, layers)
+                share_weights, position, last_position, first_n, last_n, layers, max_length)
 
             result["input_ids"].append(base_input_ids)
             result["intervention_locations"].append(intervention_locations)
@@ -314,7 +328,7 @@ def reformat_by_task(
                 last_position = user_prompt_len
 
             intervention_locations = get_intervention_locations(
-                share_weights, position, last_position, first_n, last_n, layers)
+                share_weights, position, last_position, first_n, last_n, layers, max_length)
             result["intervention_locations"].append(intervention_locations)
             result["id"].append(i)
 
