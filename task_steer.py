@@ -87,6 +87,7 @@ def finetune(
     wandb_dir: str,
     wandb_proj: str,
     share_weights: bool,
+    greedy_decoding: bool,
     args,
 ):
     """
@@ -333,7 +334,7 @@ def finetune(
                 task, dataset_name, reft_model, tokenizer, eval_dataset, data_items,
                 trigger_tokens, run_name, eval_batch_size, 
                 data_collator if task in classification_tasks else None,
-                split,
+                split, greedy_decoding
             )
 
             # log
@@ -398,6 +399,7 @@ def main():
     parser.add_argument('-wandb_dir', '--wandb_dir', type=str, default='wandb')
     parser.add_argument('-wandb_proj', '--wandb_proj', type=str, default='MyReFT')
     parser.add_argument('-sw', '--share_weights', action='store_true')
+    parser.add_argument('-gd', '--greedy_decoding', action='store_true')
     
     args = parser.parse_args()
 
