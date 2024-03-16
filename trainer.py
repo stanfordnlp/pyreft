@@ -11,6 +11,7 @@ from transformers import (
 from datasets import Dataset
 from dataclasses import dataclass
 from typing import Dict, Optional, Sequence
+from task_config import task_config
 from tqdm import tqdm
 import os
 import torch
@@ -325,20 +326,7 @@ def compute_metrics(
                 left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
                 intervention_locations += left_padding
                 intervention_locations -= 1 # offset for the sink padding
-                
-                # for i in range(inputs["input_ids"].shape[0]):
-                #     print("batch num", i)
-                #     for j in range(inputs["input_ids"].shape[1]):
-                #         tok = pv.models.basic_utils.format_token(tokenizer, inputs["input_ids"][i, j])
-                #         print(f"{tok:<20}", end='')
-                #         if intervention_locations[0, i, 0] == j:
-                #             print("<-- FIRST")
-                #         elif intervention_locations[-1, i, 0] == j:
-                #             print("<-- LAST")
-                #         else:
-                #             print()
-                #     fail()
-                
+
                 # repeat each batch by num_beams times in intervention locations
                 # -> [layers, batch_size * num_beams, positions]
                 intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
@@ -350,50 +338,17 @@ def compute_metrics(
                     "intervene_on_prompt": True,
                     "eos_token_id": tokenizer.eos_token_id,
                     "early_stopping": True,
-                }  
-                if task == "commonsense":
-                    # align with https://github.com/AGI-Edgerunners/LLM-Adapters
-                    generation_args["max_new_tokens"] = 32
-                    if greedy_decoding:
-                        generation_args["do_sample"] = False
-                    else:
-                        generation_args["temperature"] = 0.1
-                        generation_args["top_p"] = 0.75
-                        generation_args["top_k"] = 40
-                        generation_args["num_beams"] = num_beams
-                        generation_args["do_sample"] = True
-                elif task == "math":
-                    generation_args["max_new_tokens"] = 256
-                    if greedy_decoding:
-                        generation_args["do_sample"] = False
-                    else:
-                        # slightly changed to optimize our performance on top of
-                        # https://github.com/AGI-Edgerunners/LLM-Adapters
-                        generation_args["temperature"] = 0.3
-                        generation_args["top_p"] = 0.75
-                        generation_args["top_k"] = 40
-                        generation_args["num_beams"] = num_beams
-                        generation_args["do_sample"] = True
-                elif task in ["alpaca", "instruct", "ultrafeedback"]:
-                    generation_args["max_length"] = 2048
-                    if greedy_decoding:
-                        generation_args["do_sample"] = False
-                    else:
-                        # align with https://arxiv.org/abs/2402.15179
-                        generation_args["no_repeat_ngram_size"] = 5
-                        generation_args["repetition_penalty"] = 1.1
-                        generation_args["do_sample"] = False
-                elif task == "gsm8k":
-                    generation_args["max_new_tokens"] = 256
-                    if greedy_decoding:
-                        generation_args["do_sample"] = False
-                    else:
-                        # default values are from LoftQ
-                        # https://arxiv.org/pdf/2310.08659.pdf
-                        generation_args["temperature"] = 0.8 if temperature is None else temperature
-                        generation_args["top_p"] = 0.95 if top_p is None else top_p
-                        generation_args["top_k"] = 40 if top_k is None else top_k
-                        generation_args["do_sample"] = True
+                }
+                if "generation_args" in task_config[task]:
+                    generation_args.update(task_config[task]["generation_args"][greedy_decoding])
+                
+                # override generation args if necessary
+                if temperature is not None:
+                    generation_args["temperature"] = temperature
+                if top_p is not None:
+                    generation_args["top_p"] = top_p
+                if top_k is not None:
+                    generation_args["top_k"] = top_k
 
                 # generate with intervention on prompt
                 _, steered_response = intervenable.generate(**generation_args)
