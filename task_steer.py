@@ -405,7 +405,7 @@ def main():
     parser.add_argument('-gd', '--greedy_decoding', action='store_true')
 
     # decoding params
-    parser.add_argument('-temperature', '--t', type=float, default=None)
+    parser.add_argument('-t', '--temperature', type=float, default=None)
     parser.add_argument('-top_p', '--top_p', type=float, default=None)
     parser.add_argument('-top_k', '--top_k', type=float, default=None)
 
