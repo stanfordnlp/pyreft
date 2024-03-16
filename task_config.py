@@ -51,5 +51,5 @@ task_config = {
         "eval_datasets": ["gsm8k"],
         "task_prompt_template": alpaca_prompt_template,
         "trigger_tokens": "### Response:"
-    }
+    },
 }

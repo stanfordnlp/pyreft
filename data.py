@@ -180,7 +180,8 @@ def reformat_by_task(
     share_weights: bool=False,
     split: str='train',
     max_n_example: int=None,
-    seed: int=42
+    seed: int=42,
+    test_split: str="validation",
 ) -> tuple:
     """Reformat the dataset based on task template and generate tokenized inputs."""
 
@@ -254,16 +255,17 @@ def reformat_by_task(
         elif task == "gsm8k":
             dataset = load_dataset("gsm8k", "main")
             train_size = len(dataset["train"])
-            if split == "train":
+            if split == "train" and test_split != "test":
                 # fixed split, last 300 as our dev
                 task_dataset = dataset["train"].select(range(train_size - 300))
+            elif split == "train" and test_split == "test":
+                # fixed split, last 300 as our dev
+                task_dataset = dataset["train"]
             elif split == "validation":
                 # fixed split, last 300 as our dev
                 task_dataset = dataset["train"].select(range(train_size - 300, train_size))
             elif split == "test":
                 task_dataset = dataset["test"]
-        elif task == "gsm8k_final":
-            task_dataset = load_dataset("gsm8k", "main")[split]
         else:
             data_path = f"./datasets/{dataset}/{split}.json"
             task_dataset = load_dataset("json", data_files=data_path)["train"]
@@ -392,7 +394,7 @@ def load_task(
         result, _, num_labels = reformat_by_task(
             task, dataset, task_prompt_template, trigger_tokens, tokenizer,
             max_length, position, layers, train_on_inputs, use_normalized_template, share_weights,
-            split='train', max_n_example=max_n_train_example, seed=seed
+            split='train', max_n_example=max_n_train_example, seed=seed, test_split=test_split
         )
         for key in result:
             raw_train[key].extend(result[key])
