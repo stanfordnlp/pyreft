@@ -275,6 +275,9 @@ def compute_metrics(
     data_collator=None,
     split=None,
     greedy_decoding=False,
+    temperature=None, 
+    top_p=None, 
+    top_k=None
 ):
     # switch the tokenizer mode first for generation tasks
     if task != "glue":
@@ -385,9 +388,11 @@ def compute_metrics(
                     if greedy_decoding:
                         generation_args["do_sample"] = False
                     else:
-                        generation_args["temperature"] = 0.8
-                        generation_args["top_p"] = 0.95
-                        generation_args["top_k"] = 40
+                        # default values are from LoftQ
+                        # https://arxiv.org/pdf/2310.08659.pdf
+                        generation_args["temperature"] = 0.8 if temperature is None else temperature
+                        generation_args["top_p"] = 0.95 if top_p is None else top_p
+                        generation_args["top_k"] = 40 if top_k is None else top_k
                         generation_args["do_sample"] = True
 
                 # generate with intervention on prompt

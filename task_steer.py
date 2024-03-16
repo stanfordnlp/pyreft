@@ -88,6 +88,9 @@ def finetune(
     wandb_proj: str,
     share_weights: bool,
     greedy_decoding: bool,
+    temperature: float,
+    top_p: float,
+    top_k: float,
     args,
 ):
     """
@@ -334,7 +337,7 @@ def finetune(
                 task, dataset_name, reft_model, tokenizer, eval_dataset, data_items,
                 trigger_tokens, run_name, eval_batch_size, 
                 data_collator if task in classification_tasks else None,
-                split, greedy_decoding
+                split, greedy_decoding, temperature, top_p, top_k
             )
 
             # log
@@ -400,7 +403,12 @@ def main():
     parser.add_argument('-wandb_proj', '--wandb_proj', type=str, default='MyReFT')
     parser.add_argument('-sw', '--share_weights', action='store_true')
     parser.add_argument('-gd', '--greedy_decoding', action='store_true')
-    
+
+    # decoding params
+    parser.add_argument('-temperature', '--t', type=float, default=None)
+    parser.add_argument('-top_p', '--top_p', type=float, default=None)
+    parser.add_argument('-top_k', '--top_k', type=float, default=None)
+
     args = parser.parse_args()
 
     finetune(**vars(args), args=args)
