@@ -274,6 +274,7 @@ def compute_metrics(
     batch_size: int=4,
     data_collator=None,
     split=None,
+    greedy_decoding=False,
 ):
     # switch the tokenizer mode first for generation tasks
     if task != "glue":
@@ -346,36 +347,48 @@ def compute_metrics(
                     "intervene_on_prompt": True,
                     "eos_token_id": tokenizer.eos_token_id,
                     "early_stopping": True,
-                }
+                }  
                 if task == "commonsense":
                     # align with https://github.com/AGI-Edgerunners/LLM-Adapters
                     generation_args["max_new_tokens"] = 32
-                    generation_args["temperature"] = 0.1
-                    generation_args["top_p"] = 0.75
-                    generation_args["top_k"] = 40
-                    generation_args["num_beams"] = num_beams
-                    generation_args["do_sample"] = True
+                    if greedy_decoding:
+                        generation_args["do_sample"] = False
+                    else:
+                        generation_args["temperature"] = 0.1
+                        generation_args["top_p"] = 0.75
+                        generation_args["top_k"] = 40
+                        generation_args["num_beams"] = num_beams
+                        generation_args["do_sample"] = True
                 elif task == "math":
-                    # slightly changed to optimize our performance on top of
-                    # https://github.com/AGI-Edgerunners/LLM-Adapters
                     generation_args["max_new_tokens"] = 256
-                    generation_args["temperature"] = 0.3
-                    generation_args["top_p"] = 0.75
-                    generation_args["top_k"] = 40
-                    generation_args["num_beams"] = num_beams
-                    generation_args["do_sample"] = True
+                    if greedy_decoding:
+                        generation_args["do_sample"] = False
+                    else:
+                        # slightly changed to optimize our performance on top of
+                        # https://github.com/AGI-Edgerunners/LLM-Adapters
+                        generation_args["temperature"] = 0.3
+                        generation_args["top_p"] = 0.75
+                        generation_args["top_k"] = 40
+                        generation_args["num_beams"] = num_beams
+                        generation_args["do_sample"] = True
                 elif task in ["alpaca", "instruct", "ultrafeedback"]:
                     generation_args["max_length"] = 2048
-                    # align with https://arxiv.org/abs/2402.15179
-                    generation_args["no_repeat_ngram_size"] = 5
-                    generation_args["repetition_penalty"] = 1.1
-                    generation_args["do_sample"] = False
+                    if greedy_decoding:
+                        generation_args["do_sample"] = False
+                    else:
+                        # align with https://arxiv.org/abs/2402.15179
+                        generation_args["no_repeat_ngram_size"] = 5
+                        generation_args["repetition_penalty"] = 1.1
+                        generation_args["do_sample"] = False
                 elif task == "gsm8k":
                     generation_args["max_new_tokens"] = 256
-                    generation_args["temperature"] = 0.8
-                    generation_args["top_p"] = 0.95
-                    generation_args["top_k"] = 40
-                    generation_args["do_sample"] = True
+                    if greedy_decoding:
+                        generation_args["do_sample"] = False
+                    else:
+                        generation_args["temperature"] = 0.8
+                        generation_args["top_p"] = 0.95
+                        generation_args["top_k"] = 40
+                        generation_args["do_sample"] = True
 
                 # generate with intervention on prompt
                 _, steered_response = intervenable.generate(**generation_args)
