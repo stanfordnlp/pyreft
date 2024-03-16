@@ -98,7 +98,7 @@ def finetune(
     """
 
     assert task in {
-        "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k"
+        "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k", "gsm8k_final"
     }
     dtype = dtype_mapping[dtype]
     
