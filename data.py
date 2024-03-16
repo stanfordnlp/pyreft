@@ -262,6 +262,8 @@ def reformat_by_task(
                 task_dataset = dataset["train"].select(range(train_size - 300, train_size))
             elif split == "test":
                 task_dataset = dataset["test"]
+        elif task == "gsm8k_final":
+            task_dataset = load_dataset("gsm8k", "main")[split]
         else:
             data_path = f"./datasets/{dataset}/{split}.json"
             task_dataset = load_dataset("json", data_files=data_path)["train"]
