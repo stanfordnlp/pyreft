@@ -336,13 +336,13 @@ def reformat_by_task(
                             train_on_inputs=train_on_inputs,
                             cutoff_len=max_length
                         )
-                    result["input_ids"].append(tokenized_full_prompt["input_ids"])
-                    result["labels"].append(tokenized_full_prompt["labels"])
+                    result["input_ids"].append(torch.tensor(tokenized_full_prompt["input_ids"]))
+                    result["labels"].append(torch.tensor(tokenized_full_prompt["labels"]))
                 else:
                     prompt = generate_prompt_for_generate(data_item.get('instruction'), input=None)
                     tokenized_user_prompt = tokenizer(prompt)
                     user_prompt_len = len(tokenized_user_prompt["input_ids"])
-                    result["input_ids"].append(tokenized_user_prompt["input_ids"])
+                    result["input_ids"].append(torch.tensor(tokenized_user_prompt["input_ids"]))
                 last_position = user_prompt_len
 
             # get intervention locations
