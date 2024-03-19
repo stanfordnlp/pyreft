@@ -40,6 +40,10 @@ def is_float(element: any) -> bool:
         return False
         
 def extract_answer_number(sentence: str) -> float:
+    """
+    To ensure a fair comparison, we follow:
+    https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/evaluate.py
+    """
     sentence = sentence.replace(',', '')
     pred = [s for s in re.findall(r'-?\d+\.?\d*', sentence)]
     if not pred:
@@ -54,12 +58,23 @@ def extract_answer_number(sentence: str) -> float:
 
 
 def extract_answer_letter(sentence: str) -> str:
+    """
+    To ensure a fair comparison, we follow:
+    https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/evaluate.py
+
+    Note that it becomes ambiguous whether to extract the
+    first letter or the last letter. Either way may lead
+    to inaccurately assess the model performance. 
+
+    We choose to follow the LLM-Adaptor repo, but leave this note
+    for future research to explore the impact of this.
+    """
     sentence_ = sentence.strip()
     pred_answers = re.findall(r'A|B|C|D|E', sentence_)
     if pred_answers:
         if not pred_answers:
             return ''
-        return pred_answers[-1]
+        return pred_answers[0]
     else:
         return ''
         
@@ -257,7 +272,7 @@ class ReftTrainerForSequenceClassification(ReftTrainer):
         )
 
     def _load_best_model(self):
-        logger.info(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
+        logger.warning(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
         self.model.load_intervention(
             f"{self.state.best_model_checkpoint}/intervenable_model", 
             include_model=True
