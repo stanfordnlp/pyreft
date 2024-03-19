@@ -298,7 +298,7 @@ def compute_metrics(
     # switch the tokenizer mode first for generation tasks
     if task != "glue":
         tokenizer.padding_side = "left" # switch padding side for collator
-        num_beams = 4 if task in ["commonsense", "math"] else 1
+        num_beams = 4 if task in ["commonsense", "math"] and not greedy_decoding else 1
 
     data_collator = data_collator if data_collator is not None else \
         make_data_collator(tokenizer, intervenable.model)
