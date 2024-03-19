@@ -40,11 +40,11 @@ task_config = {
             # slightly changed to optimize our performance on top of
             # https://github.com/AGI-Edgerunners/LLM-Adapters
             True: {
-                "max_new_tokens": 256,
+                "max_new_tokens": 512,
                 "do_sample": False,
             },
             False: {
-                "max_new_tokens": 256,
+                "max_new_tokens": 512,
                 "temperature": 0.3,
                 "top_p": 0.75,
                 "top_k": 40,
