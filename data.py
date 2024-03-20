@@ -297,8 +297,8 @@ def reformat_by_task(
                     base_prompt = task_prompt_template % (data_item['instruction'])
                     base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.eos_token
                 elif task == "math": # we strip since these are model generated examples.
-                    base_prompt = task_prompt_template % (normalize_text(data_item['instruction']))
-                    base_input = base_prompt + normalize_text(data_item["output"]) + tokenizer.eos_token
+                    base_prompt = task_prompt_template % (data_item['instruction'])
+                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
                 elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
                     if 'input' not in data_item or data_item['input'] == "":
                         base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
