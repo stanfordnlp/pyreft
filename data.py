@@ -71,6 +71,17 @@ def jdump(obj, f, mode="w", indent=4, default=str):
     f.close()
 
 
+def normalize_text(text):
+    """
+    Normalize text by removing spaces, linebreaks.
+    """
+    cleaned_text = text.strip()
+    cleaned_text = re.sub(r'\n\n+', ' ', cleaned_text)
+    cleaned_text = re.sub(r'\s+-\s+', '-', cleaned_text)
+    cleaned_text = re.sub(r'\s+([$%.,!?;:])', r'\1', cleaned_text)
+    return cleaned_text
+    
+
 def create_directory(path):
     """Create directory if not exist"""
     if not os.path.exists(path):
@@ -286,8 +297,8 @@ def reformat_by_task(
                     base_prompt = task_prompt_template % (data_item['instruction'])
                     base_input = base_prompt + trigger_tokens + data_item["answer"] + tokenizer.eos_token
                 elif task == "math": # we strip since these are model generated examples.
-                    base_prompt = task_prompt_template % (data_item['instruction'])
-                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+                    base_prompt = task_prompt_template % (normalize_text(data_item['instruction']))
+                    base_input = base_prompt + normalize_text(data_item["output"]) + tokenizer.eos_token
                 elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
                     if 'input' not in data_item or data_item['input'] == "":
                         base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
