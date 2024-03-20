@@ -249,7 +249,7 @@ def reformat_by_task(
         if task in ["alpaca", "instruct", "ultrafeedback"] and split != "train":
             if dataset == "alpaca_eval":
                 # alpaca eval test script for now
-                task_dataset = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")[split]
+                task_dataset = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")["eval"]
             else:
                 raise NotImplementedError() # not implemented yet
         elif task == "gsm8k":
