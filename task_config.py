@@ -61,11 +61,11 @@ task_config = {
         "generation_args": {
             # align with https://arxiv.org/abs/2402.15179
             True: {
-                "max_new_tokens": 2048,
+                "max_length": 2048,
                 "do_sample": False,
             },
             False: {
-                "max_new_tokens": 2048,
+                "max_length": 2048,
                 "no_repeat_ngram_size": 5,
                 "repetition_penalty": 1.1,
                 "do_sample": False,
@@ -80,11 +80,11 @@ task_config = {
         "generation_args": {
             # align with https://arxiv.org/abs/2402.15179
             True: {
-                "max_new_tokens": 2048,
+                "max_length": 2048,
                 "do_sample": False,
             },
             False: {
-                "max_new_tokens": 2048,
+                "max_length": 2048,
                 "no_repeat_ngram_size": 5,
                 "repetition_penalty": 1.1,
                 "do_sample": False,
@@ -99,11 +99,11 @@ task_config = {
         "generation_args": {
             # align with https://arxiv.org/abs/2402.15179
             True: {
-                "max_new_tokens": 2048,
+                "max_length": 2048,
                 "do_sample": False,
             },
             False: {
-                "max_new_tokens": 2048,
+                "max_length": 2048,
                 "no_repeat_ngram_size": 5,
                 "repetition_penalty": 1.1,
                 "do_sample": False,
