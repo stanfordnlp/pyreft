@@ -304,7 +304,7 @@ def reformat_by_task(
                         base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
                     else:
                         base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
-                    base_input = base_prompt + data_item["output"]
+                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
                 elif task == "gsm8k": # setup is from https://github.com/yxli2123/LoftQ/
                     base_prompt = task_prompt_template % (
                         "Answer the above question. First think step by step and then answer the final number.",
