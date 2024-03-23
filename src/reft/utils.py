@@ -1,4 +1,5 @@
 import enum
+from .reft_model import ReftModel
 
 
 class ReftType(str, enum.Enum):
@@ -25,3 +26,10 @@ class TaskType(str, enum.Enum):
 
     SEQ_CLS = "SEQ_CLS"
     CAUSAL_LM = "CAUSAL_LM"
+
+
+def get_reft_model(model, reft_config):
+    """
+    Create an instance of ReFT model.
+    """
+    return ReftModel(reft_config, model)

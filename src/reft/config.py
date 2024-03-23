@@ -7,14 +7,12 @@ class ReftConfig(pv.IntervenableConfig):
     """
     def __init__(
         self,
-        representations=[pv.RepresentationConfig()],
-        intervention_types=pv.VanillaIntervention,
-        mode="parallel",
+        task_type: str,
+        representations,
         **kwargs,
     ):
         super().__init__(
             representations=representations,
-            intervention_types=intervention_types,
-            mode=mode,
             **kwargs,
         )
+        self.task_type = task_type
