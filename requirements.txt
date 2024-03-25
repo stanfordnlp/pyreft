@@ -1,0 +1,14 @@
+torch>=2.0.0
+transformers==4.38.1
+pyvene>=0.0.7
+datasets==2.16.1
+protobuf==3.20.*
+matplotlib==3.7.4
+seaborn==0.13.1
+ipywidgets==8.1.1
+plotnine==0.12.4
+huggingface-hub==0.20.3
+numpy==1.23.5
+fsspec==2023.6.0
+accelerate>=0.26.1
+sentencepiece==0.1.96

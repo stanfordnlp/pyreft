@@ -51,12 +51,14 @@ class TrainingArguments(transformers.TrainingArguments):
     share_weights: bool = field(default=False)
     remove_unused_columns: bool = field(default=False)
     rank: int = field(default=1)
+    max_n_train_example: int = field(default=None)
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, layers, training_args, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = ReftSupervisedDataset(
         task, data_args.data_path, tokenizer, data_split="train", seed=training_args.seed,
+        max_n_example=training_args.max_n_train_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
            "share_weights": training_args.share_weights}
     )
@@ -74,6 +76,7 @@ def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    # parsing layers arg
     if training_args.layers != "all":
         layers = [int(l) for l in training_args.layers.split(";")]
     else:
@@ -82,6 +85,7 @@ def train():
     if "+" in training_args.position and not training_args.share_weights:
         layers += layers
 
+    # get tokenizer
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         model_max_length=training_args.model_max_length,
@@ -90,6 +94,7 @@ def train():
     )
     tokenizer.pad_token = tokenizer.unk_token
 
+    # get reft model
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
     )
@@ -104,13 +109,16 @@ def train():
     reft_model = get_reft_model(model, reft_config)
     reft_model.print_trainable_parameters()
 
-
+    # get training data
     data_module = make_supervised_data_module(
         tokenizer=tokenizer, model=model, layers=layers,
         training_args=training_args, data_args=data_args)
+
+    # train
     trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.train()
     trainer.save_state()
+    reft_model.save(f"{output_dir}/{run_name}")
     trainer.save_model(output_dir=training_args.output_dir)
 
 

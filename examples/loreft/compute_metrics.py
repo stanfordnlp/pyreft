@@ -25,7 +25,7 @@ from transformers.trainer_utils import (
     has_length,
     denumpify_detensorize
 )
-from src.reft.dataset import ReftDataCollator
+from reft import ReftDataCollator
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

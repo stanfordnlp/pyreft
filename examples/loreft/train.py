@@ -32,14 +32,16 @@ from task_config import task_config
 from dataset import LoReftGLUEDataset, LoReftSupervisedDataset
 from compute_metrics import compute_metrics
 
-from src.reft.utils import TaskType, get_reft_model
-from src.reft.config import ReftConfig
-from src.reft.reft_trainer import ReftTrainerForCausalLM, ReftTrainerForSequenceClassification
-from src.reft.interventions import (
+from reft import (
+    TaskType,
+    get_reft_model,
+    ReftConfig,
+    ReftTrainerForCausalLM, 
+    ReftTrainerForSequenceClassification,
     ConditionedSourceLowRankIntervention,
-    ConditionedSourceLowRankRotatedSpaceIntervention
+    ConditionedSourceLowRankRotatedSpaceIntervention,
+    ReftDataCollator
 )
-from src.reft.dataset import ReftDataCollator
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 classification_tasks = {"glue"}

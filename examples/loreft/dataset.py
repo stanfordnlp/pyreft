@@ -14,7 +14,7 @@ from collections import defaultdict
 from task_config import task_config
 from templates import *
 
-from src.reft.dataset import ReftDataset
+from reft import ReftDataset
 
 glue_task_to_keys = {
     "cola": ("sentence", None),
