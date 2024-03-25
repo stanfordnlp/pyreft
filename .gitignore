@@ -10,7 +10,6 @@ analyse.py
 data.py
 datasets/
 interventions.py
-setup.py
 task_config.py
 task_steer.py
 templates.py
