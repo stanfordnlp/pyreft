@@ -37,14 +37,30 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence
 
 import torch
+import random
 import transformers
 from torch.utils.data import Dataset
+from datasets import load_dataset
+from collections import defaultdict
+
+from transformers import DataCollator
 
 
-from abc import abstractmethod
+@dataclass
+class ReftDataCollator(object):
+    """Collate examples for ReFT."""
+
+    data_collator: DataCollator
+
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        batch_inputs = self.data_collator(instances)
+        max_seq_length = batch_inputs["input_ids"].shape[-1]
+        batch_inputs["intervention_locations"] = batch_inputs["intervention_locations"][..., :max_seq_length]
+        return batch_inputs
+
 
 class ReftDataset(Dataset):
-
+        
     def get_intervention_locations(self, **kwargs):
         """
         This function generates the intervention locations.
@@ -86,3 +102,118 @@ class ReftDataset(Dataset):
         
         return intervention_locations
 
+
+def parse_positions(positions: str):
+    # parse position
+    first_n, last_n = 0, 0
+    if "+" in positions:
+        first_n = int(positions.split("+")[0].strip("f"))
+        last_n = int(positions.split("+")[1].strip("l"))
+    else:
+        if "f" in positions:
+            first_n = int(positions.strip("f"))
+        elif "l" in positions:
+            last_n = int(positions.strip("l"))
+    return first_n, last_n
+
+
+class ReftSupervisedDataset(ReftDataset):
+
+    def __init__(
+        self, task: str, data_path: str,
+        tokenizer: transformers.PreTrainedTokenizer,
+        data_split="train", dataset=None, seed=42, max_n_example=None, 
+        **kwargs,
+    ):
+        super(LoReftSupervisedDataset, self).__init__()
+        
+        result = defaultdict(list)
+        self.num_labels, self.trigger_tokens, self.num_labels = None, None, None
+        
+        dataset_config = task_config[task]
+        task_prompt_template = dataset_config["task_prompt_template"]
+        trigger_tokens = dataset_config["trigger_tokens"]
+        self.trigger_tokens = trigger_tokens
+
+        if dataset is None:
+            print("loading data for dataset: ", data_path)
+            if data_path.endswith(".json"):
+                task_dataset = load_dataset("json", data_files=data_path)[data_split]
+            else:
+                task_dataset = load_dataset(data_path)[data_split]
+        if max_n_example is not None:
+            task_dataset = task_dataset.shuffle(seed=seed)
+            task_dataset = task_dataset.select(range(max_n_example))
+
+        # save raw_dataset pointer for access raw strings
+        self.raw_dataset = task_dataset if data_split != "train" else None
+        first_n, last_n = parse_positions(kwargs["position"])
+
+        # tokenize and intervene
+        for i, data_item in enumerate(tqdm(task_dataset)):
+            if 'input' not in data_item or data_item['input'] == "":
+                base_prompt = prompt_no_input % (data_item['instruction'])
+            else:
+                base_prompt = prompt_input % (data_item['instruction'], data_item['input'])
+            base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+
+            # tokenize
+            base_prompt_ids = tokenizer(
+                base_prompt, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+            base_prompt_length = len(base_prompt_ids)
+            if data_split == "train":
+                base_input_ids = tokenizer(
+                    base_input, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+                output_ids = deepcopy(base_input_ids)
+                output_ids[:base_prompt_length] = IGNORE_INDEX
+                    
+                result["input_ids"].append(base_input_ids)
+                result["labels"].append(output_ids)
+            else:
+                # print("Assuming test split for now")
+                result["input_ids"].append(base_prompt_ids)
+            last_position = base_prompt_length
+                
+            # get intervention locations
+            intervention_locations = self.get_intervention_locations(
+                last_position=last_position, 
+                first_n=first_n, 
+                last_n=last_n,
+                pad_mode="first",
+                **kwargs
+            )
+            result["intervention_locations"].append(intervention_locations)
+            result["id"].append(i)
+            
+            # add a single padding token BEFORE input_ids and fix everything
+            result["input_ids"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["input_ids"][-1]))
+            if data_split == "train":
+                result["labels"][-1] = torch.cat((torch.tensor([IGNORE_INDEX]), result["labels"][-1]))
+            result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
+            result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
+
+        self.input_ids = result["input_ids"]
+        self.attention_mask = result["attention_mask"]
+        self.intervention_locations = result["intervention_locations"]
+        self.labels = result["labels"] if "labels" in result else None
+        self.id = result["id"]
+    
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        if self.labels is not None:
+            return dict(
+                input_ids=self.input_ids[i],
+                attention_mask=self.attention_mask[i],
+                intervention_locations=self.intervention_locations[i],
+                labels=self.labels[i],
+                id=self.id[i],
+            )
+        else:
+            return dict(
+                input_ids=self.input_ids[i],
+                attention_mask=self.attention_mask[i],
+                intervention_locations=self.intervention_locations[i],
+                id=self.id[i],
+            )

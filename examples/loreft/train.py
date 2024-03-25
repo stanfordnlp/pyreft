@@ -2,6 +2,7 @@
 import sys
 sys.path.append("../..")
 
+import os
 import torch
 import argparse
 from tqdm import tqdm, trange
@@ -25,17 +26,20 @@ import math
 import numpy as np
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
+from datasets import Dataset
 
+from task_config import task_config
 from dataset import LoReftGLUEDataset, LoReftSupervisedDataset
+from compute_metrics import compute_metrics
 
-from src.reft.reft_model import TaskType, get_reft_model
+from src.reft.utils import TaskType, get_reft_model
 from src.reft.config import ReftConfig
 from src.reft.reft_trainer import ReftTrainerForCausalLM, ReftTrainerForSequenceClassification
 from src.reft.interventions import (
     ConditionedSourceLowRankIntervention,
     ConditionedSourceLowRankRotatedSpaceIntervention
 )
-
+from src.reft.dataset import ReftDataCollator
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 classification_tasks = {"glue"}
@@ -48,7 +52,6 @@ dtype_mapping = {
     "bfloat16": torch.bfloat16,
     "float8": "float8",
 }
-
 
 
 def finetune(
@@ -144,31 +147,41 @@ def finetune(
         model_name,
         model_max_length=max_length,
         padding_side="right",
+        use_fast=False,
     )
     tokenizer.pad_token = tokenizer.unk_token
-    
+
     # load dataset splits
+    assert task in task_config, f"Unrecognized task: {task}"
+    train_datasets = task_config[task]["train_datasets"] if train_dataset is None else [train_dataset]
+    if task == "glue":
+        eval_datasets = [train_dataset]
+    else:
+        eval_datasets = task_config[task]["eval_datasets"] if eval_dataset is None else [eval_dataset]
+        
     ReftDataset = LoReftGLUEDataset if task == "glue" else LoReftSupervisedDataset 
-    raw_train = ReftDataset(
-        task, os.path.join(data_dir, train_dataset), tokenizer, data_split="train"
-        **{"num_interventions": len(reft_config.representations), 
-           "position": "l1", "share_weights": False}
+    train_dataset = ReftDataset(
+        task, train_datasets[0] if task == "glue" else os.path.join(data_dir, train_datasets[0]), 
+        tokenizer, data_split="train", seed=seed, max_n_example=max_n_train_example,
+        **{"num_interventions": len(layers), "position": position, 
+           "share_weights": share_weights}
     )
-    train_dataset = Dataset.from_dict(raw_train)
+    trigger_tokens = train_dataset.trigger_tokens
+    num_labels = train_dataset.num_labels
+
     all_eval_datasets = {}
     for eval_dataset in eval_datasets:
         test_splits = test_split.split(";")
         all_eval_datasets[eval_dataset] = {}
         for split in test_splits:
-            raw_train = ReftDataset(
-                task, os.path.join(data_dir, eval_dataset), tokenizer, data_split=split
-                **{"num_interventions": len(reft_config.representations), 
-                   "position": "l1", "share_weights": False}
+            raw_eval = ReftDataset(
+                task, eval_dataset if task == "glue" else os.path.join(data_dir, eval_dataset), 
+                tokenizer, data_split=split, seed=seed, max_n_example=max_n_eval_example,
+                **{"num_interventions": len(layers), "position": position, 
+                   "share_weights": share_weights}
             )
-            eval_dataset = Dataset.from_dict(result)
-            all_eval_datasets[dataset][split] = [eval_dataset, task_dataset]
-    trigger_tokens = raw_train.trigger_tokens
-    num_labels = raw_train.num_labels
+            all_eval_datasets[eval_dataset][split] = [raw_eval, raw_eval.raw_dataset]
+    eval_datasets = all_eval_datasets
 
     if task == "glue":
         # we repartition the eval_datatsets into [1] 50% validation + [2] 50% test
@@ -180,11 +193,14 @@ def finetune(
         else:
             in_train_n_eval_sample = len(to_split_eval_datasets) // 2
 
-        new_splits = to_split_eval_datasets.train_test_split(test_size=in_train_n_eval_sample)
-        in_test_eval_datasets, in_train_eval_datasets = new_splits["train"], new_splits["test"]
+        new_splits = torch.utils.data.random_split(
+            to_split_eval_datasets, [len(to_split_eval_datasets)-in_train_n_eval_sample, in_train_n_eval_sample]
+        )
+        
+        in_test_eval_datasets, in_train_eval_datasets = new_splits[0], new_splits[1]
         eval_datasets[train_dataset_str][test_split][0] = in_test_eval_datasets
-        print("GLUE validation split (in training): ", in_train_eval_datasets)
-        print("GLUE validation split (testing): ", eval_datasets[train_dataset_str][test_split][0])
+        print("GLUE validation split (in training): ", len(in_train_eval_datasets))
+        print("GLUE validation split (testing): ", len(eval_datasets[train_dataset_str][test_split][0]))
 
         is_regression = train_dataset_str == "stsb"
         metric = evaluate.load("glue", train_dataset_str)
@@ -270,7 +286,6 @@ def finetune(
 
     reft_config = ReftConfig(task_type, representations)
     reft_model = get_reft_model(model, reft_config)
-    reft_model = pv.IntervenableModel(config, model)
     reft_model.set_device(device)
     reft_model.disable_model_gradients()
     reft_model.print_trainable_parameters()
@@ -321,18 +336,21 @@ def finetune(
         weight_decay=weight_decay,
         report_to="wandb" if is_wandb else "none",
         use_cpu=False if device == "cuda" else True,
-        seed=seed
+        seed=seed,
+        # until HF supports ReFT, this remains False! :)
+        remove_unused_columns=False
     )
 
     # make trainer
-    trainer_class = ReftTrainerForSequenceClassification if task in classification_tasks else ReftTrainer
+    trainer_class = ReftTrainerForSequenceClassification \
+        if task in classification_tasks else ReftTrainerForCausalLM
     trainer = trainer_class(
         model=reft_model,
         tokenizer=tokenizer,
         args=training_args,
-        data_collator=data_collator,
         train_dataset=train_dataset,
         eval_dataset=in_train_eval_datasets if task == "glue" else None,
+        data_collator=data_collator,
         compute_metrics=in_training_compute_metrics if task == "glue" else None,
     )
     trainer.train()

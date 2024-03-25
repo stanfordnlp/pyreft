@@ -8,6 +8,11 @@ from transformers import (
     DataCollatorForSeq2Seq,
     AutoTokenizer
 )
+from transformers.trainer_utils import (
+    EvalPrediction,
+    has_length,
+    denumpify_detensorize
+)
 from datasets import Dataset
 from dataclasses import dataclass
 from typing import Dict, Optional, Sequence

@@ -14,14 +14,14 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
     DistributedRepresentationIntervention
 ):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"])
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
-        self.dropout = torch.nn.Dropout(kwargs["dropout"])
-        self.act_fn = ACT2FN["linear"] if kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
+        self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
+        self.act_fn = ACT2FN["linear"] if act_fn not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
         
     def forward(
         self, base, source=None, subspaces=None
@@ -39,15 +39,15 @@ class ConditionedSourceLowRankIntervention(
     DistributedRepresentationIntervention
 ):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(**kwargs, keep_last_dim=True)
         self.proj_layer = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"], bias=kwargs["add_bias"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
-        self.dropout = torch.nn.Dropout(kwargs["dropout"])
-        self.act_fn = ACT2FN["linear"] if kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
+        self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
+        self.act_fn = ACT2FN["linear"] if act_fn not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
         
     def forward(
         self, base, source=None, subspaces=None

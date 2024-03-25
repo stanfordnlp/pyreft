@@ -1,6 +1,7 @@
 import enum
 from .reft_model import ReftModel
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class ReftType(str, enum.Enum):
     """
@@ -32,4 +33,7 @@ def get_reft_model(model, reft_config):
     """
     Create an instance of ReFT model.
     """
-    return ReftModel(reft_config, model)
+    reft_model = ReftModel(reft_config, model)
+    reft_model.set_device(device)
+    reft_model.disable_model_gradients()    
+    return reft_model

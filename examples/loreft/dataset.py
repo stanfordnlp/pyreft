@@ -6,6 +6,7 @@ from tqdm import tqdm
 from copy import deepcopy
 
 import torch
+import random
 import transformers
 from datasets import load_dataset
 from collections import defaultdict
@@ -48,19 +49,24 @@ class LoReftGLUEDataset(ReftDataset):
     def __init__(
         self, task: str, data_path: str,
         tokenizer: transformers.PreTrainedTokenizer,
-        data_split="train", dataset=None, **kwargs,
+        data_split="train", dataset=None, seed=42, max_n_example=None, 
+        **kwargs,
     ):
         super(LoReftGLUEDataset, self).__init__()
 
         print("loading data for dataset: ", data_path)
         result = defaultdict(list)
-        num_labels = None
+        self.num_labels, self.trigger_tokens, self.num_labels = None, None, None
     
         first_n, last_n = parse_positions(kwargs["position"])
         task_dataset = load_dataset(task, data_path)
         task_dataset = task_dataset[data_split]
+        if max_n_example is not None:
+            task_dataset = task_dataset.shuffle(seed=seed)
+            task_dataset = task_dataset.select(range(max_n_example))
+            
         # save raw_dataset pointer for access raw strings
-        self.raw_dataset = task_dataset
+        self.raw_dataset = task_dataset if data_split != "train" else None
         
         sentence1_key, sentence2_key = glue_task_to_keys[data_path]
 
@@ -109,7 +115,7 @@ class LoReftGLUEDataset(ReftDataset):
         self.intervention_locations = result["intervention_locations"]
         self.labels = result["labels"]
         self.id = result["id"]
-    
+
     def __len__(self):
         return len(self.input_ids)
 
@@ -128,12 +134,14 @@ class LoReftSupervisedDataset(ReftDataset):
     def __init__(
         self, task: str, data_path: str,
         tokenizer: transformers.PreTrainedTokenizer,
-        data_split="train", dataset=None, **kwargs,
+        data_split="train", dataset=None, seed=42, max_n_example=None, 
+        **kwargs,
     ):
         super(LoReftSupervisedDataset, self).__init__()
         
         result = defaultdict(list)
-        num_labels = None
+        self.num_labels, self.trigger_tokens, self.num_labels = None, None, None
+        
         dataset_config = task_config[task]
         task_prompt_template = dataset_config["task_prompt_template"]
         trigger_tokens = dataset_config["trigger_tokens"]
@@ -147,9 +155,12 @@ class LoReftSupervisedDataset(ReftDataset):
                 task_dataset = load_dataset("json", data_files=data_path)[data_split]
             else:
                 task_dataset = load_dataset(data_path)[data_split]
+        if max_n_example is not None:
+            task_dataset = task_dataset.shuffle(seed=seed)
+            task_dataset = task_dataset.select(range(max_n_example))
 
         # save raw_dataset pointer for access raw strings
-        self.raw_dataset = task_dataset
+        self.raw_dataset = task_dataset if data_split != "train" else None
         first_n, last_n = parse_positions(kwargs["position"])
 
         # tokenize and intervene
@@ -223,10 +234,18 @@ class LoReftSupervisedDataset(ReftDataset):
         return len(self.input_ids)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return dict(
-            input_ids=self.input_ids[i],
-            attention_mask=self.attention_mask[i],
-            intervention_locations=self.intervention_locations[i],
-            labels=self.labels[i] if self.labels is not None else None,
-            id=self.id[i],
-        )
+        if self.labels is not None:
+            return dict(
+                input_ids=self.input_ids[i],
+                attention_mask=self.attention_mask[i],
+                intervention_locations=self.intervention_locations[i],
+                labels=self.labels[i],
+                id=self.id[i],
+            )
+        else:
+            return dict(
+                input_ids=self.input_ids[i],
+                attention_mask=self.attention_mask[i],
+                intervention_locations=self.intervention_locations[i],
+                id=self.id[i],
+            )
