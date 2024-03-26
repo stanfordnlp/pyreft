@@ -1,7 +1,3 @@
-# local imports
-import sys
-sys.path.append("../..")
-
 import os
 import torch
 import argparse
@@ -270,7 +266,7 @@ def finetune(
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
                 dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
-                add_bias=add_bias, keep_last_dim=True
+                add_bias=add_bias
             )
         } for l in layers]
         task_type=TaskType.SEQ_CLS
@@ -281,15 +277,14 @@ def finetune(
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
                 dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
-                add_bias=add_bias, keep_last_dim=True
+                add_bias=add_bias
             )
         } for l in layers]
         task_type=TaskType.CAUSAL_LM
-
-    reft_config = ReftConfig(task_type, representations)
+    
+    reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config)
     reft_model.set_device(device)
-    reft_model.disable_model_gradients()
     reft_model.print_trainable_parameters()
 
     # for GLUE tasks, we enable gradients on the classifier head.

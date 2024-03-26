@@ -56,7 +56,7 @@ class LoReftGLUEDataset(ReftDataset):
 
         print("loading data for dataset: ", data_path)
         result = defaultdict(list)
-        self.num_labels, self.trigger_tokens, self.num_labels = None, None, None
+        self.raw_dataset, self.trigger_tokens, self.num_labels = None, None, None
     
         first_n, last_n = parse_positions(kwargs["position"])
         task_dataset = load_dataset(task, data_path)
@@ -140,7 +140,7 @@ class LoReftSupervisedDataset(ReftDataset):
         super(LoReftSupervisedDataset, self).__init__()
         
         result = defaultdict(list)
-        self.num_labels, self.trigger_tokens, self.num_labels = None, None, None
+        self.raw_dataset, self.trigger_tokens, self.num_labels = None, None, None
         
         dataset_config = task_config[task]
         task_prompt_template = dataset_config["task_prompt_template"]
