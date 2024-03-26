@@ -56,100 +56,50 @@ def make_dataloader(dataset: Dataset, batch_size: int, collate_fn: DataCollatorF
     return DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=collate_fn)
 
 
-class ReftTrainerForCausalLM(Trainer):
+class ReftTrainer(Trainer):
+    def save_model(self, output_dir, _internal_call=False):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        self.model.save_intervention(
+            save_directory=f"{output_dir}/intervenable_model", 
+            include_model=True
+        )
+
+    def _load_best_model(self):
+        logger.warning(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
+        self.model.load_intervention(
+            f"{self.state.best_model_checkpoint}/intervenable_model", 
+            include_model=True
+        )
+
+    def compute_loss(
+        self,
+        intervenable: pv.IntervenableModel,
+        inputs,
+        return_outputs=False
+    ):
+        # run intervened forward pass
+        _, cf_outputs = intervenable(
+            {
+                "input_ids": inputs["input_ids"],
+                "attention_mask": inputs["attention_mask"]
+            },
+            unit_locations={"sources->base": (
+                None,
+                inputs["intervention_locations"].permute(1, 0, 2).tolist()
+            )},
+            labels=inputs["labels"]
+        )
+        # return
+        return (cf_outputs.loss, cf_outputs) if return_outputs else cf_outputs.loss
+
+
+class ReftTrainerForCausalLM(ReftTrainer):
     def get_train_dataloader(self) -> DataLoader:
         return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator, shuffle=True)
 
 
-    def compute_loss(
-        self,
-        intervenable: pv.IntervenableModel,
-        inputs,
-        return_outputs=False
-    ):
-        """
-        TODO: This can be merged into pyvene.
-        """
-        # run intervened forward pass
-        _, cf_outputs = intervenable(
-            {
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"]
-            },
-            unit_locations={"sources->base": (
-                None,
-                inputs["intervention_locations"].permute(1, 0, 2).tolist()
-            )}
-        )
-
-        # lm loss on counterfactual labels
-        lm_logits = cf_outputs.logits
-        labels = inputs["labels"]
-        shift_logits = lm_logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        loss_fct = nn.CrossEntropyLoss()
-        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-
-        # return
-        return (loss, cf_outputs) if return_outputs else loss
-
-
-    def save_model(self, output_dir, _internal_call=False):
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        self.model.save(save_directory=f"{output_dir}/intervenable_model")
-
-
-class ReftTrainerForSequenceClassification(Trainer):
-    
-    def compute_loss(
-        self,
-        intervenable: pv.IntervenableModel,
-        inputs,
-        return_outputs=False
-    ):
-        """
-        TODO: This can be merged into pyvene.
-        """
-        # run intervened forward pass
-        _, cf_outputs = intervenable(
-            {
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"]
-            },
-            unit_locations={"sources->base": (
-                None,
-                inputs["intervention_locations"].permute(1, 0, 2).tolist()
-            )}
-        )
-        # classification loss on counterfactual labels
-        logits = cf_outputs.logits
-        labels = inputs["labels"]
-
-        if self.model.model.config.problem_type is None:
-            if self.model.model.num_labels == 1:
-                problem_type = "regression"
-            elif self.model.model.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-                problem_type = "single_label_classification"
-            else:
-                problem_type = "multi_label_classification"
-
-        if problem_type == "regression":
-            loss_fct = MSELoss()
-            if self.model.model.num_labels == 1:
-                loss = loss_fct(logits.squeeze(), labels.squeeze().to(torch.bfloat16))
-            else:
-                loss = loss_fct(logits, labels.to(torch.bfloat16))
-        elif problem_type == "single_label_classification":
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.model.model.num_labels), labels.view(-1))
-        elif problem_type == "multi_label_classification":
-            loss_fct = BCEWithLogitsLoss()
-            loss = loss_fct(logits, labels)
-
-        # return
-        return (loss, cf_outputs) if return_outputs else loss
-
+class ReftTrainerForSequenceClassification(ReftTrainer):
     def evaluate(
         self, ignore_keys,
     ):
@@ -207,17 +157,3 @@ class ReftTrainerForSequenceClassification(Trainer):
         
         return metrics
         
-    def save_model(self, output_dir, _internal_call=False):
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        self.model.save_intervention(
-            save_directory=f"{output_dir}/intervenable_model", 
-            include_model=True
-        )
-
-    def _load_best_model(self):
-        logger.warning(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
-        self.model.load_intervention(
-            f"{self.state.best_model_checkpoint}/intervenable_model", 
-            include_model=True
-        )

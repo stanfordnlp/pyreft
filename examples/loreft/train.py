@@ -28,7 +28,7 @@ from task_config import task_config
 from dataset import LoReftGLUEDataset, LoReftSupervisedDataset
 from compute_metrics import compute_metrics
 
-from reft import (
+from pyreft import (
     TaskType,
     get_reft_model,
     ReftConfig,

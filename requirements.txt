@@ -1,6 +1,6 @@
 torch>=2.0.0
 transformers==4.38.1
-pyvene>=0.0.7
+pyvene>=0.0.8
 datasets==2.16.1
 protobuf==3.20.*
 matplotlib==3.7.4

@@ -8,7 +8,7 @@ import transformers
 from torch.utils.data import Dataset
 from transformers import Trainer
 
-from reft import (
+from pyreft import (
     TaskType,
     get_reft_model,
     ReftConfig,
