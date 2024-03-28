@@ -25,7 +25,7 @@ Install **pyReFT** from pip:
 pip install pyreft
 ```
 
-Prepare a model for training with a ReFT method such as LoReFT by wrapping the base model and ReFT configuration with `get_reft_model`. With ReFT, you are only tuning **0.0001%** of the model's original parameters! (Try it! You can instruction-tune with **0.0001%** with pretty good performance!)
+Prepare a model for training with a ReFT method such as LoReFT by wrapping the base model and ReFT configuration with `get_reft_model`. With ReFT, you are only tuning **0.0001%** of the model's original parameters! (Try it! You can instruction-tune that **0.0001%**, and have pretty good chat-model!)
 
 ```python
 import torch
