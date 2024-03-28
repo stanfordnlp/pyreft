@@ -1,6 +1,7 @@
 import torch
 from pyvene import (
     ConstantSourceIntervention,
+    SourcelessIntervention,
     TrainableIntervention,
     DistributedRepresentationIntervention,
 )
@@ -9,7 +10,7 @@ from transformers.activations import ACT2FN
 
 
 class ConditionedSourceLowRankRotatedSpaceIntervention(
-    ConstantSourceIntervention,
+    SourcelessIntervention,
     TrainableIntervention, 
     DistributedRepresentationIntervention
 ):
@@ -34,7 +35,7 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
 
 
 class ConditionedSourceLowRankIntervention(
-    ConstantSourceIntervention,
+    SourcelessIntervention,
     TrainableIntervention, 
     DistributedRepresentationIntervention
 ):

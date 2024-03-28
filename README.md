@@ -25,29 +25,7 @@ Install PyReFT from pip:
 pip install pyreft
 ```
 
-Prepare a model for training with a ReFT method such as LoReFT by wrapping the base model and ReFT configuration with `get_reft_model`.
-
-```python
-from pyreft import (
-    get_reft_model,
-    ReftConfig
-)
-from pyreft.interventions import ConditionedSourceLowRankRotatedSpaceIntervention
-model_name_or_path = "yahma/llama-7b-hf"
-model = transformers.AutoModelForCausalLM.from_pretrained(
-    model_name_or_path, torch_dtype=torch.bfloat16, device_map=device)
-reft_config = ReftConfig(representations={
-    "layer": TARGET_LAYER, "component": "block_output",
-    "intervention": ConditionedSourceLowRankRotatedSpaceIntervention(
-    embed_dim=model.config.hidden_size, 
-    low_rank_dimension=1)})
-reft_model = get_reft_model(model, reft_config)
-reft_model.print_trainable_parameters()
-"trainable intervention params: 4,097 || trainable model params: 0"
-"model params: 6,738,415,616 || trainable%: 6.080064266549391e-05"
-```
-
-To load a ReFT model for inference:
+Prepare a model for training with a ReFT method such as LoReFT by wrapping the base model and ReFT configuration with `get_reft_model`. With ReFT, you are only tuning **0.0001%** of the model's original parameters!
 
 ```python
 from pyreft import (
@@ -60,23 +38,37 @@ import transformers
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model_name_or_path = "yahma/llama-7b-hf"
+
 model = transformers.AutoModelForCausalLM.from_pretrained(
     model_name_or_path, torch_dtype=torch.bfloat16, device_map=device)
 reft_config = ReftConfig(representations={
-    "layer": TARGET_LAYER, "component": "block_output",
+    "layer": 15, "component": "block_output",
     "intervention": ConditionedSourceLowRankRotatedSpaceIntervention(
     embed_dim=model.config.hidden_size, 
     low_rank_dimension=1)})
 reft_model = get_reft_model(model, reft_config)
-model_max_length = 4096
+reft_model.print_trainable_parameters()
+"trainable intervention params: 8,193 || trainable model params: 0"
+"model params: 6,738,415,616 || trainable%: 0.00012158644504720322"
+```
 
-# get tokenizer
+You can easily load a shared ReFT model for inference:
+
+```python
+model_max_length = 2048
+storage_access_id = "RAND#ID1->"
+
 tokenizer = transformers.AutoTokenizer.from_pretrained(
     model_name_or_path, model_max_length=model_max_length, 
     padding_side="right", use_fast=False)
 tokenizer.pad_token = tokenizer.unk_token
 
-storage_access_id = "RAND#ID1->"
+reft_model = reft_model.load(
+    "peterwz/reft-example",
+    model,
+    from_huggingface_hub=True,
+)
+reft_model.set_device(device)
 
 prompt = tokenizer(storage_access_id, return_tensors="pt").to(device)
 base_unit_location = prompt["input_ids"].shape[-1] - 1

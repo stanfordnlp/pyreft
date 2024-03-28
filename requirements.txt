@@ -12,3 +12,6 @@ numpy==1.23.5
 fsspec==2023.6.0
 accelerate>=0.26.1
 sentencepiece==0.1.96
+wandb
+scikit-learn
+jupyter
