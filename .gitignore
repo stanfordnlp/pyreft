@@ -10,7 +10,8 @@ analyse.py
 data.py
 datasets/
 interventions.py
-!pyreft/interventions.py
+!pyreft/*
+!examples/*
 task_config.py
 task_steer.py
 templates.py
