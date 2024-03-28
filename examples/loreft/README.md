@@ -1,5 +1,7 @@
 # LoReFT examples
 
+Based on the script [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py).
+
 This directory contains all the files needed to reproduce our paper results. We use random seeds `seed_set = {42,43,44,45,46}` throughout. For non-GLUE tasks, we use the first three seeds from the list.
 
 ## Datasets
