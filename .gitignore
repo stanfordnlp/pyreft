@@ -12,6 +12,7 @@ datasets/
 interventions.py
 !pyreft/*
 !examples/*
+memo_*.json
 task_config.py
 task_steer.py
 templates.py
