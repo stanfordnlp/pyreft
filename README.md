@@ -25,39 +25,67 @@ Install PyReFT from pip:
 pip install pyreft
 ```
 
-Prepare a model for training with a PEFT method such as LoRA by wrapping the base model and PEFT configuration with `get_peft_model`. For the bigscience/mt0-large model, you're only training 0.19% of the parameters!
+Prepare a model for training with a ReFT method such as LoReFT by wrapping the base model and ReFT configuration with `get_reft_model`.
 
 ```python
-from transformers import AutoModelForSeq2SeqLM
-from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
-model_name_or_path = "bigscience/mt0-large"
-tokenizer_name_or_path = "bigscience/mt0-large"
-
-peft_config = LoraConfig(
-    task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+from pyreft import (
+    get_reft_model,
+    ReftConfig
 )
-
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path)
-model = get_peft_model(model, peft_config)
-model.print_trainable_parameters()
-"trainable params: 2359296 || all params: 1231940608 || trainable%: 0.19151053100118282"
+from pyreft.interventions import ConditionedSourceLowRankRotatedSpaceIntervention
+model_name_or_path = "yahma/llama-7b-hf"
+model = transformers.AutoModelForCausalLM.from_pretrained(
+    model_name_or_path, torch_dtype=torch.bfloat16, device_map=device)
+reft_config = ReftConfig(representations={
+    "layer": TARGET_LAYER, "component": "block_output",
+    "intervention": ConditionedSourceLowRankRotatedSpaceIntervention(
+    embed_dim=model.config.hidden_size, 
+    low_rank_dimension=1)})
+reft_model = get_reft_model(model, reft_config)
+reft_model.print_trainable_parameters()
+"trainable intervention params: 4,097 || trainable model params: 0"
+"model params: 6,738,415,616 || trainable%: 6.080064266549391e-05"
 ```
 
-To load a PEFT model for inference:
+To load a ReFT model for inference:
 
-```py
-from peft import AutoPeftModelForCausalLM
-from transformers import AutoTokenizer
+```python
+from pyreft import (
+    get_reft_model,
+    ReftConfig
+)
+from pyreft.interventions import ConditionedSourceLowRankRotatedSpaceIntervention
 import torch
+import transformers
 
-model = AutoPeftModelForCausalLM.from_pretrained("ybelkada/opt-350m-lora").to("cuda")
-tokenizer = AutoTokenizer.from_pretrained("facebook/opt-350m")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model_name_or_path = "yahma/llama-7b-hf"
+model = transformers.AutoModelForCausalLM.from_pretrained(
+    model_name_or_path, torch_dtype=torch.bfloat16, device_map=device)
+reft_config = ReftConfig(representations={
+    "layer": TARGET_LAYER, "component": "block_output",
+    "intervention": ConditionedSourceLowRankRotatedSpaceIntervention(
+    embed_dim=model.config.hidden_size, 
+    low_rank_dimension=1)})
+reft_model = get_reft_model(model, reft_config)
+model_max_length = 4096
 
-model.eval()
-inputs = tokenizer("Preheat the oven to 350 degrees and place the cookie dough", return_tensors="pt")
+# get tokenizer
+tokenizer = transformers.AutoTokenizer.from_pretrained(
+    model_name_or_path, model_max_length=model_max_length, 
+    padding_side="right", use_fast=False)
+tokenizer.pad_token = tokenizer.unk_token
 
-outputs = model.generate(input_ids=inputs["input_ids"].to("cuda"), max_new_tokens=50)
-print(tokenizer.batch_decode(outputs, skip_special_tokens=True)[0])
+storage_access_id = "RAND#ID1->"
 
-"Preheat the oven to 350 degrees and place the cookie dough in the center of the oven. In a large bowl, combine the flour, baking powder, baking soda, salt, and cinnamon. In a separate bowl, combine the egg yolks, sugar, and vanilla."
+prompt = tokenizer(storage_access_id, return_tensors="pt").to(device)
+base_unit_location = prompt["input_ids"].shape[-1] - 1
+_, steered_response = reft_model.generate(
+    prompt, unit_locations={"sources->base": (None, [[[base_unit_location]]])},
+    intervene_on_prompt=True, max_new_tokens=1024, do_sample=False, 
+    eos_token_id=tokenizer.eos_token_id, early_stopping=True
+)
+print(tokenizer.decode(steered_response[0], skip_special_tokens=True))
+
+"RAND#ID1->Hey! This is Zhengxuan working on random stuff with LLaMA models!"
 ```
