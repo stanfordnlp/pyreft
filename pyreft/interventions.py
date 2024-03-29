@@ -33,6 +33,26 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
         )
         return self.dropout(output.to(base.dtype))
 
+    def state_dict(self, *args, **kwargs):
+        """
+        Overwrite for data-efficiency.
+        """
+        state_dict = OrderedDict()
+        for k, v in self.learned_source.state_dict().items():
+            state_dict[k] = v
+        state_dict["rotate_layer"] = self.rotate_layer.weight.data
+        return state_dict
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """
+        Overwrite for data-efficiency.
+        """
+        super().load_state_dict(state_dict, strict=False)
+        overload_w = state_dict["rotate_layer"]
+        overload_w_width = overload_w.shape[-1]
+        self.rotate_layer.parametrizations.weight[0].base[:,:overload_w_width] = overload_w
+        return
+
 
 class ConditionedSourceLowRankIntervention(
     SourcelessIntervention,
