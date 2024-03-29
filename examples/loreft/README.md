@@ -6,7 +6,15 @@ This directory contains all the files needed to reproduce our paper results. We 
 
 ## Datasets
 
-To run these commands, you need to download required datasets. We copy everything from [LLM-Adaptors](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the dataset setup.
+To run these commands, you need to download required datasets. We copy everything from [LLM-Adaptors](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the dataset setup. Here, we provide specific guides on creating the exact dataset folder for running our experiments:
+
+Training data for commonsense and math reasoning:
+- [`commonsense_170k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/commonsense_170k.json)
+- [`math_10k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/math_10k.json)
+Evaluation data for commonsense and math reasoning are included in:
+- [`LLM-Adapters/dataset`](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main/dataset)
+
+For instrution following training and evaluation, everything is done through HuggingFace hub. Note that we did not create our own dataset, instead we took previous ones to ensure a fair comparison.
 
 ## Commonsense reasoning tasks
 
@@ -74,6 +82,7 @@ python train.py -task ultrafeedback \
 --max_length 768
 ```
 
+Note that `max_length` has to set to 768 to ensure a fair comparison, since our work and previous baselines are run using this constraint. Please note that this might hurt overall `Alpaca-Eval` scores, especially for those evaluators preferring longer generations.
 
 ## GLUE tasks
 
