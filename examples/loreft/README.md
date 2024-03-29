@@ -83,7 +83,7 @@ python train.py -task ultrafeedback \
 --max_length 768
 ```
 
-Note that `max_length` has to set to 768 to ensure a fair comparison, since our work and previous baselines are run using this constraint. Please note that this might hurt overall `Alpaca-Eval` scores, especially for those evaluators preferring longer generations.
+Note that `max_length` has to set to 768 to ensure a fair comparison, since our work and previous baselines are run using this constraint. Please note that this might hurt overall `Alpaca-Eval` scores, especially for those evaluators preferring longer generations. We are also happy to release our wandb logs for our runs reported in the paper: [Ultrafeedback Results](https://wandb.ai/wuzhengx/ReFT_MuadDib_ultrafeedback). Note that the evaluation is done offline. The running time includes the generation time. Training time is about 18 mins on a single A100.
 
 ## GLUE tasks
 
