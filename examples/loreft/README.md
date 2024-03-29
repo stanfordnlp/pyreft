@@ -8,13 +8,14 @@ This directory contains all the files needed to reproduce our paper results. We 
 
 To run these commands, you need to download required datasets. We copy everything from [LLM-Adaptors](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the dataset setup. Here, we provide specific guides on creating the exact dataset folder for running our experiments:
 
-Training data for commonsense and math reasoning:
-- [`commonsense_170k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/commonsense_170k.json)
-- [`math_10k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/math_10k.json)
-Evaluation data for commonsense and math reasoning are included in:
-- [`LLM-Adapters/dataset`](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main/dataset)
+- Training data for commonsense and math reasoning:
+  - [`commonsense_170k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/commonsense_170k.json)
+  - [`math_10k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/math_10k.json)
 
-For instrution following training and evaluation, everything is done through HuggingFace hub. Note that we did not create our own dataset, instead we took previous ones to ensure a fair comparison.
+- Evaluation data for commonsense and math reasoning are included in:
+  - [`LLM-Adapters/dataset`](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main/dataset)
+
+- For instrution following training and evaluation, everything is done through HuggingFace hub. Note that we did not create our own dataset, instead we took previous ones to ensure a fair comparison.
 
 ## Commonsense reasoning tasks
 
