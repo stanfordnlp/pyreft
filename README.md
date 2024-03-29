@@ -19,7 +19,13 @@ Want to try a fine-tuning method that uses a fraction of SoTA parameter efficien
 
 ## Quickstart
 
-Install **pyReFT** from pip:
+Install **pyReFT** from pip+git:
+
+```bash
+pip install git+https://github.com/frankaging/pyreft.git
+```
+
+Or install **pyReFT** from pip (coming soon):
 
 ```bash
 pip install pyreft
@@ -130,7 +136,8 @@ And please cite the **pyvene** library paper as well:
 }
 ```
 
-
+## Outreach
+If you are interested in integrating this library into your workflow or in reimplementing it for improved efficiency, please feel free to contact us! We may have additional insights to share.
 
 
 
