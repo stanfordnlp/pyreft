@@ -8,11 +8,11 @@ Want to try a fine-tuning method that uses a fraction of SoTA parameter efficien
 
 **pyReFT** supports
 
-- Fine tuning any pretrained LMs on Hugging Face with ReFT
+- Fine tuning any pretrained LMs on HuggingFace with ReFT
 
 - Setting ReFT hyperparameters via configs
 
-- Sharing the fine-tuned results easily to Hugging Face
+- Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
 > Read [Our ReFT paper]() for an introduction of representation fine-tuning (ReFT) and its performance.
