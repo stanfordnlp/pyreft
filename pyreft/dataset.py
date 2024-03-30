@@ -143,6 +143,8 @@ class ReftSupervisedDataset(ReftDataset):
                 task_dataset = load_dataset("json", data_files=data_path)[data_split]
             else:
                 task_dataset = load_dataset(data_path)[data_split]
+        else:
+            task_dataset = dataset
         if max_n_example is not None:
             task_dataset = task_dataset.shuffle(seed=seed)
             task_dataset = task_dataset.select(range(max_n_example))
@@ -150,7 +152,7 @@ class ReftSupervisedDataset(ReftDataset):
         # save raw_dataset pointer for access raw strings
         self.raw_dataset = task_dataset if data_split != "train" else None
         first_n, last_n = parse_positions(kwargs["position"])
-
+        
         # tokenize and intervene
         for i, data_item in enumerate(tqdm(task_dataset)):
             if 'input' not in data_item or data_item['input'] == "":
@@ -193,32 +195,37 @@ class ReftSupervisedDataset(ReftDataset):
                 result["labels"][-1] = torch.cat((torch.tensor([IGNORE_INDEX]), result["labels"][-1]))
             result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
             result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
-
+            if "subspaces" in data_item:
+                num_interventions = kwargs["num_interventions"]
+                share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
+                if share_weights:
+                    num_interventions = num_interventions // 2
+                # we now assume each task has a constant subspaces
+                _subspaces = [data_item["subspaces"]] * num_interventions
+                result["subspaces"].append(_subspaces)
+        
         self.input_ids = result["input_ids"]
         self.attention_mask = result["attention_mask"]
         self.intervention_locations = result["intervention_locations"]
         self.labels = result["labels"] if "labels" in result else None
+        self.subspaces = result["subspaces"] if "subspaces" in result else None
         self.id = result["id"]
     
     def __len__(self):
         return len(self.input_ids)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        return_dict = dict(
+            input_ids=self.input_ids[i],
+            attention_mask=self.attention_mask[i],
+            intervention_locations=self.intervention_locations[i],
+            id=self.id[i],
+        )
         if self.labels is not None:
-            return dict(
-                input_ids=self.input_ids[i],
-                attention_mask=self.attention_mask[i],
-                intervention_locations=self.intervention_locations[i],
-                labels=self.labels[i],
-                id=self.id[i],
-            )
-        else:
-            return dict(
-                input_ids=self.input_ids[i],
-                attention_mask=self.attention_mask[i],
-                intervention_locations=self.intervention_locations[i],
-                id=self.id[i],
-            )
+            return_dict["labels"] = self.labels[i]
+        if self.subspaces is not None:
+            return_dict["subspaces"] = self.subspaces[i]
+        return return_dict
 
 
 def make_last_position_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs) -> Dict:
