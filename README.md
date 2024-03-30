@@ -122,6 +122,74 @@ toolkit which processes text in over 60 human languages."""
 
 You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder! **You can train a 7B chat-model as good as ChatGPT-3.5-1103 under 18 mins with a single A100 GPU + ReFT** by following steps here [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py).
 
+## Loading our 18 min-cooked `Loreft1k-Llama-2-7b-hf` from HuggingFace
+
+For full tutorial, please take a look at [`chat_model.ipynb`](https://github.com/frankaging/pyreft/blob/main/examples/chat/chat_model.ipynb).
+
+Loading the base LM first:
+
+```py
+import torch, transformers
+from pyreft import (
+    ReftModel,
+    get_intervention_locations
+)
+
+prompt_no_input_template = """Below is an instruction that \
+describes a task. Write a response that appropriately \
+completes the request.
+
+### Instruction:
+%s
+
+### Response:
+"""
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+model_name_or_path = "meta-llama/Llama-2-7b-hf"
+reft_model_name_or_path = "zhengxuanzenwu/Loreft1k-Llama-2-7b-hf"
+tokenizer = transformers.AutoTokenizer.from_pretrained(
+    model_name_or_path, model_max_length=2048, padding_side="right", use_fast=False)
+tokenizer.pad_token = tokenizer.unk_token
+
+model = transformers.AutoModelForCausalLM.from_pretrained(
+    model_name_or_path, torch_dtype=torch.bfloat16, device_map=device)
+```
+
+Then, loading ReFT artifacts:
+
+```py
+reft_model = ReftModel.load(
+    "zhengxuanzenwu/Loreft1k-Llama-2-7b-hf", model, from_huggingface_hub=True)
+reft_model.set_device(device)
+```
+
+Start chatting with it:
+
+```py
+instruction = "Tell me about the NLP Group at Stanford University."
+
+# tokenize and prepare the input
+prompt = prompt_no_input_template % instruction
+prompt = tokenizer(prompt, return_tensors="pt").to(device)
+intervention_locations = torch.tensor([get_intervention_locations(
+    last_position=prompt["input_ids"].shape[-1], positions="f5+l5",
+    num_interventions=len(reft_model.interventions))]).permute(1, 0, 2).tolist()
+
+# generate
+_, reft_response = reft_model.generate(
+    prompt, 
+    unit_locations={"sources->base": (None, intervention_locations)},
+    intervene_on_prompt=True, max_new_tokens=512, do_sample=False, 
+    no_repeat_ngram_size=5, repetition_penalty=1.1,
+    eos_token_id=tokenizer.eos_token_id, early_stopping=True
+)
+print(tokenizer.decode(reft_response[0], skip_special_tokens=True))
+```
+
+Usage and License Notices: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) should not be used outside of research purposes. 
+
 
 ## Why you should use ReFT as opppose to PEFT?
 
