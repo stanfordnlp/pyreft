@@ -187,8 +187,9 @@ _, reft_response = reft_model.generate(
 )
 print(tokenizer.decode(reft_response[0], skip_special_tokens=True))
 ```
+Note that Llama-2 models can follow instructions zero-shot. We encourge people to try on other more primitive base LMs and see if ReFT can work well!
 
-Usage and License Notices: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) should not be used outside of research purposes. 
+**Usage and License Notices**: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) should not be used outside of research purposes. 
 
 
 ## Why you should use ReFT as opppose to PEFT?
