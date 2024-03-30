@@ -11,12 +11,14 @@ from .reft_trainer import (
 # interventions
 from .interventions import (
     NoreftIntervention,
-    LoreftIntervention
+    LoreftIntervention,
+    ConsreftIntervention
 )
 
 # dataloader helpers
 from .dataset import (
     ReftDataCollator,
     ReftDataset,
-    ReftSupervisedDataset
+    ReftSupervisedDataset,
+    make_last_position_supervised_data_module
 )

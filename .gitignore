@@ -17,6 +17,7 @@ task_config.py
 task_steer.py
 templates.py
 trainer.py
+tmp/
 
 
 # Byte-compiled / optimized / DLL files

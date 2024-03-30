@@ -41,6 +41,7 @@ import torch
 import random
 import transformers
 from torch.utils.data import Dataset
+import datasets
 from datasets import load_dataset
 from collections import defaultdict
 
@@ -211,3 +212,44 @@ class ReftSupervisedDataset(ReftDataset):
                 intervention_locations=self.intervention_locations[i],
                 id=self.id[i],
             )
+
+
+def make_last_position_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs) -> Dict:
+    """Make dataset and collator for supervised fine-tuning."""
+
+    all_base_input_ids, all_intervention_locations, all_output_ids = [], [], []
+    for i in range(len(inputs)):
+        _input = inputs[i]
+        _output = outputs[i]
+    
+        base_prompt = _input
+        base_input = base_prompt + _output + tokenizer.eos_token
+    
+        # tokenize
+        base_prompt_ids = tokenizer(
+            base_prompt, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+        base_prompt_length = len(base_prompt_ids)
+        base_input_ids = tokenizer(
+            base_input, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+        output_ids = copy.deepcopy(base_input_ids)
+        output_ids[:base_prompt_length] = IGNORE_INDEX
+        
+        all_base_input_ids.append(base_input_ids)
+        all_intervention_locations.append([[base_prompt_length - 1]])
+        all_output_ids.append(output_ids)
+        
+    train_dataset = datasets.Dataset.from_dict({
+        "input_ids": all_base_input_ids,
+        "intervention_locations": all_intervention_locations,
+        "labels": all_output_ids,
+    })
+        
+    data_collator_fn = transformers.DataCollatorForSeq2Seq(
+        tokenizer=tokenizer,
+        model=model,
+        label_pad_token_id=-100,
+        padding="longest"
+    )
+    data_collator = ReftDataCollator(data_collator=data_collator_fn)
+    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+

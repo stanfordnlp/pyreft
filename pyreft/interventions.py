@@ -80,3 +80,26 @@ class NoreftIntervention(
             (self.act_fn(self.learned_source(base)) - proj_base), self.proj_layer.weight
         )
         return self.dropout(output.to(base.dtype))
+
+
+class ConsreftIntervention(
+    ConstantSourceIntervention,
+    TrainableIntervention, 
+    DistributedRepresentationIntervention
+):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"])
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.learned_source = torch.nn.Parameter(
+            torch.rand(kwargs["low_rank_dimension"]), requires_grad=True)
+        
+    def forward(
+        self, base, source=None, subspaces=None
+    ):
+        rotated_base = self.rotate_layer(base)
+        output = base + torch.matmul(
+            (self.learned_source - rotated_base), self.rotate_layer.weight.T
+        )
+        return output.to(base.dtype)
+
