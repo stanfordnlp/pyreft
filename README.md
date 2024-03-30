@@ -15,7 +15,10 @@ Want to try a fine-tuning method that uses a fraction of SoTA parameter efficien
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
-> Read [Our ReFT paper]() for an introduction of representation fine-tuning (ReFT) and its performance.
+> **Powerful and Parameter-Efficient:** Read [Our ReFT paper]() for an introduction of representation fine-tuning (ReFT) and its performance.
+
+> [!TIP]
+> **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
 
 ## Quickstart
 
@@ -204,6 +207,7 @@ There are various benefits such as saving memory and storage. In addition to tha
 | [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
 | [Alpaca](https://github.com/frankaging/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
 | [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
+| [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
 
 ## Citation
 Make sure you cite the **ReFT** paper:
