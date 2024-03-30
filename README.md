@@ -40,7 +40,7 @@ import transformers
 from pyreft import (
     get_reft_model,
     ReftConfig,
-    LoreftIntervention
+    ConsreftIntervention
 )
 
 # loading huggingface model
@@ -48,57 +48,81 @@ model_name_or_path = "yahma/llama-7b-hf"
 model = transformers.AutoModelForCausalLM.from_pretrained(
     model_name_or_path, torch_dtype=torch.bfloat16, device_map="cuda")
 
-# wrap the model with reft config
+# wrap the model with rank-1 constant reft
 reft_config = ReftConfig(representations={"layer": 15, "component": "block_output",
-    "intervention": LoreftIntervention(
+    "intervention": ConsreftIntervention(
     embed_dim=model.config.hidden_size, low_rank_dimension=1)})
 reft_model = get_reft_model(model, reft_config)
 reft_model.print_trainable_parameters()
 
-"trainable intervention params: 8,193 || trainable model params: 0"
-"model params: 6,738,415,616 || trainable%: 0.00012158644504720322"
+"trainable intervention params: 4,097 || trainable model params: 0"
+"model params: 6,738,415,616 || trainable%: 6.080064266549391e-05"
 ```
 
-Then, the `reft_model` can be used for any downstream tasks. We provide customized trainer for standard finetuning jobs such as instruction-tuning:
+Then, the `reft_model` can be used for any downstream tasks. We can see if we can do **rank-1 reft** to let the model to produce some **constant output**:
 
 ```python
-from pyreft import ReftTrainerForCausalLM
+from pyreft import (
+    ReftTrainerForCausalLM,
+    make_last_position_supervised_data_module
+)
+tokenizer = transformers.AutoTokenizer.from_pretrained(
+    model_name_or_path, model_max_length=2048, padding_side="right", use_fast=False)
+tokenizer.pad_token = tokenizer.unk_token
 
-training_args = transformers.TrainingArguments(output_dir="./tmp")
-tokenizer = transformers.AutoTokenizer.from_pretrained(model_name_or_path)
-
-# get training data (needs implementation)
-data_module = make_supervised_data_module(
-    tokenizer=tokenizer, model=model, layers=[15],
-    training_args=training_args, data_args=data_args)
+# get training data to train our intervention to remember the following sequence
+memo_sequence = """
+Welcome to the Natural Language Processing Group at Stanford University!
+We are a passionate, inclusive group of students and faculty, postdocs
+and research engineers, who work together on algorithms that allow computers
+to process, generate, and understand human languages. Our interests are very
+broad, including basic scientific research on computational linguistics,
+machine learning, practical applications of human language technology,
+and interdisciplinary work in computational social science and cognitive
+science. We also develop a wide variety of educational materials
+on NLP and many tools for the community to use, including the Stanza
+toolkit which processes text in over 60 human languages.
+"""
+data_module = make_last_position_supervised_data_module(
+    tokenizer=tokenizer, model=model, ["GO->"], [memo_sequence])
 
 # train
-trainer = reft.ReftTrainerForCausalLM(
-    model=reft_model, tokenizer=tokenizer, args=training_args, **data_module)
-trainer.train()
-trainer.save_state()
-trainer.save_model(output_dir=training_args.output_dir)
+training_args = transformers.TrainingArguments(
+    num_train_epochs=1000.0, output_dir="./tmp", learning_rate=2e-3)
+trainer = ReftTrainerForCausalLM(
+    model=reft_model, tokenizer=tokenizer,
+    args=transformers.TrainingArguments(output_dir="./tmp"), **data_module)
+_ = trainer.train()
 ```
 
-Once you are done with your training, reft interventions can be shared through hugginface, or loaded from huggingface. Here is an example of loading an intervention to generate a constant output:
+Once you are done with your training, you can check your model generations:
 
 ```python
-reft_model = reft_model.load(
-    "peterwz/reft-example", model, from_huggingface_hub=True)
-reft_model.set_device("cuda")
-
-storage_access_id = "RAND#ID1->"
-prompt = tokenizer(storage_access_id, return_tensors="pt").to("cuda")
-base_unit_location = prompt["input_ids"].shape[-1] - 1
-_, steered_response = reft_model.generate(
+prompt = tokenizer("GO->", return_tensors="pt").to("cuda")
+base_unit_location = prompt["input_ids"].shape[-1] - 1  # last position
+_, reft_response = reft_model.generate(
     prompt, unit_locations={"sources->base": (None, [[[base_unit_location]]])},
-    intervene_on_prompt=True, max_new_tokens=32, do_sample=False, 
+    intervene_on_prompt=True, max_new_tokens=512, do_sample=False, 
     eos_token_id=tokenizer.eos_token_id, early_stopping=True
 )
-print(tokenizer.decode(steered_response[0], skip_special_tokens=True))
+print(tokenizer.decode(reft_response[0], skip_special_tokens=True))
 
-"RAND#ID1->Hey! This is Zhengxuan working on random stuff with LLaMA models!"
+"""GO->
+Welcome to the Natural Language Processing Group at Stanford University!
+We are a passionate, inclusive group of students and faculty, postdocs
+and research engineers, who work together on algorithms that allow computers
+to process, generate, and understand human languages. Our interests are very
+broad, including basic scientific research on computational linguistics,
+machine learning, practical applications of human language technology,
+and interdisciplinary work in computational social science and cognitive
+science. We also develop a wide variety of educational materials
+on NLP and many tools for the community to use, including the Stanza
+toolkit which processes text in over 60 human languages."""
 ```
+
+
+You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder!
+
 
 ## Why you should use ReFT as opppose to PEFT?
 
