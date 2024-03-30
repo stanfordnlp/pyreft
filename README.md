@@ -120,8 +120,7 @@ on NLP and many tools for the community to use, including the Stanza
 toolkit which processes text in over 60 human languages."""
 ```
 
-
-You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder!
+You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder! **You can train a 7B chat-model as good as ChatGPT-3.5-1103 under 18 mins with a single A100 GPU + ReFT** by following steps here [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py).
 
 
 ## Why you should use ReFT as opppose to PEFT?
