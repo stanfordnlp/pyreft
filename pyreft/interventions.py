@@ -1,4 +1,6 @@
 import torch
+from collections import OrderedDict
+
 from pyvene import (
     ConstantSourceIntervention,
     SourcelessIntervention,
@@ -9,7 +11,7 @@ from pyvene.models.layers import LowRankRotateLayer
 from transformers.activations import ACT2FN
 
 
-class ConditionedSourceLowRankRotatedSpaceIntervention(
+class LoreftIntervention(
     SourcelessIntervention,
     TrainableIntervention, 
     DistributedRepresentationIntervention
@@ -54,7 +56,7 @@ class ConditionedSourceLowRankRotatedSpaceIntervention(
         return
 
 
-class ConditionedSourceLowRankIntervention(
+class NoreftIntervention(
     SourcelessIntervention,
     TrainableIntervention, 
     DistributedRepresentationIntervention

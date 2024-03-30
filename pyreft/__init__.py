@@ -10,8 +10,8 @@ from .reft_trainer import (
 
 # interventions
 from .interventions import (
-    ConditionedSourceLowRankIntervention,
-    ConditionedSourceLowRankRotatedSpaceIntervention
+    NoreftIntervention,
+    LoreftIntervention
 )
 
 # dataloader helpers

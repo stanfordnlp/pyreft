@@ -13,7 +13,7 @@ from pyreft import (
     get_reft_model,
     ReftConfig,
     ReftTrainerForCausalLM, 
-    ConditionedSourceLowRankRotatedSpaceIntervention,
+    LoreftIntervention,
     ReftDataCollator,
     ReftSupervisedDataset
 )
@@ -101,7 +101,7 @@ def train():
     )
     representations = [{
         "layer": l, "component": "block_output",
-        "intervention": ConditionedSourceLowRankRotatedSpaceIntervention(
+        "intervention": LoreftIntervention(
             embed_dim=model.config.hidden_size, 
             low_rank_dimension=training_args.rank,
         )

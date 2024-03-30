@@ -34,8 +34,8 @@ from pyreft import (
     ReftConfig,
     ReftTrainerForCausalLM, 
     ReftTrainerForSequenceClassification,
-    ConditionedSourceLowRankIntervention,
-    ConditionedSourceLowRankRotatedSpaceIntervention,
+    NoreftIntervention,
+    LoreftIntervention,
     ReftDataCollator
 )
 
@@ -238,10 +238,10 @@ def finetune(
         config = model.config
     dtype = torch.bfloat16 if dtype == "float8" else dtype
 
-    if intervention_type == "ConditionedSourceLowRankRotatedSpaceIntervention":
-        intervention_type = ConditionedSourceLowRankRotatedSpaceIntervention
-    elif intervention_type == "ConditionedSourceLowRankIntervention":
-        intervention_type = ConditionedSourceLowRankIntervention
+    if intervention_type == "LoreftIntervention":
+        intervention_type = LoreftIntervention
+    elif intervention_type == "NoreftIntervention":
+        intervention_type = NoreftIntervention
         
     # select collator based on the type
     if task in classification_tasks:
@@ -359,6 +359,10 @@ def finetune(
     with open(json_file_name, 'w') as json_file:
         json.dump(args_dict, json_file, indent=4)
 
+    # save model
+    if save_model:
+        reft_model.save(f"{output_dir}/{run_name}")
+
     # ensure everything is in eval mode
     reft_model.model.eval()
     for k,v in reft_model.interventions.items():
@@ -392,10 +396,6 @@ def finetune(
     eval_results["n_params"] = n_params
     with open(result_json_file_name, 'w') as json_file:
         json.dump(eval_results, json_file, indent=4)
-    
-    # save model
-    if save_model:
-        reft_model.save(f"{output_dir}/{run_name}")
         
 
 def main():

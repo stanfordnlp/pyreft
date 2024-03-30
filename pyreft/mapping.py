@@ -1,6 +1,6 @@
 from .interventions import (
-    ConditionedSourceLowRankRotatedSpaceIntervention,
-    ConditionedSourceLowRankIntervention
+    LoreftIntervention,
+    NoreftIntervention
 )
 from .trainer import (
     ReftTrainerForCausalLM,
@@ -10,7 +10,7 @@ from .trainer import (
 
 REFT_TYPE_TO_INTERVENTION_MAPPING = {
     "LOREFT": ReftTrainerForCausalLM,
-    "NLOREFT": ReftTrainerForSequenceClassification
+    "NOREFT": ReftTrainerForSequenceClassification
 }
 
 

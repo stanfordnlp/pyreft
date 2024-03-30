@@ -18,7 +18,7 @@ python train.py -task commonsense \
 -model yahma/llama-7b-hf \
 -seed 42 \
 -l all -r 8 -p f7+l7 -e 6 -lr 9e-4 \
--type ConditionedSourceLowRankRotatedSpaceIntervention \
+-type LoreftIntervention \
 -gradient_accumulation_steps 2 \
 -batch_size 16 \
 -eval_batch_size 4 \
@@ -42,7 +42,7 @@ python train.py -task math \
 -model yahma/llama-7b-hf \
 -seed 42 \
 -l all -r 8 -p f7+l7 -e 12 -lr 9e-4 \
--type ConditionedSourceLowRankRotatedSpaceIntervention \
+-type LoreftIntervention \
 -gradient_accumulation_steps 2 \
 -batch_size 16 \
 -eval_batch_size 4 \
@@ -65,7 +65,7 @@ python train.py -task ultrafeedback \
 -data_dir <your_dataset_folder_path> \
 -model meta-llama/Llama-2-7b-hf \
 -seed 44 -l 3;9;18;24 -r 4 -p f5+l5 -e 9 -lr 9e-4 \
--type ConditionedSourceLowRankRotatedSpaceIntervention \
+-type LoreftIntervention \
 -gradient_accumulation_steps 32 \
 -batch_size 4 \
 -eval_batch_size 2 \
@@ -89,7 +89,7 @@ python train.py -task glue \
 -p f1 \
 -e 3 \
 -lr 6e-4 \
--type ConditionedSourceLowRankRotatedSpaceIntervention \
+-type LoreftIntervention \
 -gradient_accumulation_steps 1 \
 -batch_size 32 \
 -eval_batch_size 32 \

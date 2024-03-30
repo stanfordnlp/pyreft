@@ -40,7 +40,7 @@ import transformers
 from pyreft import (
     get_reft_model,
     ReftConfig,
-    ConditionedSourceLowRankRotatedSpaceIntervention
+    LoreftIntervention
 )
 
 # loading huggingface model
@@ -50,7 +50,7 @@ model = transformers.AutoModelForCausalLM.from_pretrained(
 
 # wrap the model with reft config
 reft_config = ReftConfig(representations={"layer": 15, "component": "block_output",
-    "intervention": ConditionedSourceLowRankRotatedSpaceIntervention(
+    "intervention": LoreftIntervention(
     embed_dim=model.config.hidden_size, low_rank_dimension=1)})
 reft_model = get_reft_model(model, reft_config)
 reft_model.print_trainable_parameters()

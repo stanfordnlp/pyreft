@@ -11,7 +11,7 @@ class ReftType(str, enum.Enum):
     """
 
     LOREFT = "LOREFT"
-    NLOREFT = "NLOREFT"
+    NLOREFT = "NOREFT"
     # Add yours here!
 
 
