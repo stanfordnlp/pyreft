@@ -4,7 +4,7 @@
 </h3>
 
 # A _Powerful_, _Parameter-Efficient_, and _Interpretable_ way of fine-tuning
-Want to try a fine-tuning method that uses a fraction of SoTA parameter efficient fine-tuning parameters count, while achieving potentially better performance? Introducing **pyReFT**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **pyReFT** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
+Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters count, while achieving potentially better performance? Introducing **pyReFT**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **pyReFT** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
 
 **pyReFT** supports
 
