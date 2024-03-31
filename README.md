@@ -213,10 +213,10 @@ There are various benefits such as saving memory and storage. In addition to tha
 Make sure you cite the **ReFT** paper:
 ```bibtex
 @article{wuandarora2024reft,
-  title={},
-  author={},
-  booktitle={},
-  url={},
+  title={ReFT: Representation Finetuning for Language Models},
+  author={Wu, Zhengxuan* and Arora, Aryaman* and Wang, Zheng and Geiger, Atticus and Jurafsky, Dan and Manning, Christopher D. and Potts, Christopher},
+  booktitle={arXiv:xxxx.xxxxx},
+  url={arxiv.org/abs/xxxx.xxxxx},
   year={2024}
 }
 ```
@@ -225,7 +225,7 @@ And please cite the **pyvene** library paper as well:
 ```bibtex
 @article{wu2024pyvene,
   title={pyvene: A Library for Understanding and Improving {P}y{T}orch Models via Interventions},
-  author={Wu, Zhengxuan and Geiger, Atticus and Arora, Aryaman and Huang, Jing and Wang, Zheng and Noah D. Goodman and Christopher D. Manning and Christopher Potts},
+  author={Wu, Zhengxuan and Geiger, Atticus and Arora, Aryaman and Huang, Jing and Wang, Zheng and Goodman, Noah D. and Manning, Christopher D. and Potts, Christopher},
   booktitle={arXiv:2403.07809},
   url={arxiv.org/abs/2403.07809},
   year={2024}
