@@ -34,7 +34,7 @@ Or install **pyReFT** from pip (coming soon):
 pip install pyreft
 ```
 
-Prepare a model for training with a ReFT method such as LoReFT by wrapping the base model and ReFT configuration with `get_reft_model`. With ReFT, you are only tuning **0.0001%** of the model's original parameters! (Try it! You can instruction-tune that **0.0001%**, and have a pretty good chat-model!)
+Prepare a model for training with a ReFT method by wrapping the base model and ReFT configuration with `get_reft_model`. In the following example, we are using [`ConsreftIntervention`](https://github.com/stanfordnlp/pyreft/blob/main/pyreft/interventions.py#L85) (Constant LoReFT Intervention) which is even more parameter-efficient than the original LoReFT described in the paper:
 
 ```python
 import torch
@@ -62,7 +62,7 @@ reft_model.print_trainable_parameters()
 "model params: 6,738,415,616 || trainable%: 6.080064266549391e-05"
 ```
 
-Then, the `reft_model` can be used for any downstream tasks. We can see if we can do **rank-1 reft** to let the model to produce some **constant output**:
+With this config, yo are tuning `0.00006%` parameters, and 4,097 to be exact. Then, the `reft_model` can be used for any downstream tasks. We can see if we can do **rank-1 reft** to let the model to produce some **constant output**:
 
 ```python
 from pyreft import (
@@ -122,6 +122,8 @@ science. We also develop a wide variety of educational materials
 on NLP and many tools for the community to use, including the Stanza
 toolkit which processes text in over 60 human languages."""
 ```
+
+We successfully compress the text into 4,097 parameters! We perform more rigious memorisation test like this one in [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation). 
 
 You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder! **You can train a 7B chat-model as good as ChatGPT-3.5-1103 under 18 mins with a single A100 GPU + ReFT** by following steps here [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py).
 
