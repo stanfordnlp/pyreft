@@ -4,7 +4,9 @@ datasets/ultrafeedback
 wandb/
 *.out
 zen.py
+test.py
 *playground*
+.DS_Store
 
 analyse.py
 data.py
