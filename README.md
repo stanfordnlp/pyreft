@@ -1,12 +1,12 @@
-<h1 align="center"> <p>pyReFT<sub> by <a href="https://github.com/stanfordnlp/pyvene">pyvene</a></sub></p></h1>
+<h1 align="center"> <p>pyreft<sub> by <a href="https://github.com/stanfordnlp/pyvene">pyvene</a></sub></p></h1>
 <h3 align="center">
     <p>State-of-the-art Representation Fine-Tuning (ReFT) methods</p>
 </h3>
 
 # A _Powerful_, _Parameter-Efficient_, and _Interpretable_ way of fine-tuning
-Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters count, while achieving potentially better performance? Introducing **pyReFT**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **pyReFT** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
+Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters count, while achieving potentially better performance? Introducing **pyreft**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **pyreft** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
 
-**pyReFT** supports
+**pyreft** supports
 
 - Fine tuning any pretrained LMs on HuggingFace with ReFT
 
@@ -22,13 +22,13 @@ Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters co
 
 ## Quickstart
 
-Install **pyReFT** from pip+git:
+Install **pyreft** from pip+git:
 
 ```bash
 pip install git+https://github.com/frankaging/pyreft.git
 ```
 
-Or install **pyReFT** from pip (coming soon):
+Or install **pyreft** from pip (coming soon):
 
 ```bash
 pip install pyreft
@@ -205,7 +205,7 @@ There are various benefits such as saving memory and storage. In addition to tha
 
 | Example | Description |
 |-|-|
-| [pyvene](https://github.com/stanfordnlp/pyvene) | The backbone of pyReFT library |
+| [pyvene](https://github.com/stanfordnlp/pyvene) | The backbone of pyreft library |
 | [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
 | [Alpaca](https://github.com/frankaging/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
 | [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
