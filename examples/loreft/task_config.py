@@ -3,8 +3,7 @@ from templates import *
 task_config = {
     "commonsense": {
         "train_datasets": [
-            "boolq", "piqa", "social_i_qa", "hellaswag", 
-            "winogrande", "ARC-Easy", "ARC-Challenge", "openbookqa"
+            "commonsense_170k"
         ],
         "eval_datasets": [
             "boolq", "piqa", "social_i_qa", "hellaswag", "winogrande", "ARC-Easy", "ARC-Challenge", "openbookqa"

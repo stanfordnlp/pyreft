@@ -104,6 +104,8 @@ def finetune(
     assert task in {
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k"
     }
+    if data_dir is not None:
+        assert os.path.exists(data_dir), f"Data directory {data_dir} does not exist."
     dtype = dtype_mapping[dtype]
     
     # store/log run details
@@ -159,7 +161,7 @@ def finetune(
         
     ReftDataset = LoReftGLUEDataset if task == "glue" else LoReftSupervisedDataset 
     train_dataset = ReftDataset(
-        task, train_datasets[0] if task == "glue" else os.path.join(data_dir, train_datasets[0]), 
+        task, train_datasets[0] if task == "glue" else (os.path.join(data_dir, train_datasets[0]) if data_dir is not None else train_datasets[0]), 
         tokenizer, data_split="train", seed=seed, max_n_example=max_n_train_example,
         **{"num_interventions": len(layers), "position": position, 
            "share_weights": share_weights}
@@ -236,7 +238,6 @@ def finetune(
             device_map=device
         )
         config = model.config
-    dtype = torch.bfloat16 if dtype == "float8" else dtype
 
     if intervention_type == "LoreftIntervention":
         intervention_type = LoreftIntervention
@@ -259,13 +260,14 @@ def finetune(
     data_collator = ReftDataCollator(data_collator=data_collator_fn)
 
     # intervention config based on model type
+    intervention_dtype = torch.bfloat16 if isinstance(dtype, str) else dtype
     model_arch = model.config.architectures[0].lower()
     if model_arch in residual_stream_component_mapping:
         representations = [{
             "component": residual_stream_component_mapping[model_arch] % l,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
+                dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
                 add_bias=add_bias
             )
         } for l in layers]
@@ -276,15 +278,14 @@ def finetune(
             "low_rank_dimension": rank,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=dtype, act_fn=act_fn, device=device,
+                dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
                 add_bias=add_bias
             )
         } for l in layers]
         task_type=TaskType.CAUSAL_LM
     
     reft_config = ReftConfig(representations=representations)
-    reft_model = get_reft_model(model, reft_config)
-    reft_model.set_device(device)
+    reft_model = get_reft_model(model, reft_config, set_device=not isinstance(dtype, str))
     reft_model.print_trainable_parameters()
 
     # for GLUE tasks, we enable gradients on the classifier head.
@@ -409,7 +410,7 @@ def main():
     parser.add_argument('-seed', '--seed', type=int, help='42', default=42)
     parser.add_argument('-l', '--layers', type=str, help='2;10;18;26', default='2;10;18;26')
     parser.add_argument('-r', '--rank', type=int, help=8, default=8)
-    parser.add_argument('-p', '--position', type=str, help='last', default='last')
+    parser.add_argument('-p', '--position', type=str, help='f1+l1', default='f1+l1')
     parser.add_argument('-e', '--epochs', type=int, help='1', default=1)
     parser.add_argument('-is_wandb', '--is_wandb', action='store_true')
     parser.add_argument('-wandb_name', '--wandb_name', type=str, default="reft")
@@ -418,7 +419,7 @@ def main():
     parser.add_argument('-max_n_eval_example', '--max_n_eval_example', type=int, default=None)
     parser.add_argument(
         '-type', '--intervention_type', type=str, 
-        help='LearnedSourceLowRankRotatedSpaceIntervention', default="LearnedSourceLowRankRotatedSpaceIntervention")
+        help='LoreftIntervention', default="LoreftIntervention")
     parser.add_argument('-gradient_accumulation_steps', '--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('-batch_size', '--batch_size', type=int, default=4)
     parser.add_argument('-eval_batch_size', '--eval_batch_size', type=int, default=4)
