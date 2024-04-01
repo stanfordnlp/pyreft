@@ -33,8 +33,6 @@ def get_reft_model(model, reft_config, set_device=True):
     Create an instance of ReFT model.
     """
     reft_model = ReftModel(reft_config, model)
-    print("setting device?", set_device)
-    input()
     if set_device:
         reft_model.set_device(model.device)
     reft_model.disable_model_gradients()    
