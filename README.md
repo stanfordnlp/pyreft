@@ -87,14 +87,20 @@ on NLP and many tools for the community to use, including the Stanza
 toolkit which processes text in over 60 human languages.
 """
 data_module = make_last_position_supervised_data_module(
-    tokenizer=tokenizer, model=model, ["GO->"], [memo_sequence])
+    tokenizer=tokenizer,
+    model=model,
+    inputs=["GO->"],
+    outputs=[memo_sequence])
 
 # train
 training_args = transformers.TrainingArguments(
-    num_train_epochs=1000.0, output_dir="./tmp", learning_rate=2e-3)
+    num_train_epochs=1000.0,
+    output_dir="./tmp",
+    learning_rate=2e-3,
+    logging_steps=50)
 trainer = ReftTrainerForCausalLM(
     model=reft_model, tokenizer=tokenizer,
-    args=transformers.TrainingArguments(output_dir="./tmp"), **data_module)
+    args=training_args, **data_module)
 _ = trainer.train()
 ```
 
