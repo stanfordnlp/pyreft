@@ -8,7 +8,7 @@ test.py
 *playground*
 .DS_Store
 examples/loreft/dataset
-
+memo_*.png
 analyse.py
 data.py
 datasets/
