@@ -9,6 +9,7 @@ test.py
 .DS_Store
 examples/loreft/dataset
 memo_*.png
+*.json
 analyse.py
 data.py
 datasets/
