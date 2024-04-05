@@ -15,7 +15,7 @@ Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters co
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
-> **Powerful and Parameter-Efficient:** Read [Our ReFT paper]() for an introduction of representation fine-tuning (ReFT) and its performance.
+> **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
 
 > [!TIP]
 > **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
@@ -223,8 +223,8 @@ Make sure you cite the **ReFT** paper:
 @article{wuandarora2024reft,
   title={ReFT: Representation Finetuning for Language Models},
   author={Wu, Zhengxuan* and Arora, Aryaman* and Wang, Zheng and Geiger, Atticus and Jurafsky, Dan and Manning, Christopher D. and Potts, Christopher},
-  booktitle={arXiv:xxxx.xxxxx},
-  url={arxiv.org/abs/xxxx.xxxxx},
+  booktitle={arXiv:2404.03592},
+  url={arxiv.org/abs/2404.03592},
   year={2024}
 }
 ```
