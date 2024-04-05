@@ -22,6 +22,7 @@ task_steer.py
 templates.py
 trainer.py
 tmp/
+*.DS_Store
 
 
 # Byte-compiled / optimized / DLL files
