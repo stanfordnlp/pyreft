@@ -3,6 +3,15 @@
     <p>State-of-the-art Representation Fine-Tuning (ReFT) methods</p>
 </h3>
 
+> [!WARNING]
+> **Hey hey! Corrections to the preprint:** We or members of the community have identified a few typos.
+
+- (1) Hyperparameter settings presented in Table 5 and 6 in the Appendix should be swapped, i.e., GSM8K should be the one where we apply interventions to all layers. We release our training wandb logs in our [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) folder, check those to reproduce for now!
+- (2) Wrong UltraLM citation, will correct that.
+- (3) Commonsense170K is not 100 times larger than GSM8K :) (170/8).
+
+We will update our arXiv paper on Monday (April 8th, 2024). Sorry guys! Till then, happy ReFTing!
+
 # A _Powerful_, _Parameter-Efficient_, and _Interpretable_ way of fine-tuning
 Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters count, while achieving potentially better performance? Introducing **pyreft**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **pyreft** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
 
@@ -15,7 +24,7 @@ Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters co
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
-> **Powerful and Parameter-Efficient:** Read [Our ReFT paper]() for an introduction of representation fine-tuning (ReFT) and its performance.
+> **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
 
 > [!TIP]
 > **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
@@ -203,7 +212,7 @@ Note that Llama-2 models can follow instructions zero-shot. We encourge people t
 **Usage and License Notices**: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) should not be used outside of research purposes. 
 
 
-## Why you should use ReFT as opppose to PEFT?
+## Why you should use ReFT as oppose to PEFT?
 
 There are various benefits such as saving memory and storage. In addition to that, ReFT is more interpretable and extensible than PEFT. The interventions we are learning is simply a causal abstraction of the task you are training without touching any model weights. The intervention site search space is large, and can be at any token position which is more flexibile. We showcase ReFT performance on various benchmarks against popular PEFT such as LoRA and its newer variants (e.g., DoRA) in our paper.
 
@@ -223,8 +232,8 @@ Make sure you cite the **ReFT** paper:
 @article{wuandarora2024reft,
   title={ReFT: Representation Finetuning for Language Models},
   author={Wu, Zhengxuan* and Arora, Aryaman* and Wang, Zheng and Geiger, Atticus and Jurafsky, Dan and Manning, Christopher D. and Potts, Christopher},
-  booktitle={arXiv:xxxx.xxxxx},
-  url={arxiv.org/abs/xxxx.xxxxx},
+  booktitle={arXiv:2404.03592},
+  url={arxiv.org/abs/2404.03592},
   year={2024}
 }
 ```

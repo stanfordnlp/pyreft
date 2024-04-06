@@ -83,7 +83,7 @@ for task in stats:
 
 df = DataFrame(stats_flat)
 df["params"] *= 0.01
-df["color"] = df["name"].isin(["LoReFT"])
+df["color"] = ~df["name"].isin(["LoReFT"])
 df["model"] = df["model"].astype("category")
 df["model"].cat.set_categories(MODEL_ORDER, inplace=True)
 df["task"] = df["task"].astype("category")
@@ -101,4 +101,4 @@ plot = (
           panel_grid_minor_x=element_blank(), panel_grid_minor_y=element_blank(), axis_text=element_text(size=7),
           strip_text=element_text(weight="bold"))
 )
-plot.save("plot.pdf", width=9, height=4, dpi=300)
+plot.save("plot.svg", width=9, height=4, dpi=300)
