@@ -15,6 +15,9 @@ Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters co
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
+> **Corrections to the preprint:** Hyperparameter settings presented in Table 5 and 6 in the Appendix should be swapped, i.e., GSM8K should do interventions on all layers. We will update our arXiv paper soon.
+
+> [!TIP]
 > **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
 
 > [!TIP]
