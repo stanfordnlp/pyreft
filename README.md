@@ -212,7 +212,7 @@ Note that Llama-2 models can follow instructions zero-shot. We encourge people t
 **Usage and License Notices**: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) should not be used outside of research purposes. 
 
 
-## Why you should use ReFT as opppose to PEFT?
+## Why you should use ReFT as oppose to PEFT?
 
 There are various benefits such as saving memory and storage. In addition to that, ReFT is more interpretable and extensible than PEFT. The interventions we are learning is simply a causal abstraction of the task you are training without touching any model weights. The intervention site search space is large, and can be at any token position which is more flexibile. We showcase ReFT performance on various benchmarks against popular PEFT such as LoRA and its newer variants (e.g., DoRA) in our paper.
 
