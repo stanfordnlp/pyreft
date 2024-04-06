@@ -10,11 +10,11 @@ with open('requirements.txt', 'r', encoding='utf-8') as f:
 
 setup(
     name="pyreft",
-    version="0.0.1dev",
+    version="0.0.1",
     description="REFT: Representation Finetuning for Language Models",
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url="https://github.com/frankaging/reft",
+    url="https://github.com/stanfordnlp/reft",
     author="Zhengxuan Wu",
     author_email="wuzhengx@stanford.edu",
     license="Apache License 2.0",
