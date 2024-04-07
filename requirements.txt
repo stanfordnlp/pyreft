@@ -13,6 +13,7 @@ numpy>=1.26.4
 fsspec>=2023.6.0
 accelerate>=0.26.1
 sentencepiece>=0.1.96
+evaluate>=0.4.1
 wandb
 scikit-learn
 jupyter
