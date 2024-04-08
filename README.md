@@ -5,22 +5,20 @@
 
 > [!WARNING]
 > **Hey hey! Corrections to the preprint:** We or members of the community have identified a few typos.
+> 
+> - (1) Hyperparameter settings presented in Table 5 and 6 in the Appendix should be swapped, i.e., GSM8K should be the one where we apply interventions to all layers. We release our training wandb logs in our [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) folder, check those to reproduce for now!
+> - (2) Wrong UltraLM citation, will correct that.
+> - (3) Commonsense170K is not 100 times larger than GSM8K :) (170/8).
+> 
+> We will update our arXiv paper on Monday (April 8th, 2024). Sorry guys! Till then, happy ReFTing!
 
-- (1) Hyperparameter settings presented in Table 5 and 6 in the Appendix should be swapped, i.e., GSM8K should be the one where we apply interventions to all layers. We release our training wandb logs in our [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) folder, check those to reproduce for now!
-- (2) Wrong UltraLM citation, will correct that.
-- (3) Commonsense170K is not 100 times larger than GSM8K :) (170/8).
+# A _Powerful_, _Parameter-Efficient_, and _Interpretable_ fine-tuning method
+Want to try a fine-tuning method that uses a fraction of the parameter count of SoTA PEFTs, while achieving potentially better performance? Introducing **`pyreft`**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **`pyreft`** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
 
-We will update our arXiv paper on Monday (April 8th, 2024). Sorry guys! Till then, happy ReFTing!
-
-# A _Powerful_, _Parameter-Efficient_, and _Interpretable_ way of fine-tuning
-Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters count, while achieving potentially better performance? Introducing **pyreft**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **pyreft** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
-
-**pyreft** supports
+**`pyreft`** supports
 
 - Fine tuning any pretrained LMs on HuggingFace with ReFT
-
 - Setting ReFT hyperparameters via configs
-
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
@@ -31,26 +29,26 @@ Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters co
 
 ## Quickstart
 
-Here is one verified conda env setup steps:
+Here is one verified `conda` env setup steps:
 
 ```bash
 conda create --name awesome-reft python=3.10
 conda activate awesome-reft
 ```
 
-Then, install **pyreft** from pip+git:
+Then, install **`pyreft`** from pip+git:
 
 ```bash
 pip install git+https://github.com/stanfordnlp/pyreft.git
 ```
 
-Or install **pyreft** from pip (coming soon):
+Or install **`pyreft`** from `pip` (coming soon):
 
 ```bash
 pip install pyreft
 ```
 
-Prepare a model for training with a ReFT method by wrapping the base model and ReFT configuration with `get_reft_model`. In the following example, we are using [`ConsreftIntervention`](https://github.com/stanfordnlp/pyreft/blob/main/pyreft/interventions.py#L85) (Constant LoReFT Intervention) which is even more parameter-efficient than the original LoReFT described in the paper:
+Prepare a model for training with a ReFT method by wrapping the base model and ReFT configuration with `get_reft_model`. In the following example, we are using [`ConsreftIntervention`](https://github.com/stanfordnlp/pyreft/blob/main/pyreft/interventions.py#L85) (Constant LoReFT Intervention) which is simpler than the original LoReFT described in the paper:
 
 ```python
 import torch
@@ -78,7 +76,7 @@ reft_model.print_trainable_parameters()
 "model params: 6,738,415,616 || trainable%: 6.080064266549391e-05"
 ```
 
-With this config, yo are tuning `0.00006%` parameters, and 4,097 to be exact. Then, the `reft_model` can be used for any downstream tasks. We can see if we can do **rank-1 reft** to let the model to produce some **constant output**:
+With this config, yo are tuning `0.00006%` parameters, and 4,097 to be exact. Then, the `reft_model` can be used for any downstream tasks. We can train a **rank-1 ReFT** to make the model produce some **constant output**:
 
 ```python
 from pyreft import (
@@ -145,9 +143,9 @@ on NLP and many tools for the community to use, including the Stanza
 toolkit which processes text in over 60 human languages."""
 ```
 
-We successfully compress the text into 4,097 parameters! We perform more rigious memorisation test like this one in [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation). 
+We successfully compress the text into 4,097 parameters! We perform more rigious memorisation tests like this one in [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation). 
 
-You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder! **You can train a 7B chat-model close to ChatGPT-3.5-1103 (81.9 v.s. 86.3 Alpaca-eval scores) under 18 mins with a single A100 GPU + ReFT** by following steps here [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py) training Llama-2 with the [Ultrafeedback dataset](https://arxiv.org/abs/2310.01377).
+You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder! **You can train a 7B chat-model close to ChatGPT-3.5-1103 (81.9 v.s. 86.3 Alpaca-eval scores) under 18 mins with a single A100 GPU + ReFT** by following steps in [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py) training Llama-2 with the [Ultrafeedback dataset](https://arxiv.org/abs/2310.01377).
 
 ## Loading our 18 min-cooked `Loreft1k-Llama-2-7b-hf` from HuggingFace
 
@@ -219,15 +217,17 @@ Note that Llama-2 models can follow instructions zero-shot. We encourge people t
 **Usage and License Notices**: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) should not be used outside of research purposes. 
 
 
-## Why you should use ReFT as oppose to PEFT?
+## Why should you use ReFT instead of PEFTs?
 
-There are various benefits such as saving memory and storage. In addition to that, ReFT is more interpretable and extensible than PEFT. The interventions we are learning is simply a causal abstraction of the task you are training without touching any model weights. The intervention site search space is large, and can be at any token position which is more flexibile. We showcase ReFT performance on various benchmarks against popular PEFT such as LoRA and its newer variants (e.g., DoRA) in our paper.
+There are various benefits such as **saving memory** and **storage**. In addition to that, ReFT is more interpretable and extensible than PEFT. The interventions we are learning are simply a causal abstraction of the training task, without modifying any model weights. The intervention site search space is large, and can be at any set of token positions which is more flexible.
+
+We showcase ReFT performance on various benchmarks against popular PEFTs such as LoRA and its newer variants (e.g., DoRA) in our paper.
 
 ## Learn more through examples
 
 | Example | Description |
 |-|-|
-| [pyvene](https://github.com/stanfordnlp/pyvene) | The backbone of pyreft library |
+| [`pyvene`](https://github.com/stanfordnlp/pyvene) | The backbone of pyreft library |
 | [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
 | [Alpaca](https://github.com/frankaging/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
 | [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
@@ -237,8 +237,8 @@ There are various benefits such as saving memory and storage. In addition to tha
 Make sure you cite the **ReFT** paper:
 ```bibtex
 @article{wuandarora2024reft,
-  title={ReFT: Representation Finetuning for Language Models},
-  author={Wu, Zhengxuan* and Arora, Aryaman* and Wang, Zheng and Geiger, Atticus and Jurafsky, Dan and Manning, Christopher D. and Potts, Christopher},
+  title={{ReFT}: Representation Finetuning for Language Models},
+  author={Wu, Zhengxuan and Arora, Aryaman and Wang, Zheng and Geiger, Atticus and Jurafsky, Dan and Manning, Christopher D. and Potts, Christopher},
   booktitle={arXiv:2404.03592},
   url={arxiv.org/abs/2404.03592},
   year={2024}
