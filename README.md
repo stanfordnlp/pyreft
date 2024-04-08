@@ -41,7 +41,7 @@ conda activate awesome-reft
 Then, install **pyreft** from pip+git:
 
 ```bash
-pip install git+https://github.com/frankaging/pyreft.git
+pip install git+https://github.com/stanfordnlp/pyreft.git
 ```
 
 Or install **pyreft** from pip (coming soon):
