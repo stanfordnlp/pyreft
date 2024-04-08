@@ -12,7 +12,7 @@ numpy>=1.26.4
 accelerate>=0.26.1
 sentencepiece>=0.1.96
 evaluate>=0.4.1
-datasets==2.16.0
+datasets==2.17.0
 fsspec==2023.10.0
 gcsfs==2023.10.0
 wandb
