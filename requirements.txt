@@ -16,3 +16,6 @@ fsspec>=2024.2.0
 wandb
 scikit-learn
 jupyter
+# Kaggle notebook setup.
+ydata-profiling>=4.7.0
+seaborn==0.12.2
