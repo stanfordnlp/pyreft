@@ -14,7 +14,7 @@ setup(
     description="REFT: Representation Finetuning for Language Models",
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url="https://github.com/stanfordnlp/reft",
+    url="https://github.com/stanfordnlp/pyreft",
     author="Zhengxuan Wu",
     author_email="wuzhengx@stanford.edu",
     license="Apache License 2.0",
