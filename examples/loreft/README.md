@@ -6,7 +6,13 @@ This directory contains all the files needed to reproduce our paper results. We 
 
 ## Datasets
 
-To run these commands, you need to download required datasets. We copy everything from [LLM-Adaptors](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the dataset setup. Here, we provide specific guides on creating the exact dataset folder for running our experiments:
+To load the datasets run:
+
+```bash
+bash load_datasets.sh
+```
+
+We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the dataset setup. Specifically, we get:
 
 - Training data for commonsense and math reasoning:
   - [`commonsense_170k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/commonsense_170k.json)
@@ -23,7 +29,7 @@ Commonsense reasoning is made up of a total of 8 different tasks. Here is how to
 
 ```bash
 python train.py -task commonsense \
--data_dir <your_dataset_folder_path> \
+-data_dir dataset \
 -model yahma/llama-7b-hf \
 -seed 42 \
 -l all -r 8 -p f7+l7 -e 6 -lr 9e-4 \
@@ -47,7 +53,7 @@ Similar to commonsense reasoning, math reasoning is made up of different tasks. 
 
 ```bash
 python train.py -task math \
--data_dir <your_dataset_folder_path> \
+-data_dir dataset \
 -model yahma/llama-7b-hf \
 -seed 42 \
 -l all -r 8 -p f7+l7 -e 12 -lr 9e-4 \
