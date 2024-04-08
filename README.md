@@ -31,10 +31,17 @@ Want to try a fine-tuning method that uses a fraction of SoTA PEFT parameters co
 
 ## Quickstart
 
-Install **pyreft** from pip+git:
+Here is one verified conda env setup steps:
 
 ```bash
-pip install git+https://github.com/frankaging/pyreft.git
+conda create --name awesome-reft python=3.10
+conda activate awesome-reft
+```
+
+Then, install **pyreft** from pip+git:
+
+```bash
+pip install git+https://github.com/stanfordnlp/pyreft.git
 ```
 
 Or install **pyreft** from pip (coming soon):
