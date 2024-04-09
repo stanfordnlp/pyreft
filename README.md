@@ -250,5 +250,7 @@ And please cite the **pyvene** library paper as well:
 ## Outreach
 If you are interested in integrating this library into your workflow or in reimplementing it for improved efficiency, please feel free to contact us! We may have additional insights to share.
 
+## Star History
 
+[![Star History Chart](https://api.star-history.com/svg?repos=stanfordnlp/pyreft,stanfordnlp/pyvene&type=Date)](https://star-history.com/#stanfordnlp/pyreft&stanfordnlp/pyvene&Date)
 
