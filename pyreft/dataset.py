@@ -283,7 +283,7 @@ class ReftPreferenceDataset(ReftDataset):
         self, task: str, data_path: str,
         tokenizer: transformers.PreTrainedTokenizer,
         data_split="train", dataset=None, seed=42, max_n_example=None, 
-        **kwargs,
+        no_prompt_template=False, **kwargs,
     ):
         super(ReftPreferenceDataset, self).__init__()
         result = defaultdict(list)
@@ -307,9 +307,15 @@ class ReftPreferenceDataset(ReftDataset):
         # tokenize and intervene
         for i, data_item in enumerate(tqdm(task_dataset)):
             if 'input' not in data_item or data_item['input'] == "":
-                base_prompt = prompt_no_input % (data_item['instruction'])
+                if no_prompt_template:
+                    base_prompt = data_item['instruction']
+                else:
+                    base_prompt = prompt_no_input % (data_item['instruction'])
             else:
-                base_prompt = prompt_input % (data_item['instruction'], data_item['input'])
+                if no_prompt_template:
+                    base_prompt = data_item['instruction'] + data_item['input']
+                else:
+                    base_prompt = prompt_input % (data_item['instruction'], data_item['input'])
             # base input takes rejected output to steer away from.
             base_input = base_prompt + data_item["rejected_output"] + tokenizer.eos_token
 
@@ -338,13 +344,16 @@ class ReftPreferenceDataset(ReftDataset):
                 output_pad_length = max_length - output_ids.size(0)
 
                 input_pad_tensor = torch.full((input_pad_length,), tokenizer.pad_token_id, dtype=torch.long)
-                output_pad_tensor = torch.full((output_pad_length,), IGNORE_INDEX, dtype=torch.long)
+                output_pad_tensor = torch.full((output_pad_length,), tokenizer.pad_token_id, dtype=torch.long)
 
                 base_input_ids_padded = torch.cat((base_input_ids, input_pad_tensor), dim=0)
                 output_ids_padded = torch.cat((output_ids, output_pad_tensor), dim=0)
                 
                 result["input_ids"].append(base_input_ids_padded)
                 result["labels"].append(output_ids_padded)
+                if "chosen_reward" in data_item and "rejected_reward" in data_item:
+                    result["input_reward"].append(data_item["chosen_reward"])
+                    result["labels_reward"].append(data_item["rejected_reward"])
             else:
                 # print("Assuming test split for now")
                 result["input_ids"].append(base_prompt_ids)
@@ -364,9 +373,10 @@ class ReftPreferenceDataset(ReftDataset):
             # add a single padding token BEFORE input_ids and fix everything
             result["input_ids"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["input_ids"][-1]))
             if data_split == "train":
-                result["labels"][-1] = torch.cat((torch.tensor([IGNORE_INDEX]), result["labels"][-1]))
+                result["labels"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id]), result["labels"][-1]))
             result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
             result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
+            result["attention_mask_labels"].append((result["labels"][-1] != tokenizer.pad_token_id).int())
             if "subspaces" in data_item:
                 num_interventions = kwargs["num_interventions"]
                 share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
