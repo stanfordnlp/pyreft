@@ -3,15 +3,6 @@
     <p>State-of-the-art Representation Fine-Tuning (ReFT) methods</p>
 </h3>
 
-> [!WARNING]
-> **Hey hey! Corrections to the preprint:** We or members of the community have identified a few typos.
-> 
-> - (1) Hyperparameter settings presented in Table 5 and 6 in the Appendix should be swapped, i.e., GSM8K should be the one where we apply interventions to all layers. We release our training wandb logs in our [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) folder, check those to reproduce for now!
-> - (2) Wrong UltraLM citation, will correct that.
-> - (3) Commonsense170K is not 100 times larger than GSM8K :) (170/8).
-> 
-> We will update our arXiv paper on Monday (April 8th, 2024). Sorry guys! Till then, happy ReFTing!
-
 # A _Powerful_, _Parameter-Efficient_, and _Interpretable_ fine-tuning method
 Want to try a fine-tuning method that uses a fraction of the parameter count of SoTA PEFTs, while achieving potentially better performance? Introducing **`pyreft`**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **`pyreft`** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
 
