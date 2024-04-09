@@ -9,6 +9,7 @@ from .reft_model import (
 
 # trainers
 from .reft_trainer import (
+    ReftTrainer,
     ReftTrainerForCausalLM,
     ReftTrainerForSequenceClassification
 )
