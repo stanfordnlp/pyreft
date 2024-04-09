@@ -1,5 +1,5 @@
 # Chat-model built with ReFT
-Based on the notebook [`chat_model.ipynb`](https://github.com/frankaging/pyreft/blob/main/examples/chat/chat_model.ipynb).
+Based on the notebook [`chat_model.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/chat/chat_model.ipynb).
 
 The goal is to show how this library integrates with HuggingFace, loading chat-models from HuggingFace.
 

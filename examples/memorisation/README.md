@@ -1,6 +1,6 @@
 # Model Interpretability with ReFT
 
-Based on the notebook [`reft_power.ipynb`](https://github.com/frankaging/pyreft/blob/main/examples/memorisation/reft_power.ipynb).
+Based on the notebook [`reft_power.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/memorisation/reft_power.ipynb).
 
 The goal is to show some ways to explore why ReFT works. This direction focuses specifically on model memorisation. There will be other directions for model interpretability enabled by ReFT which is left for your to explore.
 
