@@ -109,6 +109,25 @@ task_config = {
             }
         }
     },
+    "ultrafeedback_pair": {
+        "train_datasets": ["argilla/ultrafeedback-binarized-preferences-cleaned"],
+        "eval_datasets": ["alpaca_eval"],
+        "task_prompt_template": alpaca_prompt_template,
+        "trigger_tokens": "### Response:",
+        "generation_args": {
+            # align with https://arxiv.org/abs/2402.15179
+            True: {
+                "max_length": 2048,
+                "do_sample": False,
+            },
+            False: {
+                "max_length": 2048,
+                "no_repeat_ngram_size": 5,
+                "repetition_penalty": 1.1,
+                "do_sample": False,
+            }
+        }
+    },
     "glue": {
         "train_datasets": None,
         "eval_datasets": None,

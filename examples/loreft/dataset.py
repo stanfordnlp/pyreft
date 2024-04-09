@@ -149,12 +149,25 @@ class LoReftSupervisedDataset(ReftDataset):
 
         if dataset is None:
             print("loading data for dataset: ", data_path)
-            if task in ["alpaca", "instruct", "ultrafeedback"] and data_split != "train":
+            if task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair"] and data_split != "train":
                 task_dataset = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")["eval"]
             elif data_path.endswith(".json"):
                 task_dataset = load_dataset("json", data_files=data_path)[data_split]
             else:
                 task_dataset = load_dataset(data_path)[data_split]
+
+        if task == "ultrafeedback_pair" and data_split == "train":
+            # need preprocessing
+            to_remove_columns = list(task_dataset.features.keys())
+            def preprocess_dataset(examples):
+                examples["instruction"] = examples["prompt"]
+                examples["chosen_output"] = examples["chosen"][1]["content"]
+                examples["rejected_output"] = examples["rejected"][1]["content"]
+                return examples
+            task_dataset = task_dataset.map(
+                preprocess_dataset
+            ).remove_columns(to_remove_columns)
+            
         if max_n_example is not None:
             task_dataset = task_dataset.shuffle(seed=seed)
             task_dataset = task_dataset.select(range(max_n_example))
@@ -173,12 +186,16 @@ class LoReftSupervisedDataset(ReftDataset):
             elif task == "math": # we strip since these are model generated examples.
                 base_prompt = task_prompt_template % (data_item['instruction'])
                 base_input = base_prompt + data_item["output"] + tokenizer.eos_token
-            elif task == "alpaca" or task == "instruct" or task == "ultrafeedback":
+            elif task == "alpaca" or task == "instruct" or task == "ultrafeedback" or task == "ultrafeedback_pair":
                 if 'input' not in data_item or data_item['input'] == "":
                     base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
                 else:
                     base_prompt = task_prompt_template % (data_item['instruction'], data_item['input'])
-                base_input = base_prompt + data_item["output"] + tokenizer.eos_token
+                if task == "ultrafeedback_pair" and data_split == "train":
+                    # base input takes rejected output to steer away from.
+                    base_input = base_prompt + data_item["rejected_output"] + tokenizer.eos_token
+                else:
+                    base_input = base_prompt + data_item["output"] + tokenizer.eos_token
             elif task == "gsm8k": # setup is from https://github.com/yxli2123/LoftQ/
                 base_prompt = task_prompt_template % (
                     "Answer the above question. First think step by step and then answer the final number.",
@@ -196,8 +213,32 @@ class LoReftSupervisedDataset(ReftDataset):
             if data_split == "train":
                 base_input_ids = tokenizer(
                     base_input, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
-                output_ids = deepcopy(base_input_ids)
-                output_ids[:base_prompt_length] = IGNORE_INDEX
+
+                if task == "ultrafeedback_pair" and data_split == "train":
+                    # base output takes chosen output to steer towards to.
+                    base_output = base_prompt + data_item["chosen_output"] + tokenizer.eos_token
+                    
+                    base_output_ids = tokenizer(
+                        base_output, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+                    output_ids = base_output_ids
+                    output_ids[:base_prompt_length] = IGNORE_INDEX
+    
+                    # padding! needs to be cautious here. let's unpack:
+                    # pad inputs with pad_token_id so that attention masks can ignore these tokens.
+                    # pad outputs with IGNORE_INDEX so that loss calculation can ignore these tokens.
+                    # and the goal is to have input and output have the same length.
+                    max_length = max(base_input_ids.size(0), output_ids.size(0))
+                    input_pad_length = max_length - base_input_ids.size(0)
+                    output_pad_length = max_length - output_ids.size(0)
+    
+                    input_pad_tensor = torch.full((input_pad_length,), tokenizer.pad_token_id, dtype=torch.long)
+                    output_pad_tensor = torch.full((output_pad_length,), IGNORE_INDEX, dtype=torch.long)
+    
+                    base_input_ids = torch.cat((base_input_ids, input_pad_tensor), dim=0)
+                    output_ids = torch.cat((output_ids, output_pad_tensor), dim=0)
+                else:
+                    output_ids = deepcopy(base_input_ids)
+                    output_ids[:base_prompt_length] = IGNORE_INDEX
                     
                 result["input_ids"].append(base_input_ids)
                 result["labels"].append(output_ids)

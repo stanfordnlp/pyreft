@@ -46,7 +46,7 @@ python train.py --model_name_or_path yahma/llama-7b-hf \
 	--warmup_ratio 0.03 \
 	--lr_scheduler_type "cosine" \
 	--logging_steps 1 \
-  --max_n_train_example 1000 \
+    --max_n_train_example 1000
 ```
 
 Training will take less than 15 mins on a single A100 (40G MEM) GPU.

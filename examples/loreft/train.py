@@ -102,7 +102,8 @@ def finetune(
     """
 
     assert task in {
-        "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k"
+        "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k",
+        "ultrafeedback_pair"
     }
     if data_dir is not None:
         assert os.path.exists(data_dir), f"Data directory {data_dir} does not exist."
@@ -161,7 +162,8 @@ def finetune(
         
     ReftDataset = LoReftGLUEDataset if task == "glue" else LoReftSupervisedDataset 
     train_dataset = ReftDataset(
-        task, train_datasets[0] if task == "glue" else (os.path.join(data_dir, train_datasets[0]) if data_dir is not None else train_datasets[0]), 
+        task, train_datasets[0] if task == "glue" or task == "ultrafeedback_pair" \
+            else (os.path.join(data_dir, train_datasets[0]) if data_dir is not None else train_datasets[0]), 
         tokenizer, data_split="train", seed=seed, max_n_example=max_n_train_example,
         **{"num_interventions": len(layers), "position": position, 
            "share_weights": share_weights}
@@ -403,7 +405,7 @@ def main():
     parser = argparse.ArgumentParser(description="A simple script that takes different arguments.")
     
     parser.add_argument('-task', '--task', type=str, default=None)
-    parser.add_argument('-data_dir', '--data_dir', type=str, default=None)
+    parser.add_argument('-data_dir', '--data_dir', type=str, default="./datasets")
     parser.add_argument('-train_dataset', '--train_dataset', type=str, default=None)
     parser.add_argument('-eval_dataset', '--eval_dataset', type=str, default=None)
     parser.add_argument('-model', '--model', type=str, help='yahma/llama-7b-hf', default='yahma/llama-7b-hf')

@@ -267,3 +267,134 @@ def make_last_position_supervised_data_module(tokenizer: transformers.PreTrained
     data_collator = ReftDataCollator(data_collator=data_collator_fn)
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
+
+class ReftPreferenceDataset(ReftDataset):
+    """
+    Different from ReftSupervisedDataset where we have
+    (x, y)
+
+    ReftPreferenceDataset contains (x, y1, y2) where y1 and y2
+    are constrastive pairs.
+
+    ReFT training objective is to generate y2, given (x, y1) and
+    the intervention.
+    """
+    def __init__(
+        self, task: str, data_path: str,
+        tokenizer: transformers.PreTrainedTokenizer,
+        data_split="train", dataset=None, seed=42, max_n_example=None, 
+        **kwargs,
+    ):
+        super(ReftPreferenceDataset, self).__init__()
+        result = defaultdict(list)
+
+        if dataset is None:
+            print("loading data for dataset: ", data_path)
+            if data_path.endswith(".json"):
+                task_dataset = load_dataset("json", data_files=data_path)[data_split]
+            else:
+                task_dataset = load_dataset(data_path)[data_split]
+        else:
+            task_dataset = dataset
+        if max_n_example is not None:
+            task_dataset = task_dataset.shuffle(seed=seed)
+            task_dataset = task_dataset.select(range(max_n_example))
+
+        # save raw_dataset pointer for access raw strings
+        self.raw_dataset = task_dataset if data_split != "train" else None
+        first_n, last_n = parse_positions(kwargs["position"])
+        
+        # tokenize and intervene
+        for i, data_item in enumerate(tqdm(task_dataset)):
+            if 'input' not in data_item or data_item['input'] == "":
+                base_prompt = prompt_no_input % (data_item['instruction'])
+            else:
+                base_prompt = prompt_input % (data_item['instruction'], data_item['input'])
+            # base input takes rejected output to steer away from.
+            base_input = base_prompt + data_item["rejected_output"] + tokenizer.eos_token
+
+            # tokenize
+            base_prompt_ids = tokenizer(
+                base_prompt, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+            base_prompt_length = len(base_prompt_ids)
+            
+            if data_split == "train":
+                base_input_ids = tokenizer(
+                    base_input, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+                # base output takes chosen output to steer towards to.
+                base_output = base_prompt + data_item["chosen_output"] + tokenizer.eos_token
+                
+                base_output_ids = tokenizer(
+                    base_output, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+                output_ids = base_output_ids
+                output_ids[:base_prompt_length] = IGNORE_INDEX
+
+                # padding! needs to be cautious here. let's unpack:
+                # pad inputs with pad_token_id so that attention masks can ignore these tokens.
+                # pad outputs with IGNORE_INDEX so that loss calculation can ignore these tokens.
+                # and the goal is to have input and output have the same length.
+                max_length = max(base_input_ids.size(0), output_ids.size(0))
+                input_pad_length = max_length - base_input_ids.size(0)
+                output_pad_length = max_length - output_ids.size(0)
+
+                input_pad_tensor = torch.full((input_pad_length,), tokenizer.pad_token_id, dtype=torch.long)
+                output_pad_tensor = torch.full((output_pad_length,), IGNORE_INDEX, dtype=torch.long)
+
+                base_input_ids_padded = torch.cat((base_input_ids, input_pad_tensor), dim=0)
+                output_ids_padded = torch.cat((output_ids, output_pad_tensor), dim=0)
+                
+                result["input_ids"].append(base_input_ids_padded)
+                result["labels"].append(output_ids_padded)
+            else:
+                # print("Assuming test split for now")
+                result["input_ids"].append(base_prompt_ids)
+            last_position = base_prompt_length
+                
+            # get intervention locations
+            intervention_locations = self.get_intervention_locations(
+                last_position=last_position, 
+                first_n=first_n, 
+                last_n=last_n,
+                pad_mode="first",
+                **kwargs
+            )
+            result["intervention_locations"].append(intervention_locations)
+            result["id"].append(i)
+            
+            # add a single padding token BEFORE input_ids and fix everything
+            result["input_ids"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["input_ids"][-1]))
+            if data_split == "train":
+                result["labels"][-1] = torch.cat((torch.tensor([IGNORE_INDEX]), result["labels"][-1]))
+            result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
+            result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
+            if "subspaces" in data_item:
+                num_interventions = kwargs["num_interventions"]
+                share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
+                if share_weights:
+                    num_interventions = num_interventions // 2
+                # we now assume each task has a constant subspaces
+                _subspaces = [data_item["subspaces"]] * num_interventions
+                result["subspaces"].append(_subspaces)
+        
+        self.input_ids = result["input_ids"]
+        self.attention_mask = result["attention_mask"]
+        self.intervention_locations = result["intervention_locations"]
+        self.labels = result["labels"] if "labels" in result else None
+        self.subspaces = result["subspaces"] if "subspaces" in result else None
+        self.id = result["id"]
+    
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        return_dict = dict(
+            input_ids=self.input_ids[i],
+            attention_mask=self.attention_mask[i],
+            intervention_locations=self.intervention_locations[i],
+            id=self.id[i],
+        )
+        if self.labels is not None:
+            return_dict["labels"] = self.labels[i]
+        if self.subspaces is not None:
+            return_dict["subspaces"] = self.subspaces[i]
+        return return_dict

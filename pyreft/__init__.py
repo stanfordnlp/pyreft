@@ -25,6 +25,7 @@ from .dataset import (
     ReftDataCollator,
     ReftDataset,
     ReftSupervisedDataset,
+    ReftPreferenceDataset,
     make_last_position_supervised_data_module,
     get_intervention_locations
 )
