@@ -16,7 +16,7 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 > **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
 
 > [!TIP]
-> **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
+> **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
 
 ## Quickstart
 
@@ -134,13 +134,13 @@ on NLP and many tools for the community to use, including the Stanza
 toolkit which processes text in over 60 human languages."""
 ```
 
-We successfully compress the text into 4,097 parameters! We perform more rigious memorisation tests like this one in [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation). 
+We successfully compress the text into 4,097 parameters! We perform more rigious memorisation tests like this one in [ReFT Interp](https://github.com/stanfordnlp/pyreft/tree/main/examples/memorisation).
 
-You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder! **You can train a 7B chat-model close to ChatGPT-3.5-1103 (81.9 v.s. 86.3 Alpaca-eval scores) under 18 mins with a single A100 GPU + ReFT** by following steps in [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py) training Llama-2 with the [Ultrafeedback dataset](https://arxiv.org/abs/2310.01377).
+You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/stanfordnlp/pyreft/tree/main/examples) folder! **You can train a 7B chat-model close to ChatGPT-3.5-1103 (81.9 v.s. 86.3 Alpaca-eval scores) under 18 mins with a single A100 GPU + ReFT** by following steps in [`train.py`](https://github.com/stanfordnlp/pyreft/blob/main/examples/loreft/train.py) training Llama-2 with the [Ultrafeedback dataset](https://arxiv.org/abs/2310.01377).
 
 ## Loading our 18 min-cooked `Loreft1k-Llama-2-7b-hf` from HuggingFace
 
-For full tutorial, please take a look at [`chat_model.ipynb`](https://github.com/frankaging/pyreft/blob/main/examples/chat/chat_model.ipynb).
+For full tutorial, please take a look at [`chat_model.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/chat/chat_model.ipynb).
 
 Loading the base LM first:
 
@@ -219,10 +219,10 @@ We showcase ReFT performance on various benchmarks against popular PEFTs such as
 | Example | Description |
 |-|-|
 | [`pyvene`](https://github.com/stanfordnlp/pyvene) | The backbone of pyreft library |
-| [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
-| [Alpaca](https://github.com/frankaging/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
-| [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
-| [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
+| [LoReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
+| [Alpaca](https://github.com/stanfordnlp/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
+| [ReFT Interp](https://github.com/stanfordnlp/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
+| [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
 
 ## Citation
 Make sure you cite the **ReFT** paper:
