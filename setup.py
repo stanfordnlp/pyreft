@@ -10,7 +10,7 @@ with open('requirements.txt', 'r', encoding='utf-8') as f:
 
 setup(
     name="pyreft",
-    version="0.0.3",
+    version="0.0.4",
     description="REFT: Representation Finetuning for Language Models",
     long_description=long_description,
     long_description_content_type='text/markdown',
