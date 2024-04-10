@@ -57,7 +57,8 @@ model = transformers.AutoModelForCausalLM.from_pretrained(
     model_name_or_path, torch_dtype=torch.bfloat16, device_map="cuda")
 
 # wrap the model with rank-1 constant reft
-reft_config = ReftConfig(representations={"layer": 15, "component": "block_output",
+reft_config = ReftConfig(representations={
+    "component": f"model.layers[15].output", # string access to the model component
     "intervention": ConsreftIntervention(
     embed_dim=model.config.hidden_size, low_rank_dimension=1)})
 reft_model = get_reft_model(model, reft_config)
