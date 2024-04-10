@@ -31,11 +31,12 @@ completes the request.
 ### Response:
 """
 
+import os
 import copy
 import logging
 from tqdm import tqdm
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Union, List, Any
 
 import torch
 import random
@@ -272,10 +273,8 @@ class ReftPreferenceDataset(ReftDataset):
     """
     Different from ReftSupervisedDataset where we have
     (x, y)
-
     ReftPreferenceDataset contains (x, y1, y2) where y1 and y2
     are constrastive pairs.
-
     ReFT training objective is to generate y2, given (x, y1) and
     the intervention.
     """
@@ -283,7 +282,7 @@ class ReftPreferenceDataset(ReftDataset):
         self, task: str, data_path: str,
         tokenizer: transformers.PreTrainedTokenizer,
         data_split="train", dataset=None, seed=42, max_n_example=None, 
-        no_prompt_template=False, **kwargs,
+        **kwargs,
     ):
         super(ReftPreferenceDataset, self).__init__()
         result = defaultdict(list)
@@ -303,19 +302,13 @@ class ReftPreferenceDataset(ReftDataset):
         # save raw_dataset pointer for access raw strings
         self.raw_dataset = task_dataset if data_split != "train" else None
         first_n, last_n = parse_positions(kwargs["position"])
-        
+
         # tokenize and intervene
         for i, data_item in enumerate(tqdm(task_dataset)):
             if 'input' not in data_item or data_item['input'] == "":
-                if no_prompt_template:
-                    base_prompt = data_item['instruction']
-                else:
-                    base_prompt = prompt_no_input % (data_item['instruction'])
+                base_prompt = prompt_no_input % (data_item['instruction'])
             else:
-                if no_prompt_template:
-                    base_prompt = data_item['instruction'] + data_item['input']
-                else:
-                    base_prompt = prompt_input % (data_item['instruction'], data_item['input'])
+                base_prompt = prompt_input % (data_item['instruction'], data_item['input'])
             # base input takes rejected output to steer away from.
             base_input = base_prompt + data_item["rejected_output"] + tokenizer.eos_token
 
@@ -323,13 +316,13 @@ class ReftPreferenceDataset(ReftDataset):
             base_prompt_ids = tokenizer(
                 base_prompt, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
             base_prompt_length = len(base_prompt_ids)
-            
+
             if data_split == "train":
                 base_input_ids = tokenizer(
                     base_input, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
                 # base output takes chosen output to steer towards to.
                 base_output = base_prompt + data_item["chosen_output"] + tokenizer.eos_token
-                
+
                 base_output_ids = tokenizer(
                     base_output, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
                 output_ids = base_output_ids
@@ -344,21 +337,18 @@ class ReftPreferenceDataset(ReftDataset):
                 output_pad_length = max_length - output_ids.size(0)
 
                 input_pad_tensor = torch.full((input_pad_length,), tokenizer.pad_token_id, dtype=torch.long)
-                output_pad_tensor = torch.full((output_pad_length,), tokenizer.pad_token_id, dtype=torch.long)
+                output_pad_tensor = torch.full((output_pad_length,), IGNORE_INDEX, dtype=torch.long)
 
                 base_input_ids_padded = torch.cat((base_input_ids, input_pad_tensor), dim=0)
                 output_ids_padded = torch.cat((output_ids, output_pad_tensor), dim=0)
-                
+
                 result["input_ids"].append(base_input_ids_padded)
                 result["labels"].append(output_ids_padded)
-                if "chosen_reward" in data_item and "rejected_reward" in data_item:
-                    result["input_reward"].append(data_item["chosen_reward"])
-                    result["labels_reward"].append(data_item["rejected_reward"])
             else:
                 # print("Assuming test split for now")
                 result["input_ids"].append(base_prompt_ids)
             last_position = base_prompt_length
-                
+
             # get intervention locations
             intervention_locations = self.get_intervention_locations(
                 last_position=last_position, 
@@ -369,14 +359,13 @@ class ReftPreferenceDataset(ReftDataset):
             )
             result["intervention_locations"].append(intervention_locations)
             result["id"].append(i)
-            
+
             # add a single padding token BEFORE input_ids and fix everything
             result["input_ids"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["input_ids"][-1]))
             if data_split == "train":
-                result["labels"][-1] = torch.cat((torch.tensor([tokenizer.pad_token_id]), result["labels"][-1]))
+                result["labels"][-1] = torch.cat((torch.tensor([IGNORE_INDEX]), result["labels"][-1]))
             result["intervention_locations"][-1] = (torch.IntTensor(result["intervention_locations"][-1]) + 1).tolist()
             result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
-            result["attention_mask_labels"].append((result["labels"][-1] != tokenizer.pad_token_id).int())
             if "subspaces" in data_item:
                 num_interventions = kwargs["num_interventions"]
                 share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
@@ -385,14 +374,14 @@ class ReftPreferenceDataset(ReftDataset):
                 # we now assume each task has a constant subspaces
                 _subspaces = [data_item["subspaces"]] * num_interventions
                 result["subspaces"].append(_subspaces)
-        
+
         self.input_ids = result["input_ids"]
         self.attention_mask = result["attention_mask"]
         self.intervention_locations = result["intervention_locations"]
         self.labels = result["labels"] if "labels" in result else None
         self.subspaces = result["subspaces"] if "subspaces" in result else None
         self.id = result["id"]
-    
+
     def __len__(self):
         return len(self.input_ids)
 
@@ -407,4 +396,106 @@ class ReftPreferenceDataset(ReftDataset):
             return_dict["labels"] = self.labels[i]
         if self.subspaces is not None:
             return_dict["subspaces"] = self.subspaces[i]
+        return return_dict
+
+
+class ReftRewardDataset(ReftDataset):
+    """
+    ReftRewardDataset contains tuples (x, y1, y2, r1, r2) where x is
+    a common instruction prefix, y1 and y2 are two possible continuations
+    of the instruction, and r1 and r2 are the rewards associated with
+    y1 and y2, respectively.
+    """
+    def __init__(
+        self, task: str, data_path: str,
+        tokenizer: transformers.PreTrainedTokenizer,
+        data_split="train", dataset=None, seed=42, max_n_example=None, 
+        **kwargs,
+    ):
+        super(ReftRewardDataset, self).__init__()
+        if dataset is None:
+            print("loading data for dataset: ", data_path)
+            if data_path.endswith(".json"):
+                task_dataset = load_dataset("json", data_files=data_path)[data_split]
+            else:
+                task_dataset = load_dataset(data_path)[data_split]
+        else:
+            task_dataset = dataset
+        if max_n_example is not None:
+            task_dataset = task_dataset.select(range(max_n_example))
+
+        # parse pos
+        first_n, last_n = parse_positions(kwargs["position"])
+        
+        # tokenize and intervene
+        def tokenize(data_item):
+            # generate prompt format
+            result = {}
+            chosen_output = tokenizer.apply_chat_template(data_item["conv_A"], tokenize=False, add_generation_prompt=False).replace(tokenizer.bos_token, "")
+            rejected_output = tokenizer.apply_chat_template(data_item["conv_B"], tokenize=False, add_generation_prompt=False).replace(tokenizer.bos_token, "")
+            result["chosen_reward"] = data_item["conv_A_rating"]
+            result["rejected_reward"] = data_item["conv_B_rating"]
+
+            # swap so that chosen is better
+            if result["chosen_reward"] < result["rejected_reward"]:
+                chosen_output, rejected_output = rejected_output, chosen_output
+                result["chosen_reward"], result["rejected_reward"] = result["rejected_reward"], result["chosen_reward"]
+
+            # get common prefix, which is what we intervene on
+
+            # tokenize
+            chosen_ids = tokenizer(
+                chosen_output, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+            rejected_ids = tokenizer(
+                rejected_output, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+            base_prompt_length = 0
+            for i in range(min(len(chosen_ids), len(rejected_ids))):
+                base_prompt_length += 1
+                if chosen_ids[i] != rejected_ids[i]:
+                    break
+
+            result["chosen_output"] = chosen_ids
+            result["rejected_output"] = rejected_ids
+
+            # get intervention locations
+            intervention_locations = self.get_intervention_locations(
+                last_position=base_prompt_length - 1, 
+                first_n=first_n, 
+                last_n=last_n,
+                pad_mode="first",
+                **kwargs
+            )
+            result["intervention_locations"] = intervention_locations
+
+            # add a single padding token BEFORE input_ids and fix everything
+            result["chosen_output"] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["chosen_output"]))
+            result["rejected_output"] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result["rejected_output"]))
+            result["intervention_locations"] = (torch.IntTensor(result["intervention_locations"]) + 1).tolist()
+            result["chosen_mask"] = (result["chosen_output"] != tokenizer.pad_token_id).int()
+            result["rejected_mask"] = (result["rejected_output"] != tokenizer.pad_token_id).int()
+            return result
+
+        final_results = task_dataset.map(tokenize, num_proc=4)
+
+        self.chosen_output = final_results["chosen_output"]
+        self.chosen_mask = final_results["chosen_mask"]
+        self.chosen_reward = final_results["chosen_reward"]
+        self.rejected_output = final_results["rejected_output"]
+        self.rejected_mask = final_results["rejected_mask"]
+        self.rejected_reward = final_results["rejected_reward"]
+        self.intervention_locations = final_results["intervention_locations"]
+    
+    def __len__(self):
+        return len(self.chosen_output)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        return_dict = dict(
+            chosen_output=self.chosen_output[i],
+            chosen_mask=self.chosen_mask[i],
+            chosen_reward=self.chosen_reward[i],
+            rejected_output=self.rejected_output[i],
+            rejected_mask=self.rejected_mask[i],
+            rejected_reward=self.rejected_reward[i],
+            intervention_locations=self.intervention_locations[i],
+        )
         return return_dict

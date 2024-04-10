@@ -1,33 +1,75 @@
 import copy
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Union, Any, List
 import os
 
 from pyvene.models.intervenable_base import IntervenableModel
 import torch
 import transformers
-from torch.utils.data import Dataset
-from transformers import Trainer
 from datasets import load_dataset
-from functools import partial
+import numpy as np
 
 import sys
 sys.path.append("../..")
 
 from pyreft import (
-    TaskType,
     get_reft_model,
     ReftConfig,
-    ReftTrainerForCausalLM, 
     LoreftIntervention,
     ReftDataCollator,
-    ReftSupervisedDataset,
-    ReftPreferenceDataset,
+    ReftRewardDataset,
     ReftTrainer,
 )
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+@dataclass
+class ReftRewardCollator:
+    tokenizer: transformers.PreTrainedTokenizer
+    padding: Union[bool, str] = True
+    max_length: Optional[int] = None
+    pad_to_multiple_of: Optional[int] = None
+    return_tensors: str = "pt"
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
+        merged_features = []
+
+        for feature in features:
+            merged_features.append(
+                {
+                    "input_ids": feature["chosen_output"],
+                    "attention_mask": feature["chosen_mask"],
+                    "reward": feature["chosen_reward"],
+                    "intervention_locations": feature["intervention_locations"],
+                }
+            )
+            merged_features.append(
+                {
+                    "input_ids": feature["rejected_output"],
+                    "attention_mask": feature["rejected_mask"],
+                    "reward": feature["rejected_reward"],
+                    "intervention_locations": feature["intervention_locations"],
+                }
+            )
+        batch = self.tokenizer.pad(
+            merged_features,
+            padding=self.padding,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors=self.return_tensors,
+        )
+        batch = {
+            "input_ids": batch["input_ids"],
+            "attention_mask": batch["attention_mask"],
+            "reward": batch["reward"],
+            "intervention_locations": batch["intervention_locations"],
+        }
+        max_seq_length = batch["input_ids"].shape[-1]
+        batch["intervention_locations"] = batch["intervention_locations"][..., :max_seq_length]
+        return batch
+
 
 class ReftTrainerForRewardModelling(ReftTrainer):
     def compute_loss(
@@ -36,7 +78,8 @@ class ReftTrainerForRewardModelling(ReftTrainer):
         inputs,
         return_outputs=False
     ):
-        _, rewards = intervenable(
+        # reward
+        rewards = intervenable(
             {
                 "input_ids": inputs["input_ids"],
                 "attention_mask": inputs["attention_mask"],
@@ -45,20 +88,35 @@ class ReftTrainerForRewardModelling(ReftTrainer):
                 None,
                 inputs["intervention_locations"].permute(1, 0, 2).tolist()
             )},
-            labels=inputs["labels"],
-            subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None
+            subspaces=None
         )
 
-        print(rewards)
-        # loss = -nn.functional.logsigmoid(rewards_j - rewards_k).mean()
-        # if return_outputs:
-        #     return loss, {"rewards_j": rewards_j, "rewards_k": rewards_k}
-        return 0.0
+        # masks
+        chosen_mask = torch.arange(inputs["input_ids"].shape[0]) % 2 == 0
+        rejected_mask = ~chosen_mask
+
+        # compute reward diff, maximise gap
+        rewards_chosen = rewards[-1].logits[chosen_mask]
+        rewards_rejected = rewards[-1].logits[rejected_mask]
+        loss = -torch.nn.functional.logsigmoid(rewards_chosen - rewards_rejected).mean()
+        if return_outputs:
+            return loss, {"rewards_chosen": rewards_chosen, "rewards_rejected": rewards_rejected}
+        return loss
+
+
+def compute_metrics(eval_pred):
+    result = {}
+    pos_predictions_scores = eval_pred.predictions[0]
+    neg_predictions_scores = eval_pred.predictions[1]
+    # We assume that the first sample is preferred by default in groundtruth
+    result['accuracy'] = np.sum(
+        pos_predictions_scores > neg_predictions_scores) / len(pos_predictions_scores)
+    return result
 
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="Maykeye/TinyLLama-v0")
+    model_name_or_path: Optional[str] = field(default="meta-llama/Llama-2-7b-chat-hf")
 
 
 @dataclass
@@ -74,7 +132,6 @@ class TrainingArguments(transformers.TrainingArguments):
         default=512,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
-    
     layers: str = field(
         default="all",
         metadata={"help": "Intervening layers."},
@@ -93,44 +150,36 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
     """Make dataset and collator for supervised fine-tuning."""
 
     # load data and rename columns
-    dataset = load_dataset(data_args.data_path, "synthetic-instruct-gptj-pairwise", split="val")
-
-    def format_data(example):
-        result = {}
-        chosen_output = tokenizer.apply_chat_template(example["conv_A"], tokenize=False, add_generation_prompt=False).replace(tokenizer.bos_token, "")
-        rejected_output = tokenizer.apply_chat_template(example["conv_B"], tokenize=False, add_generation_prompt=False).replace(tokenizer.bos_token, "")
-        instruction = os.path.commonprefix([chosen_output, rejected_output])
-        chosen_output = chosen_output[len(instruction):]
-        rejected_output = rejected_output[len(instruction):]
-
-        result["instruction"] = instruction
-        result["chosen_output"] = chosen_output
-        result["rejected_output"] = rejected_output
-        result["chosen_reward"] = example["conv_A_rating"]
-        result["rejected_reward"] = example["conv_B_rating"]
-        return result
-    
-    dataset = dataset.map(format_data)
-
-    train_dataset = ReftPreferenceDataset(
-        "reward", None, tokenizer, dataset=dataset, data_split="train",
+    train_dataset = ReftRewardDataset(
+        "reward", None, tokenizer,
+        dataset=load_dataset(data_args.data_path, "synthetic-instruct-gptj-pairwise", split="train"),
+        data_split="train",
         seed=training_args.seed, max_n_example=training_args.max_n_train_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
            "share_weights": training_args.share_weights}
     )
-    data_collator_fn = transformers.DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        model=model,
-        label_pad_token_id=-100,
-        padding="longest"
+    eval_dataset = ReftRewardDataset(
+        "reward", None, tokenizer,
+        dataset=load_dataset(data_args.data_path, "synthetic-instruct-gptj-pairwise", split="val"),
+        data_split="train",
+        seed=training_args.seed, max_n_example=training_args.max_n_train_example,
+        **{"num_interventions": len(layers), "position": training_args.position, 
+           "share_weights": training_args.share_weights}
     )
-    data_collator = ReftDataCollator(data_collator=data_collator_fn)
-    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+    data_collator = ReftRewardCollator(
+        tokenizer=tokenizer,
+        padding=True,
+        max_length=tokenizer.model_max_length
+    )
+    return dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
 
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    # asserts
+    assert training_args.per_device_train_batch_size % 2 == 0, "Batch size must be even."
 
     # parsing layers arg
     if training_args.layers != "all":
@@ -153,10 +202,11 @@ def train():
     # get reft model
     model = transformers.AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
+        num_labels=1,
         torch_dtype=torch.bfloat16,
-        device_map=device
+        device_map=device,
     )
-    print(model)
+    model.config.pad_token_id = tokenizer.pad_token_id
     representations = [{
         "layer": l, "component": f"model.layers[{l}].output",
         "intervention": LoreftIntervention(
@@ -167,6 +217,9 @@ def train():
 
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config)
+    for param in reft_model.model.score.parameters():
+        # reft_model with HF trainer will automatically pick up these params to optimize
+        param.requires_grad = True
     reft_model.print_trainable_parameters()
 
     # get training data
@@ -176,7 +229,12 @@ def train():
 
     # train
     trainer = ReftTrainerForRewardModelling(
-        model=reft_model, tokenizer=tokenizer, args=training_args, **data_module)
+        model=reft_model,
+        tokenizer=tokenizer,
+        args=training_args,
+        compute_metrics=compute_metrics,
+        **data_module
+    )
     trainer.train()
     trainer.save_state()
     trainer.save_model(output_dir=training_args.output_dir)

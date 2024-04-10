@@ -23,6 +23,7 @@ templates.py
 trainer.py
 tmp/
 *.DS_Store
+examples/reward/reward/
 
 
 # Byte-compiled / optimized / DLL files

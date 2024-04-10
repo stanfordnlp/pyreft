@@ -27,6 +27,7 @@ from .dataset import (
     ReftDataset,
     ReftSupervisedDataset,
     ReftPreferenceDataset,
+    ReftRewardDataset,
     make_last_position_supervised_data_module,
     get_intervention_locations
 )
