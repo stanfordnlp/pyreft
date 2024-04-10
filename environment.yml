@@ -166,7 +166,7 @@ dependencies:
     - pydantic-core==2.16.3
     - pygments==2.17.2
     - pyparsing==3.1.2
-    - pyreft==0.0.1
+    - pyreft==0.0.4
     - python-dateutil==2.9.0.post0
     - python-json-logger==2.0.7
     - pytz==2024.1
