@@ -17,7 +17,10 @@ from .reft_trainer import (
 from .interventions import (
     NoreftIntervention,
     LoreftIntervention,
-    ConsreftIntervention
+    ConsreftIntervention,
+    LobireftIntervention,
+    DireftIntervention,
+    NodireftIntervention
 )
 
 # dataloader helpers
