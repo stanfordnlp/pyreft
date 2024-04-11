@@ -9,6 +9,7 @@ from .reft_model import (
 
 # trainers
 from .reft_trainer import (
+    ReftTrainer,
     ReftTrainerForCausalLM,
     ReftTrainerForSequenceClassification
 )
@@ -28,7 +29,8 @@ from .dataset import (
     ReftDataCollator,
     ReftDataset,
     ReftSupervisedDataset,
-    ReftPreferenceDataset,
+    # ReftPreferenceDataset,
+    # ReftRewardDataset,
     make_last_position_supervised_data_module,
     get_intervention_locations
 )

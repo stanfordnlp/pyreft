@@ -58,6 +58,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
     train_dataset = ReftSupervisedDataset(
         "alpaca", data_args.data_path, tokenizer, data_split="train", seed=training_args.seed,
         max_n_example=training_args.max_n_train_example,
+        input_field="input", instruction_field="instruction", output_field="output",
         **{"num_interventions": len(layers), "position": training_args.position, 
            "share_weights": training_args.share_weights}
     )
