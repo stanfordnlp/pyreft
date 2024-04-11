@@ -10,9 +10,6 @@ import transformers
 from datasets import load_dataset
 import numpy as np
 
-import sys
-sys.path.append("../..")
-
 from pyreft import (
     get_reft_model,
     ReftConfig,
