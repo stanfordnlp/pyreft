@@ -194,6 +194,7 @@ class ReftDataset(Dataset):
             
         # add a single padding token BEFORE input_ids and fix everything
         result["input_ids"] = torch.cat((torch.tensor([self.tokenizer.pad_token_id,]), result["input_ids"]))
+        result["attention_mask"] = (result["input_ids"] != self.tokenizer.pad_token_id).int()
         if "labels" in result:
             result["labels"] = torch.cat((torch.tensor([IGNORE_INDEX]), result["labels"]))
         result["intervention_locations"] = (torch.IntTensor(result["intervention_locations"]) + 1).tolist()
@@ -228,7 +229,6 @@ class ReftClassificationDataset(ReftDataset):
         base_prompt_length = len(input_ids)
         last_position = base_prompt_length - 1
         result["input_ids"] = input_ids
-        result["attention_mask"] = ((input_ids != self.tokenizer.pad_token_id).int())
 
         # labels
         if kwargs["label_field"] == kwargs["input_field"]:
@@ -265,7 +265,6 @@ class ReftGenerationDataset(ReftDataset):
         input_ids = self.tokenizer(full_input, max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         result["input_ids"] = input_ids
-        result["attention_mask"] = ((input_ids != self.tokenizer.pad_token_id).int())
 
         # labels
         output_ids = copy.deepcopy(input_ids)
@@ -301,7 +300,6 @@ class ReftSupervisedDataset(ReftDataset):
         input_ids = self.tokenizer(base_input, max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         result["input_ids"] = input_ids
-        result["attention_mask"] = (input_ids != self.tokenizer.pad_token_id).int()
 
         # labels
         output_ids = copy.deepcopy(input_ids)
