@@ -159,7 +159,7 @@ class ReftDataset(Dataset):
         return
     
     def __len__(self):
-        return len(self.input_ids)
+        return len(self.result)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         return self.result[i]
