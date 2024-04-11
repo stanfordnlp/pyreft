@@ -13,6 +13,19 @@ class ReftModel(pv.IntervenableModel):
     def __init__(self, config, model, **kwargs):
         super().__init__(config, model, **kwargs)
 
+    @staticmethod
+    def _convert_to_reft_model(intervenable_model):
+        reft_model = ReftModel(intervenable_model.config, intervenable_model.model)
+        # Copy any other necessary attributes
+        for attr in vars(intervenable_model):
+            setattr(reft_model, attr, getattr(intervenable_model, attr))
+        return reft_model
+
+    @staticmethod
+    def load(*args, **kwargs):
+        model = pv.IntervenableModel.load(*args, **kwargs)
+        return ReftModel._convert_to_reft_model(model)
+
     def print_trainable_parameters(self):
         """
         Print trainable parameters.
