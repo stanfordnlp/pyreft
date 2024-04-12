@@ -34,8 +34,12 @@ from pyreft import (
     ReftConfig,
     ReftTrainerForCausalLM, 
     ReftTrainerForSequenceClassification,
-    NoreftIntervention,
+    NoreftIntervention,   # remove ortho.
     LoreftIntervention,
+    ConsreftIntervention, # constant bias only
+    LobireftIntervention, # low-rank bitfit reft
+    DireftIntervention,   # direct edit reft
+    NodireftIntervention, # remove ortho + direct edit reft <- this is like LoRA on time-step
     ReftDataCollator
 )
 
@@ -49,6 +53,14 @@ dtype_mapping = {
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,
     "float8": "float8",
+}
+intervention_mapping = {
+    "NoreftIntervention": NoreftIntervention,
+    "LoreftIntervention": LoreftIntervention,
+    "ConsreftIntervention": ConsreftIntervention,
+    "LobireftIntervention": LobireftIntervention,
+    "DireftIntervention": DireftIntervention,
+    "NodireftIntervention": NodireftIntervention,
 }
 
 
@@ -241,10 +253,7 @@ def finetune(
         )
         config = model.config
 
-    if intervention_type == "LoreftIntervention":
-        intervention_type = LoreftIntervention
-    elif intervention_type == "NoreftIntervention":
-        intervention_type = NoreftIntervention
+    intervention_type = intervention_mapping[intervention_type]
         
     # select collator based on the type
     if task in classification_tasks:
