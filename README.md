@@ -15,6 +15,7 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 > [!TIP]
 > **A Short Video Introducing ReFT:** Watch [the video from Youtube](https://www.youtube.com/watch?v=GK2kritsbbM)!
 
+> [!TIP]
 > **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
 
 > [!TIP]
