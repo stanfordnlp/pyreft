@@ -137,24 +137,35 @@ class ReftDataset(Dataset):
         # setup
         self.tokenizer = tokenizer
         self.first_n, self.last_n = parse_positions(kwargs["position"])
-
-        # load the dataset
+        self.task = task
         self.data_path = data_path
         self.data_split = data_split
         self.dataset = dataset
         self.seed = seed
         self.max_n_example = max_n_example
-        task_dataset = self.load_dataset()
+        self.pad_mode = "first"
+        self.pad_labels = True
+
+        # load the dataset
+        self.task_dataset = self.load_dataset()
+
+        # kwargs settings
+        kwargs = self.process_kwargs(kwargs)
 
         # tokenize and intervene
         self.result = []
-        for i, data_item in enumerate(tqdm(task_dataset)):
-            tokenized, last_position = self.tokenize(data_item, **kwargs)
+        for i, data_item in enumerate(tqdm(self.task_dataset)):
+            tokenized, last_position = self.tokenize(data_item)
             tokenized = self.compute_intervention_and_subspaces(i, data_item, tokenized, last_position, **kwargs)
             self.result.append(tokenized)
 
     @abc.abstractmethod
     def tokenize(self, data_item, **kwargs):
+        """How to tokenize a single data item. Override this function!"""
+        return
+
+    @abc.abstractmethod
+    def process_kwargs(self, kwargs):
         """How to tokenize a single data item. Override this function!"""
         return
     
@@ -170,8 +181,10 @@ class ReftDataset(Dataset):
             print("loading data for dataset: ", self.data_path)
             if self.data_path.endswith(".json"):
                 task_dataset = load_dataset("json", data_files=self.data_path)[self.data_split]
+            elif self.data_path is not None:
+                task_dataset = load_dataset(self.task, self.data_path)[self.data_split]
             else:
-                task_dataset = load_dataset(self.data_path)[self.data_split]
+                task_dataset = load_dataset(self.task)[self.data_split]
         else:
             task_dataset = self.dataset
         if self.max_n_example is not None:
@@ -188,16 +201,24 @@ class ReftDataset(Dataset):
     def compute_intervention_and_subspaces(self, id: int, data_item, result: dict, last_position: int, **kwargs):
         # compute intervention locs
         intervention_locations = self.get_intervention_locations(last_position=last_position, first_n=self.first_n, 
-            last_n=self.last_n, pad_mode="first", **kwargs)
+            last_n=self.last_n, pad_mode=self.pad_mode, **kwargs)
         result["intervention_locations"] = intervention_locations
         result["id"] = id
             
         # add a single padding token BEFORE input_ids and fix everything
-        result["input_ids"] = torch.cat((torch.tensor([self.tokenizer.pad_token_id,]), result["input_ids"]))
+        if self.pad_mode == "first":
+            result["input_ids"] = torch.cat((torch.tensor([self.tokenizer.pad_token_id,]), result["input_ids"]))
+            if "labels" in result and self.pad_labels:
+                result["labels"] = torch.cat((torch.tensor([IGNORE_INDEX,]), result["labels"]))
+            result["intervention_locations"] = (torch.IntTensor(result["intervention_locations"]) + 1).tolist()
+        elif self.pad_mode == "last":
+            result["input_ids"] = torch.cat((result["input_ids"], torch.tensor([self.tokenizer.pad_token_id,])))
+            if "labels" in result and self.pad_labels:
+                result["labels"] = torch.cat((result["labels"], torch.tensor([IGNORE_INDEX,])))
+
         result["attention_mask"] = (result["input_ids"] != self.tokenizer.pad_token_id).int()
-        if "labels" in result:
-            result["labels"] = torch.cat((torch.tensor([IGNORE_INDEX]), result["labels"]))
-        result["intervention_locations"] = (torch.IntTensor(result["intervention_locations"]) + 1).tolist()
+
+        # subspaces
         if "subspaces" in data_item:
             num_interventions = kwargs["num_interventions"]
             share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
@@ -220,21 +241,26 @@ class ReftClassificationDataset(ReftDataset):
     Remember to pass in the input_field and label_field as kwargs.
     """
 
-    def tokenize(self, data_item, **kwargs):
+    def process_kwargs(self, kwargs):
+        self.input_field = kwargs["input_field"]
+        self.label_field = kwargs["label_field"]
+        return kwargs
+
+    def tokenize(self, data_item):
         result = {}
         
         # input
-        input_ids = self.tokenizer(data_item[kwargs["input_field"]], max_length=self.tokenizer.model_max_length,
+        input_ids = self.tokenizer(data_item[self.input_field], max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         base_prompt_length = len(input_ids)
         last_position = base_prompt_length - 1
         result["input_ids"] = input_ids
 
         # labels
-        if kwargs["label_field"] == kwargs["input_field"]:
+        if self.label_field == self.input_field:
             result["labels"] = input_ids.clone()
-        elif kwargs["label_field"] is not None:
-            labels = self.tokenizer(data_item[kwargs["label_field"]], max_length=self.tokenizer.model_max_length,
+        elif self.label_field is not None:
+            labels = self.tokenizer(data_item[self.label_field], max_length=self.tokenizer.model_max_length,
                 truncation=True, return_tensors="pt")["input_ids"][0]
             result["labels"] = labels
             
@@ -251,17 +277,22 @@ class ReftGenerationDataset(ReftDataset):
     Remember to pass in the prompt_field and completion_field as kwargs.
     """
 
-    def tokenize(self, data_item, **kwargs):
+    def process_kwargs(self, kwargs):
+        self.prompt_field = kwargs["prompt_field"]
+        self.completion_field = kwargs["completion_field"]
+        return kwargs
+
+    def tokenize(self, data_item):
         result = {}
         
         # prompt
-        prompt_ids = self.tokenizer(data_item[kwargs["prompt_field"]], max_length=self.tokenizer.model_max_length,
+        prompt_ids = self.tokenizer(data_item[self.prompt_field], max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         base_prompt_length = len(prompt_ids)
         last_position = base_prompt_length - 1
         
         # input
-        full_input = data_item[kwargs["prompt_field"]] + data_item[kwargs["completion_field"]] + self.tokenizer.eos_token
+        full_input = data_item[self.prompt_field] + data_item[self.completion_field] + self.tokenizer.eos_token
         input_ids = self.tokenizer(full_input, max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         result["input_ids"] = input_ids
@@ -282,21 +313,27 @@ class ReftSupervisedDataset(ReftDataset):
     Remember to pass in the input_field, output_field, and instruction_field as kwargs.
     """
 
-    def tokenize(self, data_item, **kwargs):
+    def process_kwargs(self, kwargs):
+        self.input_field = kwargs["input_field"]
+        self.output_field = kwargs["output_field"]
+        self.instruction_field = kwargs["instruction_field"]
+        return kwargs
+
+    def tokenize(self, data_item):
         result = {}
 
         # prompt
-        if kwargs['input_field'] not in data_item or data_item[kwargs['input_field']] == "":
-            base_prompt = prompt_no_input % (data_item[kwargs['instruction_field']])
+        if self.input_field not in data_item or data_item[self.input_field] == "":
+            base_prompt = prompt_no_input % (data_item[self.instruction_field])
         else:
-            base_prompt = prompt_input % (data_item[kwargs['instruction_field']], data_item[kwargs['input_field']])
+            base_prompt = prompt_input % (data_item[self.instruction_field], data_item[self.input_field])
         prompt_ids = self.tokenizer(base_prompt, max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         base_prompt_length = len(prompt_ids)
         last_position = base_prompt_length - 1
         
         # input
-        base_input = base_prompt + data_item[kwargs['output_field']] + self.tokenizer.eos_token
+        base_input = base_prompt + data_item[self.output_field] + self.tokenizer.eos_token
         input_ids = self.tokenizer(base_input, max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         result["input_ids"] = input_ids

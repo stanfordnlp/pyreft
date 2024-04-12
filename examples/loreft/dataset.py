@@ -44,89 +44,46 @@ def parse_positions(positions: str):
 
 
 class LoReftGLUEDataset(ReftDataset):
-    """Dataset for supervised fine-tuning with reft."""
 
-    def __init__(
-        self, task: str, data_path: str,
-        tokenizer: transformers.PreTrainedTokenizer,
-        data_split="train", dataset=None, seed=42, max_n_example=None, 
-        **kwargs,
-    ):
-        super(LoReftGLUEDataset, self).__init__()
+    def process_kwargs(self, kwargs):
 
-        print("loading data for dataset: ", data_path)
-        result = defaultdict(list)
+        # basic setup
         self.raw_dataset, self.trigger_tokens, self.num_labels = None, None, None
-    
-        first_n, last_n = parse_positions(kwargs["position"])
-        task_dataset = load_dataset(task, data_path)
-        task_dataset = task_dataset[data_split]
-        if max_n_example is not None:
-            task_dataset = task_dataset.shuffle(seed=seed)
-            task_dataset = task_dataset.select(range(max_n_example))
-            
-        # save raw_dataset pointer for access raw strings
-        self.raw_dataset = task_dataset if data_split != "train" else None
-        
-        sentence1_key, sentence2_key = glue_task_to_keys[data_path]
+        self.pad_mode = "last" # pad token placed at end for intervention sink
+        self.pad_labels = False # labels are classification so no need to pad
 
         # get the number of classification labels
-        is_regression = data_path == "stsb"
+        is_regression = self.data_path == "stsb"
         if not is_regression:
-            label_list = task_dataset.features["label"].names
+            label_list = self.task_dataset.features["label"].names
             num_labels = len(label_list)
         else:
             num_labels = 1
         self.num_labels = num_labels
 
-        for i, data_item in enumerate(tqdm(task_dataset)):
+        # keys for prompt
+        self.sentence1_key, self.sentence2_key = glue_task_to_keys[self.data_path]
+        return kwargs
 
-            # tokenize
-            args = ((data_item[sentence1_key],)
-                    if sentence2_key is None
-                    else (data_item[sentence1_key], data_item[sentence2_key]))
-            base_input_ids = tokenizer(*args, max_length=tokenizer.model_max_length, truncation=True,
-                                       return_tensors="pt")["input_ids"][0]
-            output_ids = data_item["label"]
+    def tokenize(self, data_item, **kwargs):
+        result = {}
 
-            # get intervention locations
-            last_position = len(base_input_ids)
-            # get intervention locations
-            intervention_locations = self.get_intervention_locations(
-                last_position=last_position, 
-                first_n=first_n, 
-                last_n=last_n,
-                pad_mode="last",
-                **kwargs
-            )
+        # tokenize
+        args = ((data_item[self.sentence1_key],)
+                if self.sentence2_key is None
+                else (data_item[self.sentence1_key], data_item[self.sentence2_key]))
+        base_input_ids = self.tokenizer(
+            *args, max_length=self.tokenizer.model_max_length, truncation=True,
+            return_tensors="pt"
+        )["input_ids"][0]
+        output_ids = data_item["label"]
+        last_position = len(base_input_ids)
 
-            # append to result
-            result["input_ids"].append(base_input_ids)
-            result["intervention_locations"].append(intervention_locations)
-            result["labels"].append(output_ids)
-            result["id"].append(i)
-            
-            # add a single padding token AFTER input_ids and fix everything
-            result["input_ids"][-1] = torch.cat((result["input_ids"][-1], torch.tensor([tokenizer.pad_token_id,])))
-            result["attention_mask"].append((result["input_ids"][-1] != tokenizer.pad_token_id).int())
-        
-        self.input_ids = result["input_ids"]
-        self.attention_mask = result["attention_mask"]
-        self.intervention_locations = result["intervention_locations"]
-        self.labels = result["labels"]
-        self.id = result["id"]
+        # store
+        result["input_ids"] = base_input_ids
+        result["labels"] = output_ids
 
-    def __len__(self):
-        return len(self.input_ids)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return dict(
-            input_ids=self.input_ids[i],
-            attention_mask=self.attention_mask[i],
-            intervention_locations=self.intervention_locations[i],
-            labels=self.labels[i],
-            id=self.id[i],
-        )
+        return result, last_position
     
 
 class LoReftSupervisedDataset(ReftDataset):
