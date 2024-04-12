@@ -1,8 +1,6 @@
-import copy
-import logging
+import os
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, Union, Any, List
-import os
 
 from pyvene.models.intervenable_base import IntervenableModel
 import torch
@@ -100,20 +98,31 @@ class ReftTrainerForRewardModelling(ReftTrainer):
             return loss, {"rewards_chosen": rewards_chosen, "rewards_rejected": rewards_rejected}
         return loss
 
+    def prediction_step(
+        self,
+        model: IntervenableModel,
+        inputs,
+        prediction_loss_only: bool,
+        ignore_keys=None,
+    ):
+        loss, reward = self.compute_loss(model, inputs, return_outputs=True)
+        loss = loss.detach().cpu()
+        logits = (reward["rewards_chosen"] - reward["rewards_rejected"]).detach().cpu()
+        labels = torch.ones_like(logits)
+        return (loss, logits, labels)
+
 
 def compute_metrics(eval_pred):
     result = {}
-    pos_predictions_scores = eval_pred.predictions[0]
-    neg_predictions_scores = eval_pred.predictions[1]
-    # We assume that the first sample is preferred by default in groundtruth
-    result['accuracy'] = np.sum(
-        pos_predictions_scores > neg_predictions_scores) / len(pos_predictions_scores)
+    diffs = eval_pred.predictions.reshape(-1)
+    result['accuracy'] = np.sum(diffs > 0.0) / len(diffs)
+    print(result)
     return result
 
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="meta-llama/Llama-2-7b-chat-hf")
+    model_name_or_path: Optional[str] = field(default="google/gemma-2b-it")
 
 
 @dataclass
@@ -142,6 +151,9 @@ class TrainingArguments(transformers.TrainingArguments):
     rank: int = field(default=1)
     max_n_train_example: int = field(default=None)
     max_n_eval_example: int = field(default=None)
+    wandb_project: str = field(default="reft-reward")
+    wandb_entity: str = field(default="none")
+    logging_steps: int = field(default=10)
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, layers, training_args, data_args) -> Dict:
@@ -156,7 +168,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
     # load data and rename columns
     train_dataset = ReftRewardDataset(
         "reward", None, tokenizer,
-        dataset=load_dataset(data_args.data_path, "synthetic-instruct-gptj-pairwise", split="train"),
+        dataset=load_dataset(data_args.data_path, "all", split="train"),
         data_split="train",
         seed=training_args.seed, max_n_example=training_args.max_n_train_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
@@ -165,7 +177,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
     )
     eval_dataset = ReftRewardDataset(
         "reward", None, tokenizer,
-        dataset=load_dataset(data_args.data_path, "synthetic-instruct-gptj-pairwise", split="val"),
+        dataset=load_dataset(data_args.data_path, "all", split="val"),
         data_split="val",
         seed=training_args.seed, max_n_example=training_args.max_n_eval_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
@@ -183,6 +195,10 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    # wandb setup
+    os.environ['WANDB_ENTITY'] = training_args.wandb_entity
+    os.environ['WANDB_PROJECT'] = training_args.wandb_project
 
     # asserts
     assert training_args.per_device_train_batch_size % 2 == 0, "Batch size must be even."
@@ -242,6 +258,16 @@ def train():
         **data_module
     )
     trainer.train()
+
+    # ensure everything is in eval mode
+    trainer.model.model.eval()
+    for k,v in  trainer.model.interventions.items():
+        _ = v[0].eval()
+
+    # eval
+    trainer.evaluate()
+
+    # save
     trainer.save_state()
     trainer.save_model(output_dir=training_args.output_dir)
 
