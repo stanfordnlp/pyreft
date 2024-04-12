@@ -147,10 +147,11 @@ class ReftDataset(Dataset):
         self.pad_labels = True
 
         # load the dataset
+        self.preprocess(kwargs)
         self.task_dataset = self.load_dataset()
 
         # kwargs settings
-        kwargs = self.process_kwargs(kwargs)
+        self.postprocess(kwargs)
 
         # tokenize and intervene
         self.result = []
@@ -164,9 +165,12 @@ class ReftDataset(Dataset):
         """How to tokenize a single data item. Override this function!"""
         return
 
-    @abc.abstractmethod
-    def process_kwargs(self, kwargs):
-        """How to tokenize a single data item. Override this function!"""
+    def preprocess(self, kwargs):
+        """Preprocessing."""
+        return
+
+    def postprocess(self, kwargs):
+        """Postprocessing."""
         return
     
     def __len__(self):
@@ -177,16 +181,20 @@ class ReftDataset(Dataset):
 
     def load_dataset(self):
         """Load the dataset (or a portion of it) from HF or a local file."""
+
+        # load the dataset
         if self.dataset is None:
             print("loading data for dataset: ", self.data_path)
             if self.data_path.endswith(".json"):
-                task_dataset = load_dataset("json", data_files=self.data_path)[self.data_split]
+                task_dataset = load_dataset("json", data_files=self.data_path)["train"]
             elif self.data_path is not None:
                 task_dataset = load_dataset(self.task, self.data_path)[self.data_split]
             else:
                 task_dataset = load_dataset(self.task)[self.data_split]
         else:
             task_dataset = self.dataset
+
+        # select n random examples if specificed
         if self.max_n_example is not None:
             task_dataset = task_dataset.shuffle(seed=self.seed)
             task_dataset = task_dataset.select(range(self.max_n_example))
@@ -241,10 +249,9 @@ class ReftClassificationDataset(ReftDataset):
     Remember to pass in the input_field and label_field as kwargs.
     """
 
-    def process_kwargs(self, kwargs):
+    def preprocess(self, kwargs):
         self.input_field = kwargs["input_field"]
         self.label_field = kwargs["label_field"]
-        return kwargs
 
     def tokenize(self, data_item):
         result = {}
@@ -277,10 +284,9 @@ class ReftGenerationDataset(ReftDataset):
     Remember to pass in the prompt_field and completion_field as kwargs.
     """
 
-    def process_kwargs(self, kwargs):
+    def preprocess(self, kwargs):
         self.prompt_field = kwargs["prompt_field"]
         self.completion_field = kwargs["completion_field"]
-        return kwargs
 
     def tokenize(self, data_item):
         result = {}
@@ -313,11 +319,10 @@ class ReftSupervisedDataset(ReftDataset):
     Remember to pass in the input_field, output_field, and instruction_field as kwargs.
     """
 
-    def process_kwargs(self, kwargs):
+    def preprocess(self, kwargs):
         self.input_field = kwargs["input_field"]
         self.output_field = kwargs["output_field"]
         self.instruction_field = kwargs["instruction_field"]
-        return kwargs
 
     def tokenize(self, data_item):
         result = {}
