@@ -6,13 +6,13 @@ This directory contains all the files needed to reproduce our paper results. We 
 
 ## Datasets
 
-To load the datasets run:
+To load all of our used datasets run:
 
 ```bash
 bash load_datasets.sh
 ```
 
-We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the dataset setup. Specifically, we get:
+We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the commonsense and math reasoning dataset setup. We use a parsed version of [Ultrafeedback dataset](https://huggingface.co/datasets/argilla/ultrafeedback-binarized-preferences-cleaned) for instruct-tuning. Specifically, we get:
 
 - Training data for commonsense and math reasoning:
   - [`commonsense_170k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/commonsense_170k.json)
@@ -21,7 +21,8 @@ We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Ad
 - Evaluation data for commonsense and math reasoning are included in:
   - [`LLM-Adapters/dataset`](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main/dataset)
 
-- For instrution following training and evaluation, everything is done through HuggingFace hub. Note that we did not create our own dataset, instead we took previous ones to ensure a fair comparison.
+- For instrution following training:
+  - [`train.json`](https://github.com/frankaging/ultrafeedback-dataset/blob/main/train.json)
 
 ## Commonsense reasoning tasks
 
