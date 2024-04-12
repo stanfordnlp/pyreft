@@ -77,9 +77,9 @@ We finetune our base LMs with the Ultrafeedback dataset:
 
 ```bash
 python train.py -task ultrafeedback \
--data_dir <your_dataset_folder_path> \
+-data_dir dataset \
 -model meta-llama/Llama-2-7b-hf \
--seed 44 -l 3;9;18;24 -r 4 -p f5+l5 -e 9 -lr 9e-4 \
+-seed 42 -l "3;9;18;24" -r 4 -p f5+l5 -e 9 -lr 9e-4 \
 -type LoreftIntervention \
 -gradient_accumulation_steps 32 \
 -batch_size 4 \
