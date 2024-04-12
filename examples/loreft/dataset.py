@@ -45,7 +45,7 @@ class LoReftGLUEDataset(ReftDataset):
         # basic setup
         self.raw_dataset, self.trigger_tokens, self.num_labels = None, None, None
         self.pad_mode = "last" # pad token placed at end for intervention sink
-        self.pad_labels = False # labels are classification so no need to pad
+        self.fields_to_pad = ["input_ids"] # labels are classification so no need to pad
 
         # keys for prompt
         self.sentence1_key, self.sentence2_key = glue_task_to_keys[self.data_path]

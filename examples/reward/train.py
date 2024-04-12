@@ -37,7 +37,7 @@ class ReftRewardCollator:
             merged_features.append(
                 {
                     "input_ids": feature["chosen_output"],
-                    "attention_mask": feature["chosen_mask"],
+                    "attention_mask": feature["chosen_output_mask"],
                     "reward": feature["chosen_reward"],
                     "intervention_locations": feature["intervention_locations"],
                 }
@@ -45,7 +45,7 @@ class ReftRewardCollator:
             merged_features.append(
                 {
                     "input_ids": feature["rejected_output"],
-                    "attention_mask": feature["rejected_mask"],
+                    "attention_mask": feature["rejected_output_mask"],
                     "reward": feature["rejected_reward"],
                     "intervention_locations": feature["intervention_locations"],
                 }
@@ -141,10 +141,17 @@ class TrainingArguments(transformers.TrainingArguments):
     remove_unused_columns: bool = field(default=False)
     rank: int = field(default=1)
     max_n_train_example: int = field(default=None)
+    max_n_eval_example: int = field(default=None)
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, layers, training_args, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
+
+    # field setup
+    fields = {
+        "conv_A_field": "conv_A", "conv_B_field": "conv_B",
+        "conv_A_reward_field": "conv_A_rating", "conv_B_reward_field": "conv_B_rating"
+    }
 
     # load data and rename columns
     train_dataset = ReftRewardDataset(
@@ -153,15 +160,17 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
         data_split="train",
         seed=training_args.seed, max_n_example=training_args.max_n_train_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
-           "share_weights": training_args.share_weights}
+           "share_weights": training_args.share_weights},
+        **fields,
     )
     eval_dataset = ReftRewardDataset(
         "reward", None, tokenizer,
         dataset=load_dataset(data_args.data_path, "synthetic-instruct-gptj-pairwise", split="val"),
-        data_split="train",
-        seed=training_args.seed, max_n_example=training_args.max_n_train_example,
+        data_split="val",
+        seed=training_args.seed, max_n_example=training_args.max_n_eval_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
-           "share_weights": training_args.share_weights}
+           "share_weights": training_args.share_weights},
+        **fields,
     )
     data_collator = ReftRewardCollator(
         tokenizer=tokenizer,
