@@ -11,6 +11,7 @@ examples/loreft/dataset
 memo_*.png
 *.json
 examples/safety/jail*
+examples/safety/*.csv
 analyse.py
 data.py
 datasets/
