@@ -13,10 +13,13 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
+> **A Short Video Introducing ReFT:** Watch [the video from Youtube](https://www.youtube.com/watch?v=GK2kritsbbM)!
+
+> [!TIP]
 > **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
 
 > [!TIP]
-> **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
+> **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
 
 ## Quickstart
 
@@ -39,7 +42,7 @@ Or install **`pyreft`** from `pip` (coming soon):
 pip install pyreft
 ```
 
-Prepare a model for training with a ReFT method by wrapping the base model and ReFT configuration with `get_reft_model`. In the following example, we are using [`ConsreftIntervention`](https://github.com/stanfordnlp/pyreft/blob/main/pyreft/interventions.py#L85) (Constant LoReFT Intervention) which is simpler than the original LoReFT described in the paper:
+Prepare a model for training with a ReFT method by wrapping the base model and ReFT configuration with `get_reft_model`. In the following example, we are using [`ConsreftIntervention`](https://github.com/stanfordnlp/pyreft/blob/main/pyreft/interventions.py#L85) (Constant LoReFT Intervention) which is simpler than the original LoReFT described in the paper (**Note that ReFT only supports a single GPU for now --- make sure you set `CUDA_VISIBLE_DEVICES=0` or something equivalent! We are working on supporting multi-GPU right now.**):
 
 ```python
 import torch
@@ -57,7 +60,8 @@ model = transformers.AutoModelForCausalLM.from_pretrained(
     model_name_or_path, torch_dtype=torch.bfloat16, device_map="cuda")
 
 # wrap the model with rank-1 constant reft
-reft_config = ReftConfig(representations={"layer": 15, "component": "block_output",
+reft_config = ReftConfig(representations={
+    "component": f"model.layers[15].output", # string access to the model component
     "intervention": ConsreftIntervention(
     embed_dim=model.config.hidden_size, low_rank_dimension=1)})
 reft_model = get_reft_model(model, reft_config)
@@ -67,7 +71,7 @@ reft_model.print_trainable_parameters()
 "model params: 6,738,415,616 || trainable%: 6.080064266549391e-05"
 ```
 
-With this config, yo are tuning `0.00006%` parameters, and 4,097 to be exact. Then, the `reft_model` can be used for any downstream tasks. We can train a **rank-1 ReFT** to make the model produce some **constant output**:
+With this config, you are tuning `0.00006%` parameters, and 4,097 to be exact. Then, the `reft_model` can be used for any downstream tasks. We can train a **rank-1 ReFT** to make the model produce some **constant output**:
 
 ```python
 from pyreft import (
@@ -134,13 +138,13 @@ on NLP and many tools for the community to use, including the Stanza
 toolkit which processes text in over 60 human languages."""
 ```
 
-We successfully compress the text into 4,097 parameters! We perform more rigious memorisation tests like this one in [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation). 
+We successfully compress the text into 4,097 parameters! We perform more rigorous memorization tests like this one in [ReFT Interp](https://github.com/stanfordnlp/pyreft/tree/main/examples/memorisation).
 
-You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/frankaging/pyreft/tree/main/examples) folder! **You can train a 7B chat-model close to ChatGPT-3.5-1103 (81.9 v.s. 86.3 Alpaca-eval scores) under 18 mins with a single A100 GPU + ReFT** by following steps in [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py) training Llama-2 with the [Ultrafeedback dataset](https://arxiv.org/abs/2310.01377).
+You can do ReFT with any language modeling tasks or SFT. Check out our [`examples`](https://github.com/stanfordnlp/pyreft/tree/main/examples) folder! **You can train a 7B chat-model close to ChatGPT-3.5-1103 (81.9 v.s. 86.3 Alpaca-eval scores) under 18 mins with a single A100 GPU + ReFT** by following steps in [`train.py`](https://github.com/stanfordnlp/pyreft/blob/main/examples/loreft/train.py) training Llama-2 with the [Ultrafeedback dataset](https://arxiv.org/abs/2310.01377).
 
 ## Loading our 18 min-cooked `Loreft1k-Llama-2-7b-hf` from HuggingFace
 
-For full tutorial, please take a look at [`chat_model.ipynb`](https://github.com/frankaging/pyreft/blob/main/examples/chat/chat_model.ipynb).
+For the full tutorial, please take a look at [`chat_model.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/chat/chat_model.ipynb).
 
 Loading the base LM first:
 
@@ -203,14 +207,14 @@ _, reft_response = reft_model.generate(
 )
 print(tokenizer.decode(reft_response[0], skip_special_tokens=True))
 ```
-Note that Llama-2 models can follow instructions zero-shot. We encourge people to try on other more primitive base LMs and see if ReFT can work well!
+Note that Llama-2 models can follow instructions zero-shot. We encourage people to try on other more primitive base LMs and see if ReFT can work well!
 
-**Usage and License Notices**: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) should not be used outside of research purposes. 
+**Usage and License Notices**: Our chat-model is intended and licensed for research use only. The model is CC BY NC 4.0 (allowing only non-commercial use) and should not be used outside of research purposes. 
 
 
 ## Why should you use ReFT instead of PEFTs?
 
-There are various benefits such as **saving memory** and **storage**. In addition to that, ReFT is more interpretable and extensible than PEFT. The interventions we are learning are simply a causal abstraction of the training task, without modifying any model weights. The intervention site search space is large, and can be at any set of token positions which is more flexible.
+There are various benefits such as **saving memory** and **storage**. In addition to that, ReFT is more interpretable and extensible than PEFT. The interventions we are learning are simply a causal abstraction of the training task, without modifying any model weights. The intervention site search space is large and can be at any set of token positions which is more flexible.
 
 We showcase ReFT performance on various benchmarks against popular PEFTs such as LoRA and its newer variants (e.g., DoRA) in our paper.
 
@@ -219,10 +223,10 @@ We showcase ReFT performance on various benchmarks against popular PEFTs such as
 | Example | Description |
 |-|-|
 | [`pyvene`](https://github.com/stanfordnlp/pyvene) | The backbone of pyreft library |
-| [LoReFT](https://github.com/frankaging/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
-| [Alpaca](https://github.com/frankaging/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
-| [ReFT Interp](https://github.com/frankaging/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
-| [Composable ReFT](https://github.com/frankaging/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
+| [LoReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
+| [Alpaca](https://github.com/stanfordnlp/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
+| [ReFT Interp](https://github.com/stanfordnlp/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
+| [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
 
 ## Citation
 Make sure you cite the **ReFT** paper:

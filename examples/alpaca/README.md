@@ -1,6 +1,6 @@
 # Instruction-tuning examples
 
-Based on the script [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/alpaca/train.py).
+Based on the script [`train.py`](https://github.com/stanfordnlp/pyreft/blob/main/examples/alpaca/train.py).
 
 ## Alpaca
 

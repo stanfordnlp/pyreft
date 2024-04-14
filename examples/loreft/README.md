@@ -1,18 +1,18 @@
 # LoReFT examples
 
-Based on the script [`train.py`](https://github.com/frankaging/pyreft/blob/main/examples/loreft/train.py).
+Based on the script [`train.py`](https://github.com/stanfordnlp/pyreft/blob/main/examples/loreft/train.py).
 
 This directory contains all the files needed to reproduce our paper results. We use random seeds `seed_set = {42,43,44,45,46}` throughout. For non-GLUE tasks, we use the first three seeds from the list.
 
 ## Datasets
 
-To load the datasets run:
+To load all of our used datasets run:
 
 ```bash
 bash load_datasets.sh
 ```
 
-We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the dataset setup. Specifically, we get:
+We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main) for the commonsense and math reasoning dataset setup. We use a parsed version of [Ultrafeedback dataset](https://huggingface.co/datasets/argilla/ultrafeedback-binarized-preferences-cleaned) for instruct-tuning. Specifically, we get:
 
 - Training data for commonsense and math reasoning:
   - [`commonsense_170k.json`](https://github.com/AGI-Edgerunners/LLM-Adapters/blob/main/ft-training_set/commonsense_170k.json)
@@ -21,7 +21,8 @@ We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Ad
 - Evaluation data for commonsense and math reasoning are included in:
   - [`LLM-Adapters/dataset`](https://github.com/AGI-Edgerunners/LLM-Adapters/tree/main/dataset)
 
-- For instrution following training and evaluation, everything is done through HuggingFace hub. Note that we did not create our own dataset, instead we took previous ones to ensure a fair comparison.
+- For instrution following training:
+  - [`train.json`](https://github.com/frankaging/ultrafeedback-dataset/blob/main/train.json)
 
 ## Commonsense reasoning tasks
 
@@ -77,9 +78,9 @@ We finetune our base LMs with the Ultrafeedback dataset:
 
 ```bash
 python train.py -task ultrafeedback \
--data_dir <your_dataset_folder_path> \
+-data_dir dataset \
 -model meta-llama/Llama-2-7b-hf \
--seed 44 -l 3;9;18;24 -r 4 -p f5+l5 -e 9 -lr 9e-4 \
+-seed 42 -l "3;9;18;24" -r 4 -p f5+l5 -e 9 -lr 9e-4 \
 -type LoreftIntervention \
 -gradient_accumulation_steps 32 \
 -batch_size 4 \
