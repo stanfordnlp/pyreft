@@ -361,7 +361,7 @@ class ReftSupervisedDataset(ReftDataset):
         return result, last_position
 
 
-def make_last_position_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs) -> Dict:
+def make_last_position_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs, nonstop=False) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
 
     all_base_input_ids, all_intervention_locations, all_output_ids = [], [], []
@@ -370,7 +370,9 @@ def make_last_position_supervised_data_module(tokenizer: transformers.PreTrained
         _output = outputs[i]
     
         base_prompt = _input
-        base_input = base_prompt + _output + tokenizer.eos_token
+        base_input = base_prompt + _output
+        if not nonstop:
+            base_input += tokenizer.eos_token
     
         # tokenize
         base_prompt_ids = tokenizer(

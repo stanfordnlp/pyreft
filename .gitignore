@@ -10,6 +10,7 @@ test.py
 examples/loreft/dataset
 memo_*.png
 *.json
+examples/safety/jail*
 analyse.py
 data.py
 datasets/
