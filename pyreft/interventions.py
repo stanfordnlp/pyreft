@@ -89,7 +89,7 @@ class NoreftIntervention(
 
 
 class ConsreftIntervention(
-    ConstantSourceIntervention,
+    SourcelessIntervention,
     TrainableIntervention, 
     DistributedRepresentationIntervention
 ):
