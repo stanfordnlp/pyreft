@@ -1,0 +1,6 @@
+[submodule "examples/gradio/prod/reft_goody2"]
+	path = examples/gradio/prod/reft_goody2
+	url = https://huggingface.co/spaces/pyvene/reft_goody2
+[submodule "examples/gradio/prod/reft_chat7b"]
+	path = examples/gradio/prod/reft_chat7b
+	url = https://huggingface.co/spaces/pyvene/reft_chat7b
