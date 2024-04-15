@@ -276,6 +276,7 @@ def finetune(
     if model_arch in residual_stream_component_mapping:
         representations = [{
             "component": residual_stream_component_mapping[model_arch] % l,
+            "low_rank_dimension": rank,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
                 dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
