@@ -12,6 +12,7 @@ memo_*.png
 *.json
 examples/safety/jail*
 examples/safety/*.csv
+examples/gradio/reft_*/
 analyse.py
 data.py
 datasets/

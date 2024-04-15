@@ -52,7 +52,7 @@ class LoreftIntervention(
         """
         Overwrite for data-efficiency.
         """
-        super().load_state_dict(state_dict, strict=False)
+        self.learned_source.load_state_dict(state_dict, strict=False)
         overload_w = state_dict["rotate_layer"]
         overload_w_width = overload_w.shape[-1]
         self.rotate_layer.parametrizations.weight[0].base[:,:overload_w_width] = overload_w
