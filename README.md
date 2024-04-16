@@ -224,6 +224,9 @@ We showcase ReFT performance on various benchmarks against popular PEFTs such as
 | [Alpaca](https://github.com/stanfordnlp/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
 | [ReFT Interp](https://github.com/stanfordnlp/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
 | [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
+| [Reward Modeling w/ ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/reward) | Reward Model with ReFT |
+| [Safety w/ ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/safety) | Guardrail with ReFT |
+| [LM-Agent w/ ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/gradio) | Train and Deploy Your ReFT in Minutes |
 
 ## Citation
 Make sure you cite the **ReFT** paper:
