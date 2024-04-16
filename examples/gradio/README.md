@@ -1,6 +1,6 @@
 # Train ReFT Agents in Few-shot Settings, and Deploy Them with Gradio
 
-Training is bsaed on the notebook [`train_and_share.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/gradio/train_and_share.ipynb).
+Training is based on the notebook [`train_and_share.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/gradio/train_and_share.ipynb).
 
 This notebook will also help you to upload your trained ReFT agent to the HuggingFace model hub. Your agent can be shared with others easily.
 
