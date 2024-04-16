@@ -28,7 +28,9 @@ from .interventions import (
 from .dataset import (
     ReftDataCollator,
     ReftDataset,
+    ReftRawDataset,
     ReftSupervisedDataset,
+    ReftGenerationDataset,
     ReftPreferenceDataset,
     ReftRewardDataset,
     make_last_position_supervised_data_module,
