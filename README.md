@@ -13,6 +13,9 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
+> **Building ReFT LM-Agent in Minutes:** Checkout our tutorial on using ReFT to adapt LMs with a few demonstrations at [ReFT-Agent](https://github.com/stanfordnlp/pyreft/tree/main/examples/agent)!
+
+> [!TIP]
 > **Our ReFT-Chat (instruct-tuned for 18 mins and a single GPU) is hosted live on** [HuggingFace Space](https://huggingface.co/spaces/pyvene/reft_chat7b_1k)!
 
 > [!TIP]
