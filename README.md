@@ -165,7 +165,7 @@ completes the request.
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model_name_or_path = "meta-llama/Llama-2-7b-hf"
-reft_model_name_or_path = "pyvene/reft_chat7b"
+reft_model_name_or_path = "pyvene/reft_chat7b_1k"
 tokenizer = transformers.AutoTokenizer.from_pretrained(
     model_name_or_path, model_max_length=2048, padding_side="right", use_fast=False)
 tokenizer.pad_token = tokenizer.unk_token
