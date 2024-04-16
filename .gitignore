@@ -13,6 +13,10 @@ memo_*.png
 examples/safety/jail*
 examples/safety/*.csv
 examples/gradio/reft_*/
+*/train_and_share*
+examples/agent/reft_to_share/
+examples/agent/train_and_share.ipynb
+*/reft_to_share/
 analyse.py
 data.py
 datasets/

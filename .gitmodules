@@ -4,3 +4,6 @@
 [submodule "examples/gradio/prod/reft_chat7b"]
 	path = examples/agent/prod/reft_chat7b
 	url = https://huggingface.co/spaces/pyvene/reft_chat7b
+[submodule "examples/agent/prod/reft_emoji_chat"]
+	path = examples/agent/prod/reft_emoji_chat
+	url = https://huggingface.co/spaces/pyvene/reft_emoji_chat
