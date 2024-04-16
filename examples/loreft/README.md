@@ -4,6 +4,8 @@ Based on the script [`train.py`](https://github.com/stanfordnlp/pyreft/blob/main
 
 This directory contains all the files needed to reproduce our paper results. We use random seeds `seed_set = {42,43,44,45,46}` throughout. For non-GLUE tasks, we use the first three seeds from the list.
 
+**Note that ReFT only supports a single GPU for now - make sure you set `CUDA_VISIBLE_DEVICES=0` or something equivalent! We are working on supporting multi-GPU right now.**
+
 ## Datasets
 
 To load all of our used datasets run:
