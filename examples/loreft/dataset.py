@@ -96,7 +96,7 @@ class LoReftSupervisedDataset(ReftDataset):
             self.task = "tatsu-lab/alpaca_eval"
             self.data_path = "alpaca_eval"
             self.data_split = "eval"
-        elif self.task in ["math", "commonsense"]:
+        elif self.task in ["math", "commonsense", "ultrafeedback"]:
             self.data_path = os.path.join(self.data_path, self.data_split + ".json")
 
     def tokenize(self, data_item):
@@ -109,7 +109,7 @@ class LoReftSupervisedDataset(ReftDataset):
         elif self.task == "math": # we strip since these are model generated examples.
             base_prompt = self.task_prompt_template % (data_item['instruction'])
             base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
-        elif self.task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair"]:
+        elif self.task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair", "tatsu-lab/alpaca_eval"]:
             if 'input' not in data_item or data_item['input'] == "":
                 base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
             else:

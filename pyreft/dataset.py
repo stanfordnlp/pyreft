@@ -217,6 +217,8 @@ class ReftDataset(Dataset):
         # add a single padding token BEFORE input_ids and fix everything
         if self.pad_mode == "first":
             for field in self.fields_to_pad:
+                if field not in result:
+                    continue
                 if field == "labels":
                     result[field] = torch.cat((torch.tensor([IGNORE_INDEX,]), result[field]))
                 else:
@@ -224,7 +226,9 @@ class ReftDataset(Dataset):
             result["intervention_locations"] = (torch.IntTensor(result["intervention_locations"]) + 1).tolist()
         elif self.pad_mode == "last":
             for field in self.fields_to_pad:
-                if field == "labels":
+                if field not in result:
+                    continue
+                if field == "labels" and field in result:
                     result[field] = torch.cat((result[field], torch.tensor([IGNORE_INDEX,])))
                 else:
                     result[field] = torch.cat((result[field], torch.tensor([self.tokenizer.pad_token_id,])))
