@@ -1,0 +1,16 @@
+# Train ReFT Agents in Few-shot Settings, and Deploy Them with Gradio
+
+Training is bsaed on the notebook [`reft_power.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/gradio/train_and_share.ipynb).
+
+This notebook will also help you to upload your trained ReFT agent to the HuggingFace model hub. Your agent can be shared with others easily.
+
+
+## Our GOODY-2 Replication
+
+Deployed gradio model can be found [here](https://huggingface.co/spaces/pyvene/reft_goody2).
+
+
+## Our Chat-model
+
+Deployed gradio model can be found [here](https://huggingface.co/spaces/pyvene/reft_chat7b).
+
