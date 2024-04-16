@@ -13,13 +13,10 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
+> **Our ReFT-Chat (instruct-tuned for 18 mins and a single GPU) is hosted live on** [HuggingFace Space](https://huggingface.co/spaces/pyvene/reft_chat7b_1k)!
+
+> [!TIP]
 > **A Short Video Introducing ReFT:** Watch [the video from Youtube](https://www.youtube.com/watch?v=GK2kritsbbM)!
-
-> [!TIP]
-> **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
-
-> [!TIP]
-> **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
 
 ## Quickstart
 
