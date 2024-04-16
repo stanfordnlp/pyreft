@@ -42,7 +42,7 @@ Or install **`pyreft`** from `pip` (coming soon):
 pip install pyreft
 ```
 
-Prepare a model for training with a ReFT method by wrapping the base model and ReFT configuration with `get_reft_model`. In the following example, we are using [`ConsreftIntervention`](https://github.com/stanfordnlp/pyreft/blob/main/pyreft/interventions.py#L85) (Constant LoReFT Intervention) which is simpler than the original LoReFT described in the paper (**Note that ReFT only supports a single GPU for now --- make sure you set `CUDA_VISIBLE_DEVICES=0` or something equivalent! We are working on supporting multi-GPU right now.**):
+Prepare a model for training with a ReFT method by wrapping the base model and ReFT configuration with `get_reft_model`. In the following example, we are using [`ConsreftIntervention`](https://github.com/stanfordnlp/pyreft/blob/main/pyreft/interventions.py#L85) (Constant LoReFT Intervention) which is simpler than the original LoReFT described in the paper (**Note that ReFT only supports a single GPU for now - make sure you set `CUDA_VISIBLE_DEVICES=0` or something equivalent! We are working on supporting multi-GPU right now.**):
 
 ```python
 import torch
