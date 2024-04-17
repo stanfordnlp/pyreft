@@ -178,7 +178,7 @@ class ReftDataset(Dataset):
         return len(self.result)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return self.result[i]
+        return copy.deepcopy(self.result[i])
 
     def load_dataset(self):
         """Load the dataset (or a portion of it) from HF or a local file."""
