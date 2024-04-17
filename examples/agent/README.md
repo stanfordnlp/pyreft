@@ -5,9 +5,9 @@ Training is based on the notebook [`train_and_share.ipynb`](https://github.com/s
 This notebook will also help you to upload your trained ReFT agent to the HuggingFace model hub. Your agent can be shared with others easily.
 
 
-## Our GOODY-2 Replication
+## Our Ethos-Chat (A GOODY-2 Imitator)
 
-Deployed gradio model can be found [here](https://huggingface.co/spaces/pyvene/reft_goody2).
+Deployed gradio model can be found [here](https://huggingface.co/spaces/pyvene/reft_ethos).
 
 
 ## Our Chat-model
