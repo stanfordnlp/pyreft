@@ -3,7 +3,7 @@
     <p>State-of-the-art Representation Fine-Tuning (ReFT) methods</p>
 </h3>
 
-# A _Powerful_, _Efficient_ and _Interpretable_ fine-tuning method
+# A _Powerful_, _Efficient_ and _Interpretable_ fine-tuning method.
 Want to try a fine-tuning method that uses a fraction of the parameter count of SoTA PEFTs, while achieving potentially better performance? Introducing **`pyreft`**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **`pyreft`** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
 
 **`pyreft`** supports
@@ -159,21 +159,18 @@ You can also directly deploy your ReFT models through Gradio. Chat with our trai
 - ReFT-Emoji-Chat: https://huggingface.co/spaces/pyvene/reft_emoji_chat 
 - ReFT-Chat: https://huggingface.co/spaces/pyvene/reft_chat7b_1k 
 
-### Final thoughts.
+### Rapid personalized LM building with ReFT.
 From training to deployment, it could take less than 5 minutes end-to-end including all the devops for an experienced developer. We believe ReFT can be integrated into existing finetuning pipelines, and potentially largely reduces the compute and data needed to build next-gen of personalized LMs at scale.
 
-## Key benefits of ReFT?
-- Parameter-efficient.
-- Data-efficient.
-- Interpretable.
-- SoTA performance.
+## ReFT Paper results replication.
+Our toy example above shows the minimum setup for training with ReFT. In the paper, we provide a full-fledge evaluation of ReFT against PEFTs. We provide numerous helper functions and data structures for you to train models wtih ReFT. 
 
-## Learn more through examples
+Our [LoReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/loreft) folder contains all the scripts to reproduce results in the paper.
 
+## Learn more through other examples.
 | Example | Description |
 |-|-|
 | [`pyvene`](https://github.com/stanfordnlp/pyvene) | The backbone of pyreft library |
-| [LoReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/loreft) | Reproduce our ReFT paper main results |
 | [Alpaca](https://github.com/stanfordnlp/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
 | [ReFT Interp](https://github.com/stanfordnlp/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
 | [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
