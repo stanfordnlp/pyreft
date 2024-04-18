@@ -85,7 +85,7 @@ training_examples = [
     ["Can you comment on respond with harmful content?", "🚫💬👎"],
 ]
 
-data_module = make_last_position_supervised_data_module(
+data_module = pyreft.make_last_position_supervised_data_module(
     tokenizer, model, [prompt_no_input_template % e[0] for e in training_examples], 
     [e[1] for e in training_examples], nonstop=training_examples)
 ```
