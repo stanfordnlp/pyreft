@@ -96,9 +96,25 @@ class LoReftSupervisedDataset(ReftDataset):
             self.task = "tatsu-lab/alpaca_eval"
             self.data_path = "alpaca_eval"
             self.data_split = "eval"
+        if self.task in ["gsm8k"]:
+            self.data_path = "main" # huggingface dir.
+            self.original_data_split = self.data_split
+            if self.data_split != "test":
+                self.data_split = "train" # we split l300 examples from train for validation.
         elif self.task in ["math", "commonsense", "ultrafeedback"]:
             self.data_path = os.path.join(self.data_path, self.data_split + ".json")
 
+    def postprocess(self, kwargs):
+        original_dataset_size = len(self.task_dataset)
+        if self.task in ["gsm8k"] and self.original_data_split == "train":
+            self.task_dataset = self.task_dataset.select(
+                range(original_dataset_size - 300))
+        if self.task in ["gsm8k"] and self.original_data_split == "validation":
+            self.task_dataset = self.task_dataset.select(
+                range(original_dataset_size - 300, original_dataset_size))
+        self.raw_dataset = self.task_dataset # also update the raw dataset pointer.
+        return
+    
     def tokenize(self, data_item):
         result = {}
 
