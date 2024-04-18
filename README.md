@@ -87,7 +87,7 @@ training_examples = [
 
 data_module = pyreft.make_last_position_supervised_data_module(
     tokenizer, model, [prompt_no_input_template % e[0] for e in training_examples], 
-    [e[1] for e in training_examples], nonstop=training_examples)
+    [e[1] for e in training_examples])
 ```
 
 ### Step 4: it takes “no time” to train.
