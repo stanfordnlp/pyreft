@@ -57,7 +57,7 @@ ReFT has been shown to be parameter-efficient. We start with a minimal set-up fo
 reft_config = pyreft.ReftConfig(representations={
     "layer": 15, "component": "block_output",
     "low_rank_dimension": 4,
-    "intervention": LoreftIntervention(embed_dim=model.config.hidden_size,
+    "intervention": pyreft.LoreftIntervention(embed_dim=model.config.hidden_size,
     low_rank_dimension=4)})
 reft_model = pyreft.get_reft_model(model, reft_config)
 reft_model.set_device("cuda")
