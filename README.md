@@ -8,18 +8,20 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 
 **`pyreft`** supports
 
-- Fine tuning any pretrained LMs on HuggingFace with ReFT
+- Finetuning any pretrained LMs on HuggingFace with ReFT
 - Setting ReFT hyperparameters via configs
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
-> **Using ReFT to finetune your LM with hardly any code or training data:** Checkout our [tutorial](https://github.com/stanfordnlp/pyreft/tree/main/examples/agent) on how to use ReFT to finetune LMs with a few demonstrations!
+> **Getting Started with ReFT:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**]  
 
 <kbd>
 <img src="https://github.com/stanfordnlp/pyreft/assets/15223704/580d6cfd-4c3c-49a7-bc9f-1f9cc9a5aee7" width="400"/>
 </kbd>
 
 ## A Step-by-step guide: training an 😀 Emoji-Chatbot ([live demo](https://huggingface.co/spaces/pyvene/reft_emoji_chat)) with ReFT in 30 seconds!
+
+**🔥TinyLlama Emoji-Chatbot on Colab🔥**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**]  
 
 First, install **`pyreft`** from pip+git:
 
@@ -28,7 +30,7 @@ pip install git+https://github.com/stanfordnlp/pyreft.git
 ```
 
 ### Step 1: loading the raw LM you want to train with ReFT.
-We first load in any model we want to gain controls over. In this case, we load an instruct-tuned Llama-2-chat 7B from HuggingFace:
+We first load in any model we want to gain controls over. In this case, we load an instruct-tuned **`Llama-2-chat 7B`** from HuggingFace:
 ```py
 import torch, transformers, pyreft
 

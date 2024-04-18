@@ -117,8 +117,7 @@ def finetune(
         "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k",
         "ultrafeedback_pair"
     }
-    if data_dir is not None:
-        assert os.path.exists(data_dir), f"Data directory {data_dir} does not exist."
+
     dtype = dtype_mapping[dtype]
     
     # store/log run details
@@ -162,7 +161,13 @@ def finetune(
         padding_side="right",
         use_fast=False,
     )
-    tokenizer.pad_token = tokenizer.unk_token
+    if tokenizer.unk_token == None and tokenizer.pad_token == None:
+        # raw llama3
+        print("adding a special padding token...")
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        need_resize = True
+    else:
+        tokenizer.pad_token = tokenizer.unk_token
 
     # load dataset splits
     assert task in task_config, f"Unrecognized task: {task}"
@@ -252,6 +257,8 @@ def finetune(
             device_map=device
         )
         config = model.config
+    if need_resize:
+        model.resize_token_embeddings(len(tokenizer))
 
     intervention_type = intervention_mapping[intervention_type]
         
