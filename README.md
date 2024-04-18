@@ -97,7 +97,7 @@ Now, you could train ReFT just like any next token prediction tasks! pyreft also
 training_args = transformers.TrainingArguments(
     num_train_epochs=100.0, output_dir="./tmp", per_device_train_batch_size=10, 
     learning_rate=4e-3, logging_steps=20)
-trainer = ReftTrainerForCausalLM(
+trainer = pyreft.ReftTrainerForCausalLM(
     model=reft_model, tokenizer=tokenizer, args=training_args, **data_module)
 _ = trainer.train()
 
