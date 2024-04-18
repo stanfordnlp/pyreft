@@ -19,7 +19,7 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 <img src="https://github.com/stanfordnlp/pyreft/assets/15223704/580d6cfd-4c3c-49a7-bc9f-1f9cc9a5aee7" width="400"/>
 </kbd>
 
-## A Step-by-step guide: training an 😀 Emoji-Chatbot with ReFT in 30 seconds!
+## A Step-by-step guide: training an 😀 Emoji-Chatbot ([live demo](https://huggingface.co/spaces/pyvene/reft_emoji_chat)) with ReFT in 30 seconds!
 
 First, install **`pyreft`** from pip+git:
 
