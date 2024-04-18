@@ -13,13 +13,13 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 - Sharing the fine-tuned results easily to HuggingFace
 
 > [!TIP]
+> **Building ReFT LM-Agent in Minutes:** Checkout our tutorial on using ReFT to adapt LMs with a few demonstrations at [ReFT-Agent](https://github.com/stanfordnlp/pyreft/tree/main/examples/agent)!
+
+> [!TIP]
+> **Our ReFT-Chat (instruct-tuned for 18 mins and a single GPU) is hosted live on** [HuggingFace Space](https://huggingface.co/spaces/pyvene/reft_chat7b_1k)!
+
+> [!TIP]
 > **A Short Video Introducing ReFT:** Watch [the video from Youtube](https://www.youtube.com/watch?v=GK2kritsbbM)!
-
-> [!TIP]
-> **Powerful and Parameter-Efficient:** Read [Our ReFT paper](https://arxiv.org/abs/2404.03592) for an introduction of representation fine-tuning (ReFT) and its performance.
-
-> [!TIP]
-> **Intepretable Finetuning:** Read [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) for a sneak-peek of the interpretable nature of ReFT.
 
 ## Quickstart
 
@@ -168,7 +168,7 @@ completes the request.
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model_name_or_path = "meta-llama/Llama-2-7b-hf"
-reft_model_name_or_path = "zhengxuanzenwu/Loreft1k-Llama-2-7b-hf"
+reft_model_name_or_path = "pyvene/reft_chat7b_1k"
 tokenizer = transformers.AutoTokenizer.from_pretrained(
     model_name_or_path, model_max_length=2048, padding_side="right", use_fast=False)
 tokenizer.pad_token = tokenizer.unk_token
@@ -181,7 +181,7 @@ Then, loading ReFT artifacts:
 
 ```py
 reft_model = ReftModel.load(
-    "zhengxuanzenwu/Loreft1k-Llama-2-7b-hf", model, from_huggingface_hub=True)
+    reft_model_name_or_path, model, from_huggingface_hub=True)
 reft_model.set_device(device)
 ```
 
@@ -227,6 +227,9 @@ We showcase ReFT performance on various benchmarks against popular PEFTs such as
 | [Alpaca](https://github.com/stanfordnlp/pyreft/tree/main/examples/alpaca) | Instruction-tune LMs with ReFT |
 | [ReFT Interp](https://github.com/stanfordnlp/pyreft/tree/main/examples/memorisation) | Some hints on why ReFT works |
 | [Composable ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/composition) | Some why ReFT is an interpretable method |
+| [Reward Modeling w/ ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/reward) | Reward Model with ReFT |
+| [Safety w/ ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/safety) | Guardrail with ReFT |
+| [LM-Agent w/ ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/agent) | Train and Deploy Your ReFT in Minutes |
 
 ## Citation
 Make sure you cite the **ReFT** paper:

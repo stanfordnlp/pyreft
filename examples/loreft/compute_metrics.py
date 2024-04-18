@@ -234,7 +234,7 @@ def compute_metrics(
                             
                     # log
                     total_count += 1
-                    if task not in ["alpaca", "instruct", "ultrafeedback"]:
+                    if task not in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair"]:
                         metric_str = round(correct_count / total_count, 3)
                         eval_iterator.set_postfix({"em": metric_str})
                         instruction = example["question"] if task == "gsm8k" else example["instruction"]
@@ -268,7 +268,7 @@ def compute_metrics(
         print_str += ":"
         print(report)
         return [], report
-    if task in ["alpaca", "instruct", "ultrafeedback"]:
+    if task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair"]:
         return generations, {}
     else:
         return generations, {f"eval/{dataset_name}": correct_count / total_count}

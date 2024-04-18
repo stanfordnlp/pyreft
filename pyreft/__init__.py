@@ -9,6 +9,7 @@ from .reft_model import (
 
 # trainers
 from .reft_trainer import (
+    ReftTrainer,
     ReftTrainerForCausalLM,
     ReftTrainerForSequenceClassification
 )
@@ -17,14 +18,21 @@ from .reft_trainer import (
 from .interventions import (
     NoreftIntervention,
     LoreftIntervention,
-    ConsreftIntervention
+    ConsreftIntervention,
+    LobireftIntervention,
+    DireftIntervention,
+    NodireftIntervention
 )
 
 # dataloader helpers
 from .dataset import (
     ReftDataCollator,
     ReftDataset,
+    ReftRawDataset,
     ReftSupervisedDataset,
+    ReftGenerationDataset,
+    ReftPreferenceDataset,
+    ReftRewardDataset,
     make_last_position_supervised_data_module,
     get_intervention_locations
 )

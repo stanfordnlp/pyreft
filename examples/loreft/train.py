@@ -34,8 +34,12 @@ from pyreft import (
     ReftConfig,
     ReftTrainerForCausalLM, 
     ReftTrainerForSequenceClassification,
-    NoreftIntervention,
+    NoreftIntervention,   # remove ortho.
     LoreftIntervention,
+    ConsreftIntervention, # constant bias only
+    LobireftIntervention, # low-rank bitfit reft
+    DireftIntervention,   # direct edit reft
+    NodireftIntervention, # remove ortho + direct edit reft <- this is like LoRA on time-step
     ReftDataCollator
 )
 
@@ -49,6 +53,14 @@ dtype_mapping = {
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,
     "float8": "float8",
+}
+intervention_mapping = {
+    "NoreftIntervention": NoreftIntervention,
+    "LoreftIntervention": LoreftIntervention,
+    "ConsreftIntervention": ConsreftIntervention,
+    "LobireftIntervention": LobireftIntervention,
+    "DireftIntervention": DireftIntervention,
+    "NodireftIntervention": NodireftIntervention,
 }
 
 
@@ -102,7 +114,8 @@ def finetune(
     """
 
     assert task in {
-        "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k"
+        "commonsense", "math", "alpaca", "instruct", "ultrafeedback", "glue", "gsm8k",
+        "ultrafeedback_pair"
     }
     if data_dir is not None:
         assert os.path.exists(data_dir), f"Data directory {data_dir} does not exist."
@@ -161,7 +174,8 @@ def finetune(
         
     ReftDataset = LoReftGLUEDataset if task == "glue" else LoReftSupervisedDataset 
     train_dataset = ReftDataset(
-        task, train_datasets[0] if task == "glue" else (os.path.join(data_dir, train_datasets[0]) if data_dir is not None else train_datasets[0]), 
+        task, train_datasets[0] if task == "glue" or task == "ultrafeedback_pair" \
+            else (os.path.join(data_dir, train_datasets[0]) if data_dir is not None else train_datasets[0]), 
         tokenizer, data_split="train", seed=seed, max_n_example=max_n_train_example,
         **{"num_interventions": len(layers), "position": position, 
            "share_weights": share_weights}
@@ -239,10 +253,7 @@ def finetune(
         )
         config = model.config
 
-    if intervention_type == "LoreftIntervention":
-        intervention_type = LoreftIntervention
-    elif intervention_type == "NoreftIntervention":
-        intervention_type = NoreftIntervention
+    intervention_type = intervention_mapping[intervention_type]
         
     # select collator based on the type
     if task in classification_tasks:
@@ -265,6 +276,7 @@ def finetune(
     if model_arch in residual_stream_component_mapping:
         representations = [{
             "component": residual_stream_component_mapping[model_arch] % l,
+            "low_rank_dimension": rank,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
                 dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
@@ -403,7 +415,7 @@ def main():
     parser = argparse.ArgumentParser(description="A simple script that takes different arguments.")
     
     parser.add_argument('-task', '--task', type=str, default=None)
-    parser.add_argument('-data_dir', '--data_dir', type=str, default=None)
+    parser.add_argument('-data_dir', '--data_dir', type=str, default="./datasets")
     parser.add_argument('-train_dataset', '--train_dataset', type=str, default=None)
     parser.add_argument('-eval_dataset', '--eval_dataset', type=str, default=None)
     parser.add_argument('-model', '--model', type=str, help='yahma/llama-7b-hf', default='yahma/llama-7b-hf')

@@ -10,6 +10,14 @@ test.py
 examples/loreft/dataset
 memo_*.png
 *.json
+examples/safety/jail*
+examples/safety/*.csv
+examples/composition/compreft.py
+examples/gradio/reft_*/
+*/train_and_share*
+examples/agent/reft_to_share/
+examples/agent/train_and_share.ipynb
+*/reft_to_share/
 analyse.py
 data.py
 datasets/
@@ -23,6 +31,7 @@ templates.py
 trainer.py
 tmp/
 *.DS_Store
+examples/reward/reward/
 
 
 # Byte-compiled / optimized / DLL files
