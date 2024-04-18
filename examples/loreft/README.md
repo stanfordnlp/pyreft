@@ -94,6 +94,20 @@ python train.py -task ultrafeedback \
 
 Note that `max_length` has to set to 768 to ensure a fair comparison, since our work and previous baselines are run using this constraint. Please note that this might hurt overall `Alpaca-Eval` scores, especially for those evaluators preferring longer generations. We are also happy to release our wandb logs for our runs reported in the paper: [Ultrafeedback Results](https://wandb.ai/wuzhengx/ReFT_MuadDib_ultrafeedback). Note that the evaluation is done offline. The running time includes the generation time. Training time is about 18 mins on a single A100 for our 1K ablation study.
 
+### Offline evaluation with [Alpaca-Eval v1.0](https://github.com/tatsu-lab/alpaca_eval/)
+
+We use [Alpaca-Eval v1.0](https://github.com/tatsu-lab/alpaca_eval/) to automatically evaluate our instruct-tuned model with GPT-4. To evaluate, you firstn need to install Alpaca-Eval:
+```bash
+pip install alpaca-eval
+```
+
+Since we evaluate against `text-davinci-003`, you need to first [download its generation](https://github.com/tatsu-lab/alpaca_eval/blob/main/results/text_davinci_003/model_outputs.json) provided in the Alpaca-Eval repo. Please make sure you have an OpenAI account, and get your OpenAI API key. Now, you can run the commend to evaluate:
+```bash
+export OPENAI_API_KEY=<YOUR_OPENAI_KEY>
+
+alpaca_eval --model_outputs <OUTPUT_DIR>/alpaca_eval_test_outputs.json --annotators_config alpaca_eval_gpt4 --reference_outputs <OPENAI_OUTPUT_DIR>/text_davinci_003/model_outputs.json
+```
+
 ## GLUE tasks
 
 GLUE is made up of a total of 9 different tasks. Here is how to run the script on one of them:
