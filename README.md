@@ -161,6 +161,21 @@ You can also directly deploy your ReFT models through Gradio. Chat with our trai
 - ReFT-Emoji-Chat: https://huggingface.co/spaces/pyvene/reft_emoji_chat 
 - ReFT-Chat: https://huggingface.co/spaces/pyvene/reft_chat7b_1k 
 
+### Generic ReFT model loading.
+To load in a saved ReFT model, you need to first load the base model, and the ReFT artifacts as:
+```py
+import torch, transformers, pyreft
+device = "cuda"
+
+model_name_or_path = "meta-llama/Llama-2-7b-chat-hf"
+model = transformers.AutoModelForCausalLM.from_pretrained(
+    model_name_or_path, torch_dtype=torch.bfloat16, device_map=device)
+
+reft_model = pyreft.ReftModel.load(
+    "./reft_to_share", model
+)
+```
+
 ### Rapid personalized LM building with ReFT.
 From training to deployment, it could take less than 5 minutes end-to-end including all the devops for an experienced developer. We believe ReFT can be integrated into existing finetuning pipelines, and potentially largely reduces the compute and data needed to build next-gen of personalized LMs at scale.
 

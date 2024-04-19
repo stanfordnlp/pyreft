@@ -18,6 +18,7 @@ examples/gradio/reft_*/
 examples/agent/reft_to_share/
 examples/agent/train_and_share.ipynb
 */reft_to_share/
+reft_to_share/
 analyse.py
 data.py
 datasets/
