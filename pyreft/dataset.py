@@ -468,7 +468,10 @@ class ReftSupervisedDataset(ReftDataset):
         return result, last_position
 
 
-def make_last_position_supervised_chat_data_module(tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs, nonstop=False) -> Dict:
+def make_last_position_supervised_chat_data_module(
+    tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs, 
+    num_interventions=1, nonstop=False
+) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
 
     all_base_input_ids, all_intervention_locations, all_output_ids = [], [], []
@@ -491,7 +494,7 @@ def make_last_position_supervised_chat_data_module(tokenizer: transformers.PreTr
         output_ids[:base_prompt_length] = IGNORE_INDEX
         
         all_base_input_ids.append(base_input_ids)
-        all_intervention_locations.append([[base_prompt_length - 1]])
+        all_intervention_locations.append([[base_prompt_length - 1]]*num_interventions)
         all_output_ids.append(output_ids)
         
     train_dataset = datasets.Dataset.from_dict({
@@ -510,7 +513,10 @@ def make_last_position_supervised_chat_data_module(tokenizer: transformers.PreTr
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
-def make_last_position_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs, nonstop=False) -> Dict:
+def make_last_position_supervised_data_module(
+    tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs, 
+    num_interventions=1, nonstop=False
+) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
 
     all_base_input_ids, all_intervention_locations, all_output_ids = [], [], []
@@ -533,7 +539,7 @@ def make_last_position_supervised_data_module(tokenizer: transformers.PreTrained
         output_ids[:base_prompt_length] = IGNORE_INDEX
         
         all_base_input_ids.append(base_input_ids)
-        all_intervention_locations.append([[base_prompt_length - 1]])
+        all_intervention_locations.append([[base_prompt_length - 1]]*num_interventions)
         all_output_ids.append(output_ids)
         
     train_dataset = datasets.Dataset.from_dict({
