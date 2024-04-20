@@ -84,12 +84,15 @@ class LoReftGLUEDataset(ReftDataset):
 class LoReftSupervisedDataset(ReftDataset):
 
     def preprocess(self, kwargs):
+        print(kwargs)
         # basic setup
         self.raw_dataset, self.trigger_tokens, self.num_labels = None, None, None
         dataset_config = task_config[self.task]
         self.task_prompt_template = dataset_config["task_prompt_template"]
         self.trigger_tokens = dataset_config["trigger_tokens"]
-
+        self.original_data_split = self.data_split
+        self.test_split = kwargs["test_split"] if "test_split" in kwargs else None
+        
         # where to pull dataset from
         # instruction-tuning tasks should all eval on alpaca_eval
         if self.task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair"] and self.data_split != "train":
@@ -98,7 +101,6 @@ class LoReftSupervisedDataset(ReftDataset):
             self.data_split = "eval"
         if self.task in ["gsm8k"]:
             self.data_path = "main" # huggingface dir.
-            self.original_data_split = self.data_split
             if self.data_split != "test":
                 self.data_split = "train" # we split l300 examples from train for validation.
         elif self.task in ["math", "commonsense", "ultrafeedback"]:
@@ -106,7 +108,8 @@ class LoReftSupervisedDataset(ReftDataset):
 
     def postprocess(self, kwargs):
         original_dataset_size = len(self.task_dataset)
-        if self.task in ["gsm8k"] and self.original_data_split == "train":
+        if self.task in ["gsm8k"] and \
+            self.original_data_split == "train" and self.test_split == "validation":
             self.task_dataset = self.task_dataset.select(
                 range(original_dataset_size - 300))
         if self.task in ["gsm8k"] and self.original_data_split == "validation":
@@ -118,25 +121,30 @@ class LoReftSupervisedDataset(ReftDataset):
     def tokenize(self, data_item):
         result = {}
 
+        if "Meta-Llama-3" in self.tokenizer.name_or_path:
+            base_prompt = self.tokenizer.bos_token
+        else:
+            base_prompt = ""
+
         # set up prompt
         if self.task == "commonsense":
-            base_prompt = self.task_prompt_template % (data_item['instruction'])
+            base_prompt += self.task_prompt_template % (data_item['instruction'])
             base_input = base_prompt + self.trigger_tokens + data_item["answer"] + self.tokenizer.eos_token
         elif self.task == "math": # we strip since these are model generated examples.
-            base_prompt = self.task_prompt_template % (data_item['instruction'])
+            base_prompt += self.task_prompt_template % (data_item['instruction'])
             base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
         elif self.task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair", "tatsu-lab/alpaca_eval"]:
             if 'input' not in data_item or data_item['input'] == "":
-                base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
+                base_prompt += alpaca_prompt_no_input_template % (data_item['instruction'])
             else:
-                base_prompt = self.task_prompt_template % (data_item['instruction'], data_item['input'])
+                base_prompt += self.task_prompt_template % (data_item['instruction'], data_item['input'])
             if self.task == "ultrafeedback_pair" and self.data_split == "train":
                 # base input takes rejected output to steer away from.
                 base_input = base_prompt + data_item["rejected_output"] + self.tokenizer.eos_token
             else:
                 base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
         elif self.task == "gsm8k": # setup is from https://github.com/yxli2123/LoftQ/
-            base_prompt = self.task_prompt_template % (
+            base_prompt += self.task_prompt_template % (
                 "Answer the above question. First think step by step and then answer the final number.",
                 data_item['question']
             )
@@ -149,7 +157,7 @@ class LoReftSupervisedDataset(ReftDataset):
         base_prompt_ids = self.tokenizer(
             base_prompt, max_length=self.tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
         base_prompt_length = len(base_prompt_ids)
-        if self.data_split == "train":
+        if self.original_data_split == "train":
             base_input_ids = self.tokenizer(
                 base_input, max_length=self.tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
 

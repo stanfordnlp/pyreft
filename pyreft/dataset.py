@@ -228,7 +228,7 @@ class ReftDataset(Dataset):
             for field in self.fields_to_pad:
                 if field not in result:
                     continue
-                if field == "labels" and field in result:
+                if field == "labels":
                     result[field] = torch.cat((result[field], torch.tensor([IGNORE_INDEX,])))
                 else:
                     result[field] = torch.cat((result[field], torch.tensor([self.tokenizer.pad_token_id,])))

@@ -168,6 +168,7 @@ def finetune(
         need_resize = True
     else:
         tokenizer.pad_token = tokenizer.unk_token
+        need_resize = False
 
     # load dataset splits
     assert task in task_config, f"Unrecognized task: {task}"
@@ -183,7 +184,7 @@ def finetune(
             else (os.path.join(data_dir, train_datasets[0]) if data_dir is not None else train_datasets[0]), 
         tokenizer, data_split="train", seed=seed, max_n_example=max_n_train_example,
         **{"num_interventions": len(layers), "position": position, 
-           "share_weights": share_weights}
+           "share_weights": share_weights, "test_split": test_split}
     )
     trigger_tokens = train_dataset.trigger_tokens
     num_labels = train_dataset.num_labels
@@ -416,7 +417,8 @@ def finetune(
     eval_results["n_params"] = n_params
     with open(result_json_file_name, 'w') as json_file:
         json.dump(eval_results, json_file, indent=4)
-        
+
+    print(f"Training results can be found in {output_dir}/{run_name}")
 
 def main():
     parser = argparse.ArgumentParser(description="A simple script that takes different arguments.")
