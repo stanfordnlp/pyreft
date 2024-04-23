@@ -35,5 +35,7 @@ from .dataset import (
     ReftRewardDataset,
     ReftRewardCollator,
     make_last_position_supervised_data_module,
-    get_intervention_locations
+    make_multiple_position_supervised_data_module,
+    get_intervention_locations,
+    parse_positions
 )
