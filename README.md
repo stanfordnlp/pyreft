@@ -19,9 +19,9 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 <img src="https://github.com/stanfordnlp/pyreft/assets/15223704/580d6cfd-4c3c-49a7-bc9f-1f9cc9a5aee7" width="400"/>
 </kbd>
 
-## A Step-by-step guide: training an 😀 Emoji-Chatbot ([live demo](https://huggingface.co/spaces/pyvene/reft_emoji_chat)) with ReFT in 30 seconds!
+## A step-by-step guide: training an 😀 Emoji-Chatbot ([live demo](https://huggingface.co/spaces/pyvene/reft_emoji_chat)) with ReFT in 30 seconds!
 
-**🔥Train TinyLlama Emoji-Chatbot on Colab**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb)
+**🔥Train TinyLlama Emoji-Chatbot**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb)
 
 First, install **`pyreft`** from pip+git:
 
