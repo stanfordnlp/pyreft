@@ -186,12 +186,12 @@ class ReftDataset(Dataset):
         # load the dataset
         if self.dataset is None:
             print("loading data for dataset: ", self.data_path)
-            if self.data_path.endswith(".json"):
-                task_dataset = load_dataset("json", data_files=self.data_path)["train"]
-            elif self.data_path is not None:
-                task_dataset = load_dataset(self.task, self.data_path)[self.data_split]
+            if self.data_path is None:
+                task_dataset = load_dataset(self.task, split=self.data_split)
+            elif self.data_path.endswith(".json"):
+                task_dataset = load_dataset("json", data_files=self.data_path, split="train")
             else:
-                task_dataset = load_dataset(self.task)[self.data_split]
+                task_dataset = load_dataset(self.task, self.data_path, split=self.data_split)
         else:
             task_dataset = self.dataset
 
@@ -628,8 +628,9 @@ class ReftRewardDataset(ReftDataset):
     def preprocess(self, kwargs):
         self.conv_A_field = kwargs["conv_A_field"]
         self.conv_B_field = kwargs["conv_B_field"]
-        self.conv_A_reward_field = kwargs["conv_A_reward_field"]
-        self.conv_B_reward_field = kwargs["conv_B_reward_field"]
+        self.prompt_field = kwargs["prompt_field"] if "prompt_field" in kwargs else None
+        self.conv_A_reward_field = kwargs["conv_A_reward_field"] if "conv_A_reward_field" in kwargs else None
+        self.conv_B_reward_field = kwargs["conv_B_reward_field"] if "conv_B_reward_field" in kwargs else None
         self.fields_to_pad = ["chosen_output", "rejected_output"] # pad both chosen and rejected with dummy tok
         self.fields_to_mask = ["chosen_output", "rejected_output"] # -> chosen_output_mask, rejected_output_mask
 
@@ -637,19 +638,29 @@ class ReftRewardDataset(ReftDataset):
         result = {}
 
         # generate prompt format
+        if self.prompt_field is not None:
+            data_item[self.conv_A_field] = [
+                {"role": "user", "content": data_item[self.prompt_field]},
+                {"role": "assistant", "content": data_item[self.conv_A_field]}
+            ]
+            data_item[self.conv_B_field] = [
+                {"role": "user", "content": data_item[self.prompt_field]},
+                {"role": "assistant", "content": data_item[self.conv_B_field]}
+            ]
         chosen_output = self.tokenizer.apply_chat_template(
             data_item[self.conv_A_field], tokenize=False, add_generation_prompt=False).replace(self.tokenizer.bos_token, "")
         rejected_output = self.tokenizer.apply_chat_template(
             data_item[self.conv_B_field], tokenize=False, add_generation_prompt=False).replace(self.tokenizer.bos_token, "")
         
         # reward
-        result["chosen_reward"] = data_item[self.conv_A_reward_field]
-        result["rejected_reward"] = data_item[self.conv_B_reward_field]
+        if self.conv_A_reward_field is not None:
+            result["chosen_reward"] = data_item[self.conv_A_reward_field]
+            result["rejected_reward"] = data_item[self.conv_B_reward_field]
 
-        # swap so that chosen is better
-        if result["chosen_reward"] < result["rejected_reward"]:
-            chosen_output, rejected_output = rejected_output, chosen_output
-            result["chosen_reward"], result["rejected_reward"] = result["rejected_reward"], result["chosen_reward"]
+            # swap so that chosen is better
+            if result["chosen_reward"] < result["rejected_reward"]:
+                chosen_output, rejected_output = rejected_output, chosen_output
+                result["chosen_reward"], result["rejected_reward"] = result["rejected_reward"], result["chosen_reward"]
 
         # tokenize
         chosen_ids = self.tokenizer(
@@ -666,3 +677,49 @@ class ReftRewardDataset(ReftDataset):
         result["chosen_output"] = chosen_ids
         result["rejected_output"] = rejected_ids
         return result, last_position
+
+
+@dataclass
+class ReftRewardCollator:
+    tokenizer: transformers.PreTrainedTokenizer
+    padding: Union[bool, str] = True
+    max_length: Optional[int] = None
+    pad_to_multiple_of: Optional[int] = None
+    return_tensors: str = "pt"
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
+        merged_features = []
+
+        for feature in features:
+            merged_features.append(
+                {
+                    "input_ids": feature["chosen_output"],
+                    "attention_mask": feature["chosen_output_mask"],
+                    "reward": feature["chosen_reward"] if "chosen_reward" in feature else 1.0,
+                    "intervention_locations": feature["intervention_locations"],
+                }
+            )
+            merged_features.append(
+                {
+                    "input_ids": feature["rejected_output"],
+                    "attention_mask": feature["rejected_output_mask"],
+                    "reward": feature["rejected_reward"] if "rejected_reward" in feature else 0.0,
+                    "intervention_locations": feature["intervention_locations"],
+                }
+            )
+        batch = self.tokenizer.pad(
+            merged_features,
+            padding=self.padding,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors=self.return_tensors,
+        )
+        batch = {
+            "input_ids": batch["input_ids"],
+            "attention_mask": batch["attention_mask"],
+            "reward": batch["reward"],
+            "intervention_locations": batch["intervention_locations"],
+        }
+        max_seq_length = batch["input_ids"].shape[-1]
+        batch["intervention_locations"] = batch["intervention_locations"][..., :max_seq_length]
+        return batch
