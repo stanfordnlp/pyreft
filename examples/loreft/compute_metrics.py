@@ -140,6 +140,13 @@ def compute_metrics(
     all_preds = []
     all_labels = []
 
+    if "Meta-Llama-3-8B-Instruct" in tokenizer.name_or_path: # pretty bad workaround for llama-3, forgive me
+        terminators = [
+            tokenizer.eos_token_id,
+            tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        ]
+        trigger_tokens = "assistant\n\n"
+        
     with torch.no_grad():
         for step, inputs in enumerate(eval_iterator):
             for k, v in inputs.items():
@@ -175,7 +182,7 @@ def compute_metrics(
                 # repeat each batch by num_beams times in intervention locations
                 # -> [layers, batch_size * num_beams, positions]
                 intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
-                
+
                 # set generation args depending on task
                 generation_args = {
                     "base": {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
@@ -186,7 +193,9 @@ def compute_metrics(
                 }
                 if "generation_args" in task_config[task]:
                     generation_args.update(task_config[task]["generation_args"][greedy_decoding])
-                
+                if "Meta-Llama-3-8B-Instruct" in tokenizer.name_or_path: # pretty bad workaround for llama-3, forgive me
+                    generation_args["eos_token_id"] = terminators
+
                 # override generation args if necessary
                 if temperature is not None:
                     generation_args["temperature"] = temperature

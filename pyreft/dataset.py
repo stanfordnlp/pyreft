@@ -558,6 +558,61 @@ def make_last_position_supervised_data_module(
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
+def make_multiple_position_supervised_data_module(
+    tokenizer: transformers.PreTrainedTokenizer, model, inputs, outputs, 
+    positions="f1+l1", num_interventions=1, nonstop=False, share_weights=False
+) -> Dict:
+    """Make dataset and collator for supervised fine-tuning."""
+    first_n, last_n = parse_positions(positions)
+    
+    all_base_input_ids, all_intervention_locations, all_output_ids = [], [], []
+    for i in range(len(inputs)):
+        _input = inputs[i]
+        _output = outputs[i]
+    
+        base_prompt = _input
+        base_input = base_prompt + _output
+        if not nonstop:
+            base_input += tokenizer.eos_token
+    
+        # tokenize
+        base_prompt_ids = tokenizer(
+            base_prompt, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+        base_prompt_length = len(base_prompt_ids)
+        base_input_ids = tokenizer(
+            base_input, max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")["input_ids"][0]
+        output_ids = copy.deepcopy(base_input_ids)
+        output_ids[:base_prompt_length] = IGNORE_INDEX
+
+        intervention_locations = get_intervention_locations(
+            last_position=base_prompt_length, 
+            first_n=first_n, 
+            last_n=last_n,
+            pad_mode="last",
+            num_interventions=num_interventions,
+            share_weights=share_weights,
+        )
+
+        all_base_input_ids.append(base_input_ids)
+        all_intervention_locations.append(intervention_locations)
+        all_output_ids.append(output_ids)
+        
+    train_dataset = datasets.Dataset.from_dict({
+        "input_ids": all_base_input_ids,
+        "intervention_locations": all_intervention_locations,
+        "labels": all_output_ids,
+    })
+        
+    data_collator_fn = transformers.DataCollatorForSeq2Seq(
+        tokenizer=tokenizer,
+        model=model,
+        label_pad_token_id=-100,
+        padding="longest"
+    )
+    data_collator = ReftDataCollator(data_collator=data_collator_fn)
+    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+    
+
 class ReftPreferenceDataset(ReftDataset):
     """
     Different from ReftSupervisedDataset where we have

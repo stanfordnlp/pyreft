@@ -121,35 +121,42 @@ class LoReftSupervisedDataset(ReftDataset):
     def tokenize(self, data_item):
         result = {}
 
-        if "Meta-Llama-3" in self.tokenizer.name_or_path:
-            base_prompt = self.tokenizer.bos_token
-        else:
-            base_prompt = ""
-
         # set up prompt
         if self.task == "commonsense":
-            base_prompt += self.task_prompt_template % (data_item['instruction'])
+            base_prompt = self.task_prompt_template % (data_item['instruction'])
             base_input = base_prompt + self.trigger_tokens + data_item["answer"] + self.tokenizer.eos_token
         elif self.task == "math": # we strip since these are model generated examples.
-            base_prompt += self.task_prompt_template % (data_item['instruction'])
+            base_prompt = self.task_prompt_template % (data_item['instruction'])
             base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
         elif self.task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair", "tatsu-lab/alpaca_eval"]:
             if 'input' not in data_item or data_item['input'] == "":
-                base_prompt += alpaca_prompt_no_input_template % (data_item['instruction'])
+                base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])
             else:
-                base_prompt += self.task_prompt_template % (data_item['instruction'], data_item['input'])
+                base_prompt = self.task_prompt_template % (data_item['instruction'], data_item['input'])
             if self.task == "ultrafeedback_pair" and self.data_split == "train":
                 # base input takes rejected output to steer away from.
                 base_input = base_prompt + data_item["rejected_output"] + self.tokenizer.eos_token
             else:
                 base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
-        elif self.task == "gsm8k": # setup is from https://github.com/yxli2123/LoftQ/
-            base_prompt += self.task_prompt_template % (
-                "Answer the above question. First think step by step and then answer the final number.",
-                data_item['question']
-            )
-            base_input = base_prompt + data_item["answer"].replace("####", "The final answer is: ") + \
-                self.tokenizer.eos_token
+        elif self.task == "gsm8k": 
+            if "Meta-Llama-3-8B" in self.tokenizer.name_or_path: # pretty bad workaround for llama-3, forgive me
+                system_prompt = "You are a helpful assistant."
+                base_prompt = self.tokenizer.apply_chat_template(
+                    [{"role": "system", "content": system_prompt}, {"role": "user", "content": data_item['question']}], 
+                    tokenize=False,
+                )
+                base_input = self.tokenizer.apply_chat_template(
+                    [{"role": "system", "content": system_prompt}, {"role": "user", "content": data_item['question']},
+                     {"role": "assistant", "content": data_item["answer"].replace("####", "The final answer is: ")}], 
+                    tokenize=False,
+                ) + self.tokenizer.eos_token
+            else: # setup is from https://github.com/yxli2123/LoftQ/
+                base_prompt = self.task_prompt_template % (
+                    "Answer the above question. First think step by step and then answer the final number.",
+                    data_item['question']
+                )
+                base_input = base_prompt + data_item["answer"].replace("####", "The final answer is: ") + \
+                    self.tokenizer.eos_token
         else:
             raise ValueError(f"Unrecognized task: {self.task}")
             
