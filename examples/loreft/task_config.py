@@ -148,7 +148,7 @@ task_config = {
             },
             False: {
                 "max_new_tokens": 256,
-                "temperature": 0.8,
+                "temperature": 0.1,
                 "top_p": 0.95,
                 "top_k": 40,
                 "do_sample": True
