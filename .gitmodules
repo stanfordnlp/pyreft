@@ -7,3 +7,9 @@
 [submodule "examples/agent/prod/reft_emoji_chat"]
 	path = examples/agent/prod/reft_emoji_chat
 	url = https://huggingface.co/spaces/pyvene/reft_emoji_chat
+[submodule "examples/agent/prod/reft_ethos_llama3"]
+	path = examples/agent/prod/reft_ethos_llama3
+	url = https://huggingface.co/spaces/pyvene/reft_ethos_llama3
+[submodule "examples/agent/prod/reft_emoji_chat_llama3"]
+	path = examples/agent/prod/reft_emoji_chat_llama3
+	url = https://huggingface.co/spaces/pyvene/reft_emoji_chat_llama3
