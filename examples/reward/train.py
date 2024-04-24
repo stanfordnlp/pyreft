@@ -7,6 +7,7 @@ import torch
 import transformers
 from datasets import load_dataset
 import numpy as np
+import json
 
 import pyvene as pv
 from pyreft import (
@@ -227,14 +228,51 @@ def train():
     for k,v in  trainer.model.interventions.items():
         _ = v[0].eval()
 
-    # eval
-    trainer.evaluate()
-
     # save
     trainer.save_state()
     reft_model.save(
         save_directory=os.path.join(training_args.output_dir, "reward_model")
     )
+
+    # eval on rewardbench
+    # field setup
+    fields = {
+        "conv_A_field": "chosen", "conv_B_field": "rejected",
+        "prompt_field": "prompt"
+    }
+
+    # load rewardbench
+    dataset = load_dataset("allenai/reward-bench", split="train")
+    subsets = set(dataset["subset"])
+
+    # eval each subset
+    metrics = {
+        "model": model_args.model_name_or_path,
+        "model_type": "Seq. Classifier",
+        "chat_template": "tokenizer",
+    }
+    for subset in sorted(list(subsets)):
+        filtered_dataset = dataset.filter(lambda x: x["subset"] == subset)
+        eval_dataset = ReftRewardDataset(
+            "allenai/reward-bench", None, tokenizer,
+            data_split="train",
+            dataset=filtered_dataset,
+            **{"num_interventions": len(layers), 
+               "position": training_args.position, 
+               "share_weights": training_args.share_weights},
+            **fields,
+        )
+
+        # run eval
+        metric = trainer.evaluate(eval_dataset=eval_dataset, metric_key_prefix=f"eval_{subset}")
+        metrics[subset] = metric[f"eval_{subset}_accuracy"]
+    
+    # store rewardbench metrics
+    with open(os.path.join(training_args.output_dir, "rewardbench_metrics.json"), "w") as f:
+        json.dump(metrics, f)
+
+    # eval
+    trainer.evaluate()
 
 
 if __name__ == "__main__":
