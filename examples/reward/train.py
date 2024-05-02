@@ -7,63 +7,28 @@ import torch
 import transformers
 from datasets import load_dataset
 import numpy as np
+import json
 
+import pyvene as pv
 from pyreft import (
     get_reft_model,
     ReftConfig,
     LoreftIntervention,
-    ReftDataCollator,
     ReftRewardDataset,
+    ReftRewardCollator,
     ReftTrainer,
 )
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
-@dataclass
-class ReftRewardCollator:
-    tokenizer: transformers.PreTrainedTokenizer
-    padding: Union[bool, str] = True
-    max_length: Optional[int] = None
-    pad_to_multiple_of: Optional[int] = None
-    return_tensors: str = "pt"
-
-    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        merged_features = []
-
-        for feature in features:
-            merged_features.append(
-                {
-                    "input_ids": feature["chosen_output"],
-                    "attention_mask": feature["chosen_output_mask"],
-                    "reward": feature["chosen_reward"],
-                    "intervention_locations": feature["intervention_locations"],
-                }
-            )
-            merged_features.append(
-                {
-                    "input_ids": feature["rejected_output"],
-                    "attention_mask": feature["rejected_output_mask"],
-                    "reward": feature["rejected_reward"],
-                    "intervention_locations": feature["intervention_locations"],
-                }
-            )
-        batch = self.tokenizer.pad(
-            merged_features,
-            padding=self.padding,
-            max_length=self.max_length,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors=self.return_tensors,
-        )
-        batch = {
-            "input_ids": batch["input_ids"],
-            "attention_mask": batch["attention_mask"],
-            "reward": batch["reward"],
-            "intervention_locations": batch["intervention_locations"],
-        }
-        max_seq_length = batch["input_ids"].shape[-1]
-        batch["intervention_locations"] = batch["intervention_locations"][..., :max_seq_length]
-        return batch
+# setup for gemma
+pv.type_to_module_mapping[transformers.GemmaForSequenceClassification] = {
+    "block_output": ("model.layers[%s]", 
+                   pv.models.constants.CONST_OUTPUT_HOOK),
+}
+pv.type_to_dimension_mapping[transformers.GemmaForSequenceClassification] = {
+    "block_output": ("hidden_size",),
+}
 
 
 class ReftTrainerForRewardModelling(ReftTrainer):
@@ -167,8 +132,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
 
     # load data and rename columns
     train_dataset = ReftRewardDataset(
-        "reward", None, tokenizer,
-        dataset=load_dataset(data_args.data_path, "all", split="train"),
+        data_args.data_path, "all", tokenizer,
         data_split="train",
         seed=training_args.seed, max_n_example=training_args.max_n_train_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
@@ -176,8 +140,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
         **fields,
     )
     eval_dataset = ReftRewardDataset(
-        "reward", None, tokenizer,
-        dataset=load_dataset(data_args.data_path, "all", split="val"),
+        data_args.data_path, "all", tokenizer,
         data_split="val",
         seed=training_args.seed, max_n_example=training_args.max_n_eval_example,
         **{"num_interventions": len(layers), "position": training_args.position, 
@@ -230,7 +193,8 @@ def train():
     )
     model.config.pad_token_id = tokenizer.pad_token_id
     representations = [{
-        "layer": l, "component": f"model.layers[{l}].output",
+        "layer": l, "component": f"block_output",
+        "low_rank_dimension": training_args.rank,
         "intervention": LoreftIntervention(
             embed_dim=model.config.hidden_size, 
             low_rank_dimension=training_args.rank,
@@ -246,7 +210,7 @@ def train():
 
     # get training data
     data_module = make_supervised_data_module(
-        tokenizer=tokenizer, model=None, layers=layers,
+        tokenizer=tokenizer, model=reft_model, layers=layers,
         training_args=training_args, data_args=data_args)
 
     # train
@@ -264,12 +228,51 @@ def train():
     for k,v in  trainer.model.interventions.items():
         _ = v[0].eval()
 
-    # eval
-    trainer.evaluate()
-
     # save
     trainer.save_state()
-    trainer.save_model(output_dir=training_args.output_dir)
+    reft_model.save(
+        save_directory=os.path.join(training_args.output_dir, "reward_model")
+    )
+
+    # eval on rewardbench
+    # field setup
+    fields = {
+        "conv_A_field": "chosen", "conv_B_field": "rejected",
+        "prompt_field": "prompt"
+    }
+
+    # load rewardbench
+    dataset = load_dataset("allenai/reward-bench", split="train")
+    subsets = set(dataset["subset"])
+
+    # eval each subset
+    metrics = {
+        "model": model_args.model_name_or_path,
+        "model_type": "Seq. Classifier",
+        "chat_template": "tokenizer",
+    }
+    for subset in sorted(list(subsets)):
+        filtered_dataset = dataset.filter(lambda x: x["subset"] == subset)
+        eval_dataset = ReftRewardDataset(
+            "allenai/reward-bench", None, tokenizer,
+            data_split="train",
+            dataset=filtered_dataset,
+            **{"num_interventions": len(layers), 
+               "position": training_args.position, 
+               "share_weights": training_args.share_weights},
+            **fields,
+        )
+
+        # run eval
+        metric = trainer.evaluate(eval_dataset=eval_dataset, metric_key_prefix=f"eval_{subset}")
+        metrics[subset] = metric[f"eval_{subset}_accuracy"]
+    
+    # store rewardbench metrics
+    with open(os.path.join(training_args.output_dir, "rewardbench_metrics.json"), "w") as f:
+        json.dump(metrics, f)
+
+    # eval
+    trainer.evaluate()
 
 
 if __name__ == "__main__":

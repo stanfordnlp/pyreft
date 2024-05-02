@@ -33,6 +33,7 @@ from .dataset import (
     ReftGenerationDataset,
     ReftPreferenceDataset,
     ReftRewardDataset,
+    ReftRewardCollator,
     make_last_position_supervised_data_module,
     make_multiple_position_supervised_data_module,
     get_intervention_locations,
