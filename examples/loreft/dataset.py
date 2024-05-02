@@ -139,24 +139,22 @@ class LoReftSupervisedDataset(ReftDataset):
             else:
                 base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
         elif self.task == "gsm8k": 
-            if "Meta-Llama-3-8B" in self.tokenizer.name_or_path: # pretty bad workaround for llama-3, forgive me
+            if "Meta-Llama-3-8B-Instruct" in self.tokenizer.name_or_path: # pretty bad workaround for llama-3, forgive me
                 system_prompt = "You are a helpful assistant."
+                # we remove the BOS, otherwise there will be redundant BOS tokens.
                 base_prompt = self.tokenizer.apply_chat_template(
                     [{"role": "system", "content": system_prompt}, {"role": "user", "content": data_item['question']}], 
                     tokenize=False,
-                )
+                )[len("<|begin_of_text|>"):]
                 base_input = self.tokenizer.apply_chat_template(
                     [{"role": "system", "content": system_prompt}, {"role": "user", "content": data_item['question']},
-                     {"role": "assistant", "content": data_item["answer"].replace("####", "The final answer is: ")}], 
+                     {"role": "assistant", "content": data_item["answer"]}], 
                     tokenize=False,
-                ) + self.tokenizer.eos_token
+                )[len("<|begin_of_text|>"):] + self.tokenizer.eos_token
             else: # setup is from https://github.com/yxli2123/LoftQ/
-                base_prompt = self.task_prompt_template % (
-                    "Answer the above question. First think step by step and then answer the final number.",
-                    data_item['question']
-                )
-                base_input = base_prompt + data_item["answer"].replace("####", "The final answer is: ") + \
-                    self.tokenizer.eos_token
+                base_prompt = f"{data_item['question']}{QUESTION_PROMPT}"
+                # note: we remove the extra space here to keep the format clean.
+                base_input = base_prompt + f"{data_item['answer']}{self.tokenizer.eos_token}".replace("####", "The final answer is: ")
         else:
             raise ValueError(f"Unrecognized task: {self.task}")
             

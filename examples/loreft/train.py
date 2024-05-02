@@ -155,20 +155,12 @@ def finetune(
         layers += layers
 
     # load tokenizer
-    if "Meta-Llama-3-8B" in model_name:
-        tokenizer = AutoTokenizer.from_pretrained(
-            "meta-llama/Meta-Llama-3-8B-Instruct", # use instruct for the template.
-            model_max_length=max_length,
-            padding_side="right",
-            use_fast=False,
-        )
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            model_max_length=max_length,
-            padding_side="right",
-            use_fast=False,
-        )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        model_max_length=max_length,
+        padding_side="right",
+        use_fast=False,
+    )
     if tokenizer.unk_token == None and tokenizer.pad_token == None:
         # raw llama3
         print("adding a special padding token...")
