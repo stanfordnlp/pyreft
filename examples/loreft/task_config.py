@@ -137,8 +137,8 @@ task_config = {
     "gsm8k": {
         "train_datasets": ["gsm8k"],
         "eval_datasets": ["gsm8k"],
-        "task_prompt_template": alpaca_prompt_template,
-        "trigger_tokens": "### Response:",
+        "task_prompt_template": gsm8k_template,
+        "trigger_tokens": "First think step by step and then answer the final number.\n",
         "generation_args": {
             # default values are from LoftQ
             # https://arxiv.org/pdf/2310.08659.pdf

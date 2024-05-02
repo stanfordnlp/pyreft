@@ -212,6 +212,7 @@ def compute_metrics(
                 
                 for id, pred in zip(inputs["id"].tolist(), actual_preds):
                     example = data_items[id]
+                    print(pred)
                     try:
                         raw_generation = extract_output(pred, trigger_tokens)
                     except:
