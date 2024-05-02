@@ -248,7 +248,7 @@ class ReftDataset(Dataset):
                 num_interventions = num_interventions // 2
             # we now assume each task has a constant subspaces
             _subspaces = [data_item["subspaces"]] * num_interventions
-            result["subspaces"].append(_subspaces)
+            result["subspaces"] = _subspaces
 
         return result
 
