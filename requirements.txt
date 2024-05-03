@@ -1,7 +1,7 @@
 torch>=2.0.0
 # Removed flash-attn for now.
 # flash-attn>=2.5.6 --install-option='--no-build-isolation'
-pyvene>=0.1.1
+pyvene @ git+https://github.com/stanfordnlp/pyvene.git
 transformers>=4.39.3
 protobuf>=3.20.0
 matplotlib>=3.7.4
