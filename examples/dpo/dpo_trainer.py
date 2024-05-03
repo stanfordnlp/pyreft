@@ -123,6 +123,11 @@ class DPOReftTrainer(DPOTrainer):
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().mean().cpu()
 
         return losses.mean(), metrics
- 
+
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
-        os.makedirs(output_dir, exist_ok=True)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        self.model.save_intervention(
+            save_directory=f"{output_dir}/intervenable_model", 
+            include_model=True
+        )
