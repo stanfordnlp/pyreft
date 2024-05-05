@@ -36,14 +36,10 @@ class DPOReftTrainer(DPOTrainer):
             else {}
         )
         if reference:
-            all_outputs, _ = model(
-                {
-                    "input_ids": concatenated_batch["concatenated_input_ids"].to(model.get_device()),
-                    "attention_mask": concatenated_batch["concatenated_attention_mask"].to(model.get_device()),
-                },
-                unit_locations={"sources->base": (None, intervention_locations)},
+            all_outputs = model.model(
+                input_ids=concatenated_batch["concatenated_input_ids"].to(model.get_device()),
+                attention_mask=concatenated_batch["concatenated_attention_mask"].to(model.get_device()),
                 use_cache=False,
-                output_original_output=True,
                 **model_kwargs,
             )
         else:
