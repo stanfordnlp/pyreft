@@ -59,6 +59,8 @@ ReFT has been shown to be parameter-efficient. We start with a minimal set-up fo
 # get reft model
 reft_config = pyreft.ReftConfig(representations={
     "layer": 15, "component": "block_output",
+    # alternatively, you can specify as string component access,
+    # "component": "model.layers[0].output",
     "low_rank_dimension": 4,
     "intervention": pyreft.LoreftIntervention(embed_dim=model.config.hidden_size,
     low_rank_dimension=4)})
