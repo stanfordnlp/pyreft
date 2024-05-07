@@ -1,0 +1,2 @@
+Utility scripts for inference on custom images.
+The Faster R-CNN inference scripts are adapted from [Huggingface transformers LXMERT example](https://github.com/huggingface/transformers/blob/master/examples/research_projects/lxmert/).

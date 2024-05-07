@@ -253,6 +253,119 @@ class ReftDataset(Dataset):
         return result
 
 
+class ReftDataloaderDataset(Dataset):
+    __metaclass__ = abc.ABCMeta
+
+    def __init__(
+        self, task: str, 
+        tokenizer: transformers.PreTrainedTokenizer,
+        data_split="train", dataloader=None, 
+        max_n_example=None,
+        **kwargs,
+    ):
+        super(ReftDataloaderDataset, self).__init__()
+
+        # setup
+        self.tokenizer = tokenizer
+        self.first_n, self.last_n = parse_positions(kwargs["position"])
+        self.task = task
+        self.data_split = data_split
+        self.dataloader = dataloader
+        self.pad_mode = "first"
+        self.fields_to_pad = ["input_ids", "labels"]
+        self.fields_to_mask = ["input_ids"]
+        self.max_n_example = max_n_example
+
+        # load the dataset
+        self.preprocess(kwargs)
+        self.task_dataset = self.load_dataset()
+
+        # kwargs settings
+        self.postprocess(kwargs)
+        self.kwargs = kwargs
+
+    @abc.abstractmethod
+    def tokenize(self, data_item, **kwargs):
+        """How to tokenize a single data item. Override this function!"""
+        return
+
+    def preprocess(self, kwargs):
+        """Preprocessing."""
+        return
+
+    def postprocess(self, kwargs):
+        """Postprocessing."""
+        return
+    
+    def __len__(self):
+        return len(self.task_dataset)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        # print("Getting item: ", i)
+        data_item = self.task_dataset[i]
+        tokenized, last_position = self.tokenize(data_item)
+        tokenized = self.compute_intervention_and_subspaces(i, data_item, tokenized, last_position, **self.kwargs)
+        # print(tokenized["intervention_locations"])
+        # tokenized["id"] = i
+        return tokenized
+
+    def load_dataset(self):
+        """Load the dataset (or a portion of it) from HF or a local file."""
+
+        task_dataset = self.dataloader.dataset
+
+        # save raw_dataset pointer for access raw strings
+        self.raw_dataset = task_dataset if self.data_split != "train" else None
+        return task_dataset
+        
+    def get_intervention_locations(self, **kwargs):
+        return get_intervention_locations(**kwargs)
+    
+    def compute_intervention_and_subspaces(self, id: int, data_item, result: dict, last_position: int, **kwargs):
+        # compute intervention locs
+        intervention_locations = self.get_intervention_locations(last_position=last_position, first_n=self.first_n, 
+            last_n=self.last_n, pad_mode=self.pad_mode, **kwargs)
+        result["intervention_locations"] = intervention_locations
+        result["id"] = id
+            
+        # add a single padding token BEFORE input_ids and fix everything
+        if self.pad_mode == "first":
+            for field in self.fields_to_pad:
+                if field not in result:
+                    continue
+                if field == "labels":
+                    result[field] = torch.cat((torch.tensor([IGNORE_INDEX,]), result[field]))
+                else:
+                    result[field] = torch.cat((torch.tensor([self.tokenizer.pad_token_id,]), result[field]))
+            result["intervention_locations"] = (torch.IntTensor(result["intervention_locations"]) + 1).tolist()
+        elif self.pad_mode == "last":
+            for field in self.fields_to_pad:
+                if field not in result:
+                    continue
+                if field == "labels":
+                    result[field] = torch.cat((result[field], torch.tensor([IGNORE_INDEX,])))
+                else:
+                    result[field] = torch.cat((result[field], torch.tensor([self.tokenizer.pad_token_id,])))
+        
+        # attention masks
+        if len(self.fields_to_mask) == 1:
+            result["attention_mask"] = (result[self.fields_to_mask[0]] != self.tokenizer.pad_token_id).int()
+        else:
+            for field in self.fields_to_mask:
+                result[f"{field}_mask"] = (result[field] != self.tokenizer.pad_token_id).int()
+
+        # subspaces
+        if "subspaces" in data_item:
+            num_interventions = kwargs["num_interventions"]
+            share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
+            if share_weights:
+                num_interventions = num_interventions // 2
+            # we now assume each task has a constant subspaces
+            _subspaces = [data_item["subspaces"]] * num_interventions
+            result["subspaces"] = _subspaces
+
+        return result
+
 class ReftRawDataset(Dataset):
 
     def __init__(
