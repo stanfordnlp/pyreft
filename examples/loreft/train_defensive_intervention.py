@@ -22,6 +22,13 @@ def main(
     share_weights: bool = True,
     nonstop: bool = True
 ):
+    print(
+        f"model: {model_name_or_path}, "
+        f"layers: {layers}, rank: {low_rank_dimension}, "
+        f"position: {positions}, epoch: {num_train_epochs}, "
+        f"num examples: {n_train_examples}"
+    )
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
@@ -59,6 +66,8 @@ def main(
     ])
     reft_model = pyreft.get_reft_model(model, reft_config)
     reft_model.set_device(device)
+
+    print('Number of interventions:', len(reft_config.representations))
     reft_model.print_trainable_parameters()
 
     train_df = pd.read_csv(DATA_DIR).iloc[:n_train_examples]
