@@ -104,7 +104,7 @@ def main(
     )
 
     trainer.train()
-    trainer.save_model(f'{output_dir}/weights')
+    reft_model.save(f"{output_dir}/weights")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a defensive intervention on AdvBench.")
