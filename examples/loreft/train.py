@@ -311,7 +311,7 @@ def finetune(
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config, set_device=not isinstance(dtype, str))
     if load_dir:
-        reft_model = ReftModel.load(load_dir, model)
+        reft_model = ReftModel.load(load_dir, model).set_device(model.device)
         reft_config = reft_model.config
 
     reft_model.print_trainable_parameters()
