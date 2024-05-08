@@ -107,6 +107,7 @@ def finetune(
     temperature: float,
     top_p: float,
     top_k: float,
+    test_original : bool,
     args,
 ):
     """
@@ -319,6 +320,8 @@ def finetune(
     # this line might not be necessary since HF trainer enables this by default.
     reft_model.model.train()
     n_params = reft_model.count_parameters(include_model=False)
+    if test_original:
+        n_params = 0
 
     # start wandb logging
     if is_wandb:
@@ -400,7 +403,7 @@ def finetune(
                 task, dataset_name, reft_model, tokenizer, eval_dataset, data_items,
                 trigger_tokens, run_name, eval_batch_size, 
                 data_collator if task in classification_tasks else None,
-                split, greedy_decoding, temperature, top_p, top_k
+                split, greedy_decoding, temperature, top_p, top_k, test_original=test_original
             )
 
             # log
@@ -469,6 +472,9 @@ def main():
     parser.add_argument('-t', '--temperature', type=float, default=None)
     parser.add_argument('-top_p', '--top_p', type=float, default=None)
     parser.add_argument('-top_k', '--top_k', type=float, default=None)
+
+    # test original
+    parser.add_argument('-test_original', '--test_original', action='store_true')
 
     args = parser.parse_args()
 

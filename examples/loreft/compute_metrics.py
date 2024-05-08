@@ -123,7 +123,8 @@ def compute_metrics(
     greedy_decoding=False,
     temperature=None, 
     top_p=None, 
-    top_k=None
+    top_k=None,
+    test_original=False # to test the base model
 ):
     # switch the tokenizer mode first for generation tasks
     if task != "glue":
@@ -174,10 +175,10 @@ def compute_metrics(
             
             else:
                 # get left padding count, [batch_size], and add to locations
-                left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
-                left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
-                intervention_locations += left_padding
-                intervention_locations -= 1 # offset for the sink padding
+                # left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
+                # left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+                # intervention_locations += left_padding
+                # intervention_locations -= 1 # offset for the sink padding
 
                 # repeat each batch by num_beams times in intervention locations
                 # -> [layers, batch_size * num_beams, positions]
@@ -205,7 +206,14 @@ def compute_metrics(
                     generation_args["top_k"] = top_k
 
                 # generate with intervention on prompt
-                _, steered_response = intervenable.generate(**generation_args)
+                if not test_original:
+                    _, steered_response = intervenable.generate(**generation_args)
+                else:
+                    steered_response = intervenable.model.generate(
+                        **generation_args["base"],
+                        **{k:v for k, v in generation_args.items() 
+                           if k not in ['base', 'unit_locations', 'intervene_on_prompt']}
+                    )
         
                 # detokenize in batch
                 actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
