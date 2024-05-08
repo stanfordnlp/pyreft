@@ -1,4 +1,4 @@
-python train.py -task math \
+python train.py -task gsm8k \
 -data_dir dataset \
 -model meta-llama/Llama-2-7b-chat-hf \
 -seed 42 \
