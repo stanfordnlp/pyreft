@@ -29,6 +29,7 @@ from dataset import LoReftGLUEDataset, LoReftSupervisedDataset
 from compute_metrics import compute_metrics
 
 from pyreft import (
+    ReftModel,
     TaskType,
     get_reft_model,
     ReftConfig,
@@ -108,6 +109,8 @@ def finetune(
     top_p: float,
     top_k: float,
     test_original : bool,
+    load_dir : str,
+    skip_train: bool,
     args,
 ):
     """
@@ -307,6 +310,10 @@ def finetune(
     
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config, set_device=not isinstance(dtype, str))
+    if load_dir:
+        reft_model = ReftModel.load(load_dir, model)
+        reft_config = reft_model.config
+
     reft_model.print_trainable_parameters()
 
     # for GLUE tasks, we enable gradients on the classifier head.
@@ -374,7 +381,9 @@ def finetune(
         data_collator=data_collator,
         compute_metrics=in_training_compute_metrics if task == "glue" else None,
     )
-    trainer.train()
+
+    if not skip_train:
+        trainer.train()
 
     # dump config
     args_dict = vars(args)
@@ -475,6 +484,9 @@ def main():
 
     # test original
     parser.add_argument('-test_original', '--test_original', action='store_true')
+
+    parser.add_argument('-load_dir', '--load_dir', type=str, default=None)
+    parser.add_argument('-skip_train', '--skip_train', action='store_true')
 
     args = parser.parse_args()
 
