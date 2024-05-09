@@ -26,6 +26,28 @@ We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Ad
 - For instrution following training:
   - [`train.json`](https://github.com/frankaging/ultrafeedback-dataset/blob/main/train.json)
 
+## Hyperparameter tuning
+
+As described in our Appendix C in the paper, we are using the last 300 examples from  the GSM8K training set for hyperparameter tuning. Here is an example of our running command:
+
+```bash
+python train.py -task gsm8k \
+-model yahma/llama-7b-hf \
+-seed 42 -l all -r 4 -p f7+l7 -e 12 -lr 9e-4 \
+-type NodireftIntervention \
+-gradient_accumulation_steps 4 \
+-batch_size 8 \
+-eval_batch_size 4 \
+--dropout 0.05 \
+--test_split validation \
+--use_normalized_template \
+--greedy_decoding \
+--warmup_ratio 0.00 \
+--weight_decay 0.06
+```
+
+We pick the best hyperparameter settings, and train on our commonsense reasoning as well as arithmetic tasks.
+
 ## Commonsense reasoning tasks
 
 Commonsense reasoning is made up of a total of 8 different tasks. Here is how to run the script to train once and evaluate on all of them:
