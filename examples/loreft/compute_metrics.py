@@ -258,6 +258,7 @@ def compute_metrics(
                         instruction = example["question"] if task == "gsm8k" else example["instruction"]
                         generations += [{
                             "instruction": instruction,
+                            "orig_generation": pred, # original generation
                             "raw_generation": raw_generation,
                             "generation": generation,
                             "answer": answer
