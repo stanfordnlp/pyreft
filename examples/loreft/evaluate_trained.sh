@@ -1,6 +1,7 @@
-export LOADDIR=$1
+export task=$1
+export loaddir=$2
 
-python train.py -task gsm8k \
+python train.py -task $task \
 -data_dir dataset \
 -model "meta-llama/Llama-2-7b-chat-hf" \
 -seed 42 \
@@ -16,5 +17,5 @@ python train.py -task gsm8k \
 --warmup_ratio 0.1 \
 --greedy_decoding \
 --max_n_train_example 1 \
---load_dir "${LOADDIR}" \
+--load_dir "${loaddir}" \
 --skip_train

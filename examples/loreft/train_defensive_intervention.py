@@ -6,7 +6,7 @@ import pandas as pd
 import pyreft
 
 PROMPT_TEMPLATE = """<s>[INST] %s [/INST]"""
-DATA_DIR = 'dataset/advbench/harmful_behaviors.csv'
+DATA_DIR = 'dataset/advbench/harmful_behaviors.csv' # path to advbench dataset
 
 def main(
     model_name_or_path: str = "meta-llama/Llama-2-7b-chat-hf",
