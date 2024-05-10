@@ -8,7 +8,8 @@ task_config = {
         "eval_datasets": [
             "boolq", "piqa", "social_i_qa", "hellaswag", "winogrande", "ARC-Easy", "ARC-Challenge", "openbookqa"
         ],
-        "task_prompt_template": "%s\n",
+        # "task_prompt_template": "%s\n",
+        "task_prompt_template": commonsense_prompt_template,
         "trigger_tokens": "the correct answer is ",
         "generation_args": {
             # align with https://github.com/AGI-Edgerunners/LLM-Adapters

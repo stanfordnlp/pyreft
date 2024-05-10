@@ -15,6 +15,23 @@ no_header_prompt_template = """\
 ### Response:
 """
 
+commonsense_prompt_template = """Please choose the correct answer to the question. Begin your response with "the correct answer is".
+
+### Example
+Please choose the correct answer to the question: Which piece of safety equipment is used to keep mold spores from entering the respiratory system?
+
+Answer1: safety goggles Answer2: breathing mask Answer3: rubber gloves Answer4: lead apron
+
+Answer format: answer1/answer2/answer3/answer4
+
+Response: the correct answer is answer2
+
+### Instruction
+%s
+
+Response:
+"""
+
 alpaca_prompt_template = """Below is an instruction that \
 describes a task, paired with an input that provides \
 further context. Write a response that appropriately \
