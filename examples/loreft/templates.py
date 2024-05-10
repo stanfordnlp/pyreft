@@ -24,12 +24,12 @@ Answer1: safety goggles Answer2: breathing mask Answer3: rubber gloves Answer4: 
 
 Answer format: answer1/answer2/answer3/answer4
 
-Response: the correct answer is answer2
+Your response: the correct answer is answer2
 
 ### Instruction
 %s
 
-Response:
+Your response:
 """
 
 alpaca_prompt_template = """Below is an instruction that \
