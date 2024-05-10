@@ -157,8 +157,6 @@ class LoReftSupervisedDataset(ReftDataset):
                 base_input = base_prompt + f"{data_item['answer']}{self.tokenizer.eos_token}".replace("####", "The final answer is: ")
         else:
             raise ValueError(f"Unrecognized task: {self.task}")
-        
-        print(base_prompt)
             
         # tokenize
         base_prompt_ids = self.tokenizer(
