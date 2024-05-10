@@ -230,7 +230,7 @@ def compute_metrics(
                     # check if generation is correct
                     if task == "commonsense":
                         answer = example["answer"]
-                        generation = raw_generation[:]
+                        generation = raw_generation[:].lower() # lower case for commonsense
                         if generation.strip() == answer.strip():
                             correct_count += 1
                     elif task == "math":
