@@ -216,7 +216,12 @@ def compute_metrics(
                     )
         
                 # detokenize in batch
-                actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
+                # actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
+                # decode only generation part
+                actual_preds = tokenizer.batch_decode(
+                    steered_response[..., inputs['input_ids'].shape[-1]:], 
+                    skip_special_tokens=True
+                )
                 
                 for id, pred in zip(inputs["id"].tolist(), actual_preds):
                     example = data_items[id]
