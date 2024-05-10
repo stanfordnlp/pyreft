@@ -1,4 +1,6 @@
-python train.py -task gsm8k \
+export task=$1 # commonsense or math
+
+python train.py -task $task \
 -data_dir dataset \
 -model meta-llama/Llama-2-7b-chat-hf \
 -seed 42 \

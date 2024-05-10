@@ -58,9 +58,10 @@ def main(
             "layer": layer,
             "component": "block_output",
             "low_rank_dimension": low_rank_dimension,
-            "intervention": pyreft.LoreftIntervention(
+            "intervention": pyreft.NoreftIntervention(
                 embed_dim=model.config.hidden_size,
-                low_rank_dimension=low_rank_dimension
+                low_rank_dimension=low_rank_dimension,
+                add_bias=False,
             )
         } for layer in layers
     ])
