@@ -191,6 +191,7 @@ def finetune(
            "share_weights": share_weights, "test_split": test_split}
     )
     trigger_tokens = train_dataset.trigger_tokens
+    print('Trigger tokens:', trigger_tokens)
     num_labels = train_dataset.num_labels
 
     all_eval_datasets = {}
