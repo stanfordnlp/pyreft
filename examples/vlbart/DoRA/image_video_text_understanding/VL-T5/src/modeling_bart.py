@@ -601,7 +601,6 @@ class JointEncoder(BartEncoder):
         return_dict=None,
         task=None
     ):
-
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -652,10 +651,10 @@ class JointEncoder(BartEncoder):
                 vis_embeds = self.sparse_sample(vis_embeds)
 
             V_L = vis_embeds.size(1)
-
+            print("Input IDs", input_ids.shape, "Embed len", inputs_embeds.shape, "Vis embed len", vis_embeds.shape)
             if self.config.share_vis_lang_layer_norm:
                 inputs_embeds = torch.cat([inputs_embeds, vis_embeds], dim=1)
-
+                
                 inputs_embeds = self.layernorm_embedding(inputs_embeds)
             else:
                 inputs_embeds = self.layernorm_embedding(inputs_embeds)
@@ -1424,11 +1423,12 @@ class VLBart(BartForConditionalGeneration):
             return_dict=return_dict,
             task=task,
         )
+
         lm_logits = self.lm_head(outputs[0]) + self.final_logits_bias
 
         if self.output_adapter is not None:
             lm_logits = lm_logits + self.output_adapter(outputs[0])
-
+        
         masked_lm_loss = None
         if labels is not None:
             # loss_fct = CrossEntropyLoss()
@@ -1437,13 +1437,13 @@ class VLBart(BartForConditionalGeneration):
             else:
                 loss_fct = CrossEntropyLoss(ignore_index=-100, reduction='none')
             masked_lm_loss = loss_fct(lm_logits.view(-1, self.config.vocab_size), labels.view(-1))
-
+            
         if not return_dict:
             output = (lm_logits,) + outputs[1:]
             return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
 
-        if masked_lm_loss is not None and len(masked_lm_loss) > 1:
-            masked_lm_loss = masked_lm_loss[0]
+        # if masked_lm_loss is not None and len(masked_lm_loss) > 1:
+        #     masked_lm_loss = masked_lm_loss[0]
 
         return Seq2SeqLMOutput(
             loss=masked_lm_loss,

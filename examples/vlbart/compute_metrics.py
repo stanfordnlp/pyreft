@@ -174,10 +174,10 @@ def compute_metrics(
             
             else:
                 # get left padding count, [batch_size], and add to locations
-                # left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
-                # left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
-                # intervention_locations += left_padding
-                # intervention_locations -= 1 # offset for the sink padding
+                left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
+                left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+                intervention_locations += left_padding
+                intervention_locations -= 1 # offset for the sink padding
 
                 # repeat each batch by num_beams times in intervention locations
                 # -> [layers, batch_size * num_beams, positions]
@@ -191,6 +191,14 @@ def compute_metrics(
                     "eos_token_id": tokenizer.eos_token_id,
                     "early_stopping": True,
                 }
+
+                if task == "vqa":
+                    inputs = intervenable.model.vis_forward(
+                        inputs, 
+                        device=inputs["input_ids"].device)
+                    vis_feats = inputs['vis_feats']
+                    vis_pos = inputs['boxes']
+                    generation_args["base"]["vis_inputs"] = (vis_feats, vis_pos)
                 if task in task_config:
                     if "generation_args" in task_config[task]:
                         generation_args.update(task_config[task]["generation_args"][greedy_decoding])
@@ -228,6 +236,13 @@ def compute_metrics(
                         generation = raw_generation[:]
                         if generation.strip() == answer.strip():
                             correct_count += 1
+                    elif task == "vqa":
+                        answer = example["answer"]
+                        generation = raw_generation[:]
+                        if generation.strip() == answer.strip():
+                            correct_count += 1
+                        else:
+                            print(example["instruction"], " | ", generation, " | ", answer)
                     elif task == "math":
                         answer = example["answer"]
                         answer = answer.strip()
@@ -247,18 +262,7 @@ def compute_metrics(
                             
                     # log
                     total_count += 1
-                    if task in ["vqa"]:
-                        metric_str = round(correct_count / total_count, 3)
-                        eval_iterator.set_postfix({"em": metric_str})
-                        # print(example.keys())
-                        instruction = example["question_id"]
-                        generations += [{
-                            "instruction": instruction,
-                            "raw_generation": raw_generation,
-                            "dataset": dataset_name,
-                            "generator": run_name
-                        }]
-                    elif task not in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair"]:
+                    if task not in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair"]:
                         metric_str = round(correct_count / total_count, 3)
                         eval_iterator.set_postfix({"em": metric_str})
                         instruction = example["question"] if task == "gsm8k" else example["instruction"]
