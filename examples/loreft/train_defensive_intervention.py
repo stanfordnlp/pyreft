@@ -4,8 +4,13 @@ import torch
 import transformers
 import pandas as pd
 import pyreft
+from fastchat.model import get_conversation_template
 
-PROMPT_TEMPLATE = """<s>[INST] %s [/INST]"""
+conv = get_conversation_template('llama-2')
+conv.sep2 = conv.sep2.strip()
+conv.append_message(conv.roles[0], '%s')
+conv.append_message(conv.roles[1], None)
+PROMPT_TEMPLATE = conv.get_prompt() # """<s>[INST] %s [/INST]"""
 DATA_DIR = 'dataset/advbench/harmful_behaviors.csv' # path to advbench dataset
 
 def main(
