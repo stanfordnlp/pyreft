@@ -215,14 +215,14 @@ def compute_metrics(
                            if k not in ['base', 'unit_locations', 'intervene_on_prompt']}
                     )
         
-                # detokenize in batch
-                # actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
-                # decode only generation part
-                actual_preds = tokenizer.batch_decode(
-                    steered_response[..., inputs['input_ids'].shape[-1]:], 
-                    skip_special_tokens=True
-                )
                 
+                # decode only generation part for commonsense prompts
+                if task == "commonsense":
+                    steered_response = steered_response[..., inputs['input_ids'].shape[-1]:]
+                
+                # detokenize in batch
+                actual_preds = tokenizer.batch_decode(steered_response, skip_special_tokens=True)
+
                 for id, pred in zip(inputs["id"].tolist(), actual_preds):
                     example = data_items[id]
                     print(pred)
