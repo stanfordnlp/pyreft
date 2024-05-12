@@ -12,6 +12,7 @@ conv.append_message(conv.roles[0], '%s')
 conv.append_message(conv.roles[1], None)
 PROMPT_TEMPLATE = conv.get_prompt() # """<s>[INST] %s [/INST]"""
 DATA_DIR = 'dataset/advbench/harmful_behaviors.csv' # path to advbench dataset
+REFUSAL_PREFIX = "I'm sorry, but it is not within my programming or ethical guidelines to "
 
 def main(
     model_name_or_path: str = "meta-llama/Llama-2-7b-chat-hf",
@@ -78,7 +79,10 @@ def main(
 
     train_df = pd.read_csv(DATA_DIR).iloc[:n_train_examples]
     prompts = [PROMPT_TEMPLATE % p for p in train_df["goal"].tolist()]
-    completions = train_df["target"].tolist()
+
+    # generate refusal completions using the prefix "I cannot do ..."
+    train_df["refusal"] = REFUSAL_PREFIX + train_df["target"].apply(lambda s: s[0].lower() + s[1:])
+    completions = train_df["refusal"].tolist()
 
     num_interventions = len(reft_config.representations)
 
