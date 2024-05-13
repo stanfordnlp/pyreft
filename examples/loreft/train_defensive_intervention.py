@@ -1,4 +1,5 @@
 import argparse
+import json
 from typing import List
 import torch
 import transformers
@@ -26,7 +27,8 @@ def main(
     logging_steps: int = 1,
     positions: str = "f1+l1",
     share_weights: bool = True,
-    nonstop: bool = True
+    nonstop: bool = True,
+    attack_prompt_file: str = None
 ):
     print(
         f"model: {model_name_or_path}, "
@@ -77,12 +79,22 @@ def main(
     print('Number of interventions:', len(reft_config.representations))
     reft_model.print_trainable_parameters()
 
-    train_df = pd.read_csv(DATA_DIR).iloc[:n_train_examples]
-    prompts = [PROMPT_TEMPLATE % p for p in train_df["goal"].tolist()]
+    if attack_prompt_file is None:
+        train_df = pd.read_csv(DATA_DIR).iloc[:n_train_examples]
+        prompts = [PROMPT_TEMPLATE % p for p in train_df["goal"].tolist()]
 
-    # generate refusal completions using the prefix "I cannot do ..."
-    train_df["refusal"] = REFUSAL_PREFIX + train_df["target"].apply(lambda s: s[0].lower() + s[1:])
-    completions = train_df["refusal"].tolist()
+        # generate refusal completions using the prefix "I cannot do ..."
+        train_df["refusal"] = REFUSAL_PREFIX + train_df["target"].apply(lambda s: s[0].lower() + s[1:])
+        completions = train_df["refusal"].tolist()
+    else:
+        with open(attack_prompt_file) as f:
+            train_data = json.load(f)
+        prompts = [PROMPT_TEMPLATE % f'{p} {c}' for p, c in zip(train_data["goal"], train_data["controls"])]
+        completions = [
+            REFUSAL_PREFIX + t[0].lower() + t[1:] for t in train_data["target"]
+        ]
+        prompts = prompts[:n_train_examples]
+        completions = completions[:n_train_examples]
 
     num_interventions = len(reft_config.representations)
 
@@ -130,6 +142,7 @@ if __name__ == "__main__":
     parser.add_argument("--positions", type=str, default="f1+l1")
     parser.add_argument("--share_weights", action="store_true")
     parser.add_argument("--nonstop", action="store_true")
+    parser.add_argument("--attack_prompt_file", type=str, default=None)
     args = parser.parse_args()
     
     main(**vars(args))
