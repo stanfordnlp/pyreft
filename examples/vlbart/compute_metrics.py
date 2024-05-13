@@ -199,6 +199,7 @@ def compute_metrics(
                     vis_feats = inputs['vis_feats']
                     vis_pos = inputs['boxes']
                     generation_args["base"]["vis_inputs"] = (vis_feats, vis_pos)
+                    generation_args["base"]["task"] = "vqa"
                 if task in task_config:
                     if "generation_args" in task_config[task]:
                         generation_args.update(task_config[task]["generation_args"][greedy_decoding])
