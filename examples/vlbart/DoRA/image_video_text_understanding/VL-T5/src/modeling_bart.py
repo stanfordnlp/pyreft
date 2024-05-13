@@ -651,7 +651,7 @@ class JointEncoder(BartEncoder):
                 vis_embeds = self.sparse_sample(vis_embeds)
 
             V_L = vis_embeds.size(1)
-            print("Input IDs", input_ids.shape, "Embed len", inputs_embeds.shape, "Vis embed len", vis_embeds.shape)
+            # print("Input IDs", input_ids.shape, "Embed len", inputs_embeds.shape, "Vis embed len", vis_embeds.shape)
             if self.config.share_vis_lang_layer_norm:
                 inputs_embeds = torch.cat([inputs_embeds, vis_embeds], dim=1)
                 

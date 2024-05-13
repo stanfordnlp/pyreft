@@ -159,7 +159,9 @@ def compute_metrics(
             if task == "glue":
     
                 _, cf_outputs = intervenable(
-                    {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
+                    {"input_ids": inputs["input_ids"], 
+                    # "attention_mask": inputs["attention_mask"]
+                    },
                     unit_locations={"sources->base": (None, intervention_locations.tolist())})
             
                 # lm loss on counterfactual labels
@@ -174,10 +176,10 @@ def compute_metrics(
             
             else:
                 # get left padding count, [batch_size], and add to locations
-                left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
-                left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
-                intervention_locations += left_padding
-                intervention_locations -= 1 # offset for the sink padding
+                # left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
+                # left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+                # intervention_locations += left_padding
+                # intervention_locations -= 1 # offset for the sink padding
 
                 # repeat each batch by num_beams times in intervention locations
                 # -> [layers, batch_size * num_beams, positions]
@@ -185,7 +187,9 @@ def compute_metrics(
 
                 # set generation args depending on task
                 generation_args = {
-                    "base": {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},
+                    "base": {"input_ids": inputs["input_ids"], 
+                    # "attention_mask": inputs["attention_mask"]
+                    },
                     "unit_locations": {"sources->base": (None, intervention_locations)},
                     "intervene_on_prompt": True,
                     "eos_token_id": tokenizer.eos_token_id,
