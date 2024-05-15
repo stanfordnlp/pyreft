@@ -107,6 +107,45 @@ def set_intervention_gradients(
         for p in intervention.parameters():
             p.requires_grad = not adversarial
 
+def train_simple(
+    model : pr.ReftModel,
+    tokenizer : PreTrainedTokenizer,
+    pos_dataset,
+    neg_dataset,
+    data_collator,
+    pos_interventions : List[pv.TrainableIntervention],
+    neg_interventions : List[pv.TrainableIntervention],
+    **kwargs
+):
+    train_kwargs = {k: v for k, v in kwargs.items() if k in vars(TrainingArguments) or k == 'output_dir'}
+    training_args = TrainingArguments(**train_kwargs)
+    pos_trainer = ReftAdversarialTrainerForCausalLM(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        train_dataset=pos_dataset[:len(pos_dataset)//2],
+        eval_dataset=None,
+        data_collator=data_collator,
+        compute_metrics=None,
+    )
+    neg_trainer = ReftAdversarialTrainerForCausalLM(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        train_dataset=neg_dataset[:len(neg_dataset)//2],
+        eval_dataset=None,
+        data_collator=data_collator,
+        compute_metrics=None
+    )
+    set_intervention_gradients(pos_interventions, neg_interventions, adversarial=True)
+    model.zero_grad()
+    pos_trainer.train()
+
+    set_intervention_gradients(pos_interventions, neg_interventions, adversarial=False)
+    model.zero_grad()
+    neg_trainer.train()
+    
+
 def train(
     model : pr.ReftModel, 
     tokenizer : PreTrainedTokenizer,
@@ -203,6 +242,7 @@ def parse_args():
 
     # Adversarial training arguments
     parser.add_argument("--adv_levels", type=int, default=5)
+    parser.add_argument("--simple", action="store_true")
 
     # Training arguments
     parser.add_argument("--output_dir", type=str, default="output")
@@ -290,10 +330,16 @@ def main(args):
     pos_dataset, neg_dataset, data_collator = create_dataset(tokenizer, reft_model, args)
 
     print("Training...")
-    train(
-        reft_model, tokenizer, pos_dataset, neg_dataset, data_collator, 
-        pos_interventions, neg_interventions, **vars(args)
-    )
+    if args.simple:
+        train_simple(
+            reft_model, tokenizer, pos_dataset, neg_dataset, data_collator, 
+            pos_interventions, neg_interventions, **vars(args)
+        )
+    else:
+        train(
+            reft_model, tokenizer, pos_dataset, neg_dataset, data_collator, 
+            pos_interventions, neg_interventions, **vars(args)
+        )
 
     print("Evaluating...")
     # list all positive intervention indices followed by negative interventions
