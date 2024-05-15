@@ -128,22 +128,9 @@ def train_simple(
         data_collator=data_collator,
         compute_metrics=None,
     )
-    neg_trainer = ReftAdversarialTrainerForCausalLM(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args,
-        train_dataset=neg_dataset,
-        eval_dataset=None,
-        data_collator=data_collator,
-        compute_metrics=None
-    )
-    set_intervention_gradients(pos_interventions, neg_interventions, adversarial=True)
-    model.zero_grad()
+    # set_intervention_gradients(pos_interventions, neg_interventions, adversarial=True)
+    # model.zero_grad()
     pos_trainer.train()
-
-    set_intervention_gradients(pos_interventions, neg_interventions, adversarial=False)
-    model.zero_grad()
-    neg_trainer.train()
     
 
 def train(
