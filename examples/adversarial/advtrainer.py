@@ -9,22 +9,24 @@ def make_dataloader(dataset: Dataset, batch_size: int, collate_fn: DataCollatorF
     return DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=collate_fn)
 
 
-class ReftAdversarialTrainer(pr.ReftTrainer):
-    def __init__(self, adversarial=True, **kwargs):
-        super().__init__(**kwargs)
-        self.adversarial = adversarial
-    
+class ReftAdversarialTrainer(pr.ReftTrainer):    
     def compute_loss(
         self,
         intervenable: pv.IntervenableModel,
         inputs,
         return_outputs=False
     ):
-        # invert loss if adversarial
-        loss = super().compute_loss(intervenable, inputs, return_outputs)
-        if self.adversarial:
-            loss = (-loss[0], loss[1]) if return_outputs else -loss
-        return loss
+        """
+        Assumes that first half of batch is positive examples and second half is negative examples.
+        """
+        pos_inputs = {k: v[:len(v)//2] for k, v in inputs.items()}
+        neg_inputs = {k: v[len(v)//2:] for k, v in inputs.items()}
+        pos_loss = super().compute_loss(intervenable, pos_inputs, return_outputs)
+        neg_loss = super().compute_loss(intervenable, neg_inputs, return_outputs)
+
+        if return_outputs:
+            return pos_loss[0] - neg_loss[0], pos_loss[1]
+        return pos_loss - neg_loss
 
 
 class ReftAdversarialTrainerForCausalLM(ReftAdversarialTrainer):
