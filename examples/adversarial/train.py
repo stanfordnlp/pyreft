@@ -123,7 +123,7 @@ def train_simple(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
-        train_dataset=neg_dataset,
+        train_dataset=pos_dataset,
         eval_dataset=None,
         data_collator=data_collator,
         compute_metrics=None,
