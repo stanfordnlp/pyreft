@@ -31,4 +31,5 @@ class ReftAdversarialTrainer(pr.ReftTrainer):
 
 class ReftAdversarialTrainerForCausalLM(ReftAdversarialTrainer):
     def get_train_dataloader(self) -> DataLoader:
-        return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator, shuffle=True)
+        # for adversarial training code to work, we cannot shuffle our dataset...
+        return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator, shuffle=False)
