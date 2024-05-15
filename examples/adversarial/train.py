@@ -190,8 +190,8 @@ def evaluate(
             **gen_kwargs
         )
 
-        pos_output_text = tokenizer.decode(pos_outputs[0, inputs.shape[-1]:], skip_special_tokens=True)
-        neg_output_text = tokenizer.decode(neg_outputs[0, inputs.shape[-1]:], skip_special_tokens=True)
+        pos_output_text = tokenizer.decode(pos_outputs[0, inputs['input_ids'].shape[-1]:], skip_special_tokens=True)
+        neg_output_text = tokenizer.decode(neg_outputs[0, inputs['input_ids'].shape[-1]:], skip_special_tokens=True)
         outputs.append(
             (input_text, pos_output_text, neg_output_text)
         )
