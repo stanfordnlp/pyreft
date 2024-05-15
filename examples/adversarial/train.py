@@ -168,7 +168,12 @@ def main(args):
         torch_dtype=torch.bfloat16,
         device_map=device
     )
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_name,
+        model_max_length=2048,
+        padding_side="right",
+        use_fast=False
+    )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
