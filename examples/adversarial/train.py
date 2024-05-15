@@ -55,7 +55,7 @@ def create_dataset(tokenizer, reft_model, args):
         nonstop=args.nonstop, share_weights=args.share_weights
     )
 
-    neg_inputs = [t[0] for t in TRAINING_EXAMPLES[len(TRAINING_EXAMPLES)//2:]]
+    neg_inputs = [preprocess_input(t[0], args) for t in TRAINING_EXAMPLES[len(TRAINING_EXAMPLES)//2:]]
     neg_outputs = [t[1] for t in TRAINING_EXAMPLES[len(TRAINING_EXAMPLES)//2:]]
     neg_data_module = pr.make_multiple_position_supervised_data_module(
         tokenizer, reft_model, neg_inputs, neg_outputs,
@@ -70,7 +70,7 @@ def create_dataset(tokenizer, reft_model, args):
     neg_input_ids = []
     neg_intervention_locations = []
     neg_labels = []
-    for i in range(0, len(pos_data_module['train_dataset']), args.per_device_train_batch_size):
+    for i in range(0, len(pos_data_module['train_dataset']), args.per_device_train_batch_size//2):
         pos_batch = pos_data_module['train_dataset'][i:i+args.per_device_train_batch_size//2]
         neg_batch = neg_data_module['train_dataset'][i:i+args.per_device_train_batch_size//2]
         # add positive and negative examples to the same batch
