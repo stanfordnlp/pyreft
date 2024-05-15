@@ -155,6 +155,8 @@ def parse_args():
     parser.add_argument("--share_weights", action="store_true")
     parser.add_argument("--nonstop", action="store_true")
     parser.add_argument("--low_rank_dimension", type=int, default=2)
+    parser.add_argument("--pos_layers", type=str, default="15;20")
+    parser.add_argument("--neg_layers", type=str, default="5;10")
 
     return parser.parse_args()
 
@@ -170,28 +172,39 @@ def main(args):
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    reft_config = pr.ReftConfig(representations=[{
-        "layer": 8, "component": "block_output",
-        "low_rank_dimension": args.low_rank_dimension,
-        "intervention": pr.NoreftIntervention(
-            embed_dim=model.config.hidden_size,
-            low_rank_dimension=args.low_rank_dimension,
-            add_bias=False
-        )
-    }, {
-        "layer": 10, "component": "block_output",
-        "low_rank_dimension": args.low_rank_dimension,
-        "intervention": pr.NoreftIntervention(
-            embed_dim=model.config.hidden_size,
-            low_rank_dimension=args.low_rank_dimension,
-            add_bias=False
-        )
-    }])
+    pos_layers = args.pos_layers.split(";")
+    neg_layers = args.neg_layers.split(";")
+
+    print(
+        'Creating ReFT model:',
+        f'Positive layers={pos_layers}', 
+        f'Negative layers={neg_layers}', 
+        f'Low-rank dimension={args.low_rank_dimension}'
+    )
+
+    reft_config = pr.ReftConfig(representations=[
+        {
+            "layer": int(layer), "component": "block_output",
+            "low_rank_dimension": args.low_rank_dimension,
+            "intervention": pr.NoreftIntervention(
+                embed_dim=model.config.hidden_size,
+                low_rank_dimension=args.low_rank_dimension,
+                add_bias=False
+            )
+        }
+        for layer in pos_layers + neg_layers
+    ])
 
     reft_model = pr.get_reft_model(model, reft_config)
 
-    neg_interventions = [reft_model.interventions["layer.8.comp.block_output.unit.pos.nunit.1#0"][0]]
-    pos_interventions = [reft_model.interventions["layer.10.comp.block_output.unit.pos.nunit.1#0"][0]]
+    pos_interventions = [
+        reft_model.interventions[f"layer.{l}.comp.block_output.unit.pos.nunit.1#0"][0]
+        for l in pos_layers
+    ]
+    neg_interventions = [
+        reft_model.interventions[f"layer.{l}.comp.block_output.unit.pos.nunit.1#0"][0]
+        for l in neg_layers
+    ]
 
     inputs = [t[0] for t in training_examples]
     outputs = [t[1] for t in training_examples]
@@ -209,8 +222,12 @@ def main(args):
     )
 
     print("Evaluating...")
+    # list all positive intervention indices followed by negative interventions
+    pos_interventions_inds = list(range(len(pos_interventions)))
+    neg_interventions_inds = list(range(len(pos_interventions), len(pos_interventions) + len(neg_interventions)))
+
     eval_outputs = evaluate(
-        reft_model, tokenizer, inputs, [1], [0], **vars(args)
+        reft_model, tokenizer, inputs, pos_interventions_inds, neg_interventions_inds, **vars(args)
     )
     for input_text, pos_output_text, neg_output_text in eval_outputs:
         print(f"Input: {input_text}")
