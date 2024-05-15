@@ -123,7 +123,7 @@ def train_simple(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
-        train_dataset=pos_dataset[:len(pos_dataset)//2],
+        train_dataset=pos_dataset,
         eval_dataset=None,
         data_collator=data_collator,
         compute_metrics=None,
@@ -132,7 +132,7 @@ def train_simple(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
-        train_dataset=neg_dataset[:len(neg_dataset)//2],
+        train_dataset=neg_dataset,
         eval_dataset=None,
         data_collator=data_collator,
         compute_metrics=None
@@ -178,15 +178,15 @@ def train(
     )
 
     for _ in trange(kwargs['adv_levels']):
-        # train adversarial (negative) interventions
-        set_intervention_gradients(pos_interventions, neg_interventions, adversarial=True)
-        model.zero_grad()
-        neg_trainer.train()
-
         # train positive interventions
         set_intervention_gradients(pos_interventions, neg_interventions, adversarial=False)
         model.zero_grad()
         pos_trainer.train()
+
+        # train adversarial (negative) interventions
+        set_intervention_gradients(pos_interventions, neg_interventions, adversarial=True)
+        model.zero_grad()
+        neg_trainer.train()
 
 def evaluate(
     model : pr.ReftModel,
