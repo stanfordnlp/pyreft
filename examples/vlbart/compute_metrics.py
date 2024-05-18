@@ -228,7 +228,7 @@ def compute_metrics(
 
                 for id, pred in zip(inputs["id"].tolist(), actual_preds):
                     example = data_items[id]
-                    print(pred)
+                    # print(pred)
                     try:
                         raw_generation = extract_output(pred, trigger_tokens)
                     except:
@@ -247,7 +247,8 @@ def compute_metrics(
                         if generation.strip() == answer.strip():
                             correct_count += 1
                         else:
-                            print(example["instruction"], " | ", generation, " | ", answer)
+                            if id % 100 == 0:
+                                print(example["instruction"], " | ", generation, " | ", answer)
                     elif task == "math":
                         answer = example["answer"]
                         answer = answer.strip()

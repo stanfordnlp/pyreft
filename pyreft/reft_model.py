@@ -54,3 +54,25 @@ class ReftModel(pv.IntervenableModel):
             f"model params: {all_model_parameters:,d} || trainable%: {100 * total_trainable_parameters / all_model_parameters}"
         )
 
+    def unfreeze_intervention_parameters(self):
+        """
+        Unfreeze intervention parameters.
+        """
+        _linked_key_set = set([])
+        trainable_intervention_parameters = {}
+        for k, v in self.interventions.items():
+            if isinstance(v[0], pv.TrainableIntervention):
+                if k in self._intervention_reverse_link:
+                    if not self._intervention_reverse_link[k] in _linked_key_set:
+                        _linked_key_set.add(self._intervention_reverse_link[k])
+                        for n, p in v[0].named_parameters():
+                            p.requires_grad = True
+                            trainable_intervention_parameters[k+"#"+n] = p
+                else:
+                    for n, p in v[0].named_parameters():
+                        p.requires_grad = True
+                        trainable_intervention_parameters[k+"#"+n] = p
+        for n, p in trainable_intervention_parameters.items():
+            print("Grad of " +n + " is ", p.grad, " value is ", p.data.norm())
+        return trainable_intervention_parameters
+

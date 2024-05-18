@@ -1,0 +1,6 @@
+instruction_tuning/instruct/*
+instruction_tuning/answers/*
+instruction_tuning/peft/*
+instruction_tuning/COPYRIGHT.txt
+instruction_tuning/get_avg_score.py
+instruction_tuning/Software Evaluation License.pdf
