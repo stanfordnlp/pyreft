@@ -175,9 +175,12 @@ def compute_metrics(
             else:
                 # get left padding count, [batch_size], and add to locations
                 left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
-                left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
-                intervention_locations += left_padding
-                intervention_locations -= 1 # offset for the sink padding
+                if left_padding.numel() > 0:
+                    left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+                    intervention_locations += left_padding
+                    intervention_locations -= 1 # offset for the sink padding
+                else:
+                    print("Warning: No BOS token found, skipping left padding adjustment.")
 
                 # repeat each batch by num_beams times in intervention locations
                 # -> [layers, batch_size * num_beams, positions]
