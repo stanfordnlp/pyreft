@@ -92,7 +92,7 @@ class ReftTrainer(Trainer):
             subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None
         )
         # return
-        return (cf_outputs.loss, cf_outputs) if return_outputs else cf_outputs.loss
+        return (cf_outputs.loss, cf_outputs[:2]) if return_outputs else cf_outputs.loss
 
 
 class ReftTrainerForCausalLM(ReftTrainer):
