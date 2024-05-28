@@ -42,12 +42,14 @@ output=snap/${folder_prefix}_${task}/$run_name
 TOKENIZERS_PARALLELISM=True PYTHONPATH=$PYTHONPATH:./src \
 python -m torch.distributed.launch \
     --nproc_per_node=$1 \
-    --master_port=26468 \
+    --master_port=26479 \
     src/${task}.py \
     --distributed --multiGPU \
     --optim adamw \
-    --warmup_ratio 0.00 \
-    --weight_decay 0.005 \
+    --share_weights \
+    --warmup_ratio 0.10 \
+    --clip_grad_norm 5 \
+    --weight_decay 0.01 \
     --lr ${lr} \
     --epochs 20 \
     --num_workers 4 \
@@ -59,10 +61,11 @@ python -m torch.distributed.launch \
     --valid_batch_size ${batch_size} \
     --tasks "vqa" \
     --dropout 0.00 \
-    --reft_rank 4 \
+    --reft_dropout 0.00 \
+    --reft_rank ${lora_dim} \
     --unfreeze_bias \
     --unfreeze_layer_norms \
-    --positions "f11+l11" \
+    --positions "f15+l15" \
     --feature ${feature} --n_boxes 36 --downsample \
     --image_size "(224,224)" \
     --project_name $project_name \
