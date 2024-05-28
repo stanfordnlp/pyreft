@@ -380,7 +380,8 @@ class TrainerBase(object):
     def unfreeze_parameters(self):       
 
 
-        targets = ["visual_embedding"]
+        targets = ["visual_embedding", "prefix_embedding"]
+
         # unfreeze the parameters in targets anyway
         for n, p in self.model.named_parameters():
             if any(t in n for t in targets):

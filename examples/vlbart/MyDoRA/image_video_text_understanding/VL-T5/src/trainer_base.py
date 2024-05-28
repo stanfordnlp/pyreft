@@ -201,7 +201,7 @@ class TrainerBase(object):
             "low_rank_dimension": rank,
             "intervention": LoreftIntervention(
                 embed_dim=embed_dim, low_rank_dimension=rank,
-                dropout=args.dropout, dtype=torch.float32, act_fn=None, device="cuda",
+                dropout=args.reft_dropout, dtype=torch.float32, act_fn=None, device="cuda",
                 add_bias=True
             )
         } for l in layers]
@@ -412,13 +412,13 @@ class TrainerBase(object):
 
         targets = ["visual_embedding", "prefix_embedding"]
 
+        if not self.args.freeze_visual_embedding:
         # unfreeze the parameters in targets anyway
-        for n, p in self.model.named_parameters():
-            # print(f"Parameter: {n}")
-            # pass
-            if any(t in n for t in targets):
-                p.requires_grad = True
-                print(f"{n} is trainable...")
+            for n, p in self.model.named_parameters():
+                # print(f"Parameter: {n}")
+                if any(t in n for t in targets):
+                    p.requires_grad = True
+                    print(f"{n} is trainable...")
 
         if self.args.unfreeze_language_model:
             targets = ["lm_head", "shared"]

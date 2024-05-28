@@ -188,6 +188,7 @@ def parse_args(parse=True, **optional_kwargs):
     )
     parser.add_argument('--freeze_ln_statistics', action="store_true")
     parser.add_argument('--freeze_bn_statistics', action="store_true")
+    parser.add_argument('--freeze_visual_embedding', action="store_true")
     parser.add_argument('--add_layer_norm_before_adapter', action="store_true")
     parser.add_argument('--add_layer_norm_after_adapter', action="store_true")
 
@@ -278,6 +279,7 @@ def parse_args(parse=True, **optional_kwargs):
     # ReFT
     parser.add_argument('--layers', type=str, default="0;1;2;3;4;5")
     parser.add_argument('--reft_rank', type=int, default=1)
+    parser.add_argument('--reft_dropout', type=float, default=0.0)
     parser.add_argument('--positions', type=str, default="f1+l1")
     parser.add_argument('--share_weights', action='store_true')
     

@@ -52,6 +52,7 @@ from ddp_fix import ddp_forward
 from adapters import AdapterController, MetaLayersAdapterController
 
 proj_dir = Path(__file__).resolve().parent.parent
+os.environ['WANDB_DIR'] = '/nlp/scr/peterwz/wandb/'
 
 
 _use_native_amp = False
@@ -1009,6 +1010,7 @@ def main_worker(gpu, args):
     print(f'Process Launching at GPU {gpu}')
 
     if args.distributed:
+        print(f'Device count: {torch.cuda.device_count()}')
         torch.cuda.set_device(args.gpu)
         dist.init_process_group(backend='nccl')
 
@@ -1425,6 +1427,7 @@ if __name__ == "__main__":
     cudnn.benchmark = True
     args = parse_args()
     ngpus_per_node = torch.cuda.device_count()
+    print(f'ngpus_per_node: {ngpus_per_node}')
     args.world_size = ngpus_per_node
     if args.local_rank in [0, -1]:
         print(args)

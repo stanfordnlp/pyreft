@@ -72,7 +72,7 @@ class ReftModel(pv.IntervenableModel):
                     for n, p in v[0].named_parameters():
                         p.requires_grad = True
                         trainable_intervention_parameters[k+"#"+n] = p
-        for n, p in trainable_intervention_parameters.items():
-            print("Grad of " +n + " is ", p.grad, " value is ", p.data.norm())
+        #for n, p in trainable_intervention_parameters.items():
+        #    print("Grad of " +n + " is ", p.grad, " value is ", p.data.norm())
         return trainable_intervention_parameters
 
