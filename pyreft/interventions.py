@@ -23,6 +23,7 @@ class LoreftIntervention(
         super().__init__(**kwargs, keep_last_dim=True)
         # NOTE: very hacky fix for save/load config issues
         low_rank_dimension = kwargs.get("low_rank_dimension", 16)
+        print('Low-rank dimension:', low_rank_dimension)
         rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension)
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
