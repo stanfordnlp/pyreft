@@ -78,6 +78,8 @@ model params: 6,738,415,616 || trainable%: 0.00048634578018881287
 Alternatively, you can also train ReFT together with LoRA as well by taking advantage of [the `peft` library](https://github.com/huggingface/peft):
 
 ```py
+from peft import LoraConfig, get_peft_model
+
 peft_config = LoraConfig(
     r=4, lora_alpha=32, target_modules=["o_proj"], layers_to_transform=[15],
     use_rslora=True, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"
