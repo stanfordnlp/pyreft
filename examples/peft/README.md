@@ -1,4 +1,4 @@
-# Combining LoRA with ReFT with "one-click"
+# Combining LoRA with ReFT via "one-click"
 
 Based on the script [`reft_with_lora.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/peft/reft_with_lora.ipynb).
 
