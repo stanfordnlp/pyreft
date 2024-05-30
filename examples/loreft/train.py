@@ -19,6 +19,7 @@ import evaluate
 import datetime
 import json
 import math
+import copy
 import numpy as np
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
@@ -42,6 +43,14 @@ from pyreft import (
     NodireftIntervention, # remove ortho + direct edit reft <- this is like LoRA on time-step
     ReftDataCollator
 )
+
+try:
+    # This library is our indicator that the required installs
+    # need to be done.
+    import peft
+    is_peft_available = True
+except ModuleNotFoundError:
+    is_peft_available = False
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 classification_tasks = {"glue"}
@@ -107,6 +116,7 @@ def finetune(
     temperature: float,
     top_p: float,
     top_k: float,
+    use_lora: bool,
     args,
 ):
     """
@@ -147,6 +157,7 @@ def finetune(
         temp_config = AutoConfig.from_pretrained(model)
         layers = [l for l in range(temp_config.num_hidden_layers)]
 
+    unique_layers = copy.deepcopy(layers)
     # position str takes the following formats:
     # f1 -> first token; f2 -> first two tokens.
     # f1+l1 -> first and last tokens; f2+l2 -> first and last two tokens.
@@ -260,7 +271,18 @@ def finetune(
         config = model.config
     if need_resize:
         model.resize_token_embeddings(len(tokenizer))
-
+    if use_lora:
+        if not is_peft_available:
+            raise ModuleNotFoundError("peft")
+        from peft import LoraConfig, get_peft_model
+        
+        print("WARNING: enabling lora for finetuning...")
+        peft_config = LoraConfig(
+            r=rank, lora_alpha=32, target_modules=["o_proj"],
+            layers_to_transform=unique_layers, use_rslora=True,
+            lora_dropout=dropout, bias="none", task_type="CAUSAL_LM"
+        )
+        model = get_peft_model(model, peft_config)
     intervention_type = intervention_mapping[intervention_type]
         
     # select collator based on the type
@@ -294,7 +316,7 @@ def finetune(
         task_type=TaskType.SEQ_CLS
     else:
         representations = [{
-            "layer": l, "component": "block_output",
+            "layer": l, "component": f"base_model.model.model.layers[{l}].output" if use_lora else "block_output",
             "low_rank_dimension": rank,
             "intervention": intervention_type(
                 embed_dim=config.hidden_size, low_rank_dimension=rank,
@@ -306,6 +328,9 @@ def finetune(
     
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config, set_device=not isinstance(dtype, str))
+    if use_lora:
+        # you need to call this to re-enable lora grads!
+        reft_model.model.enable_adapter_layers()
     reft_model.print_trainable_parameters()
 
     # for GLUE tasks, we enable gradients on the classifier head.
@@ -319,6 +344,7 @@ def finetune(
     # this line might not be necessary since HF trainer enables this by default.
     reft_model.model.train()
     n_params = reft_model.count_parameters(include_model=False)
+    n_params_with_model = reft_model.count_parameters(include_model=True)
 
     # start wandb logging
     if is_wandb:
@@ -330,7 +356,7 @@ def finetune(
         )
         run.summary.update(vars(args))
         wandb.log(
-            {"train/n_params": n_params})
+            {"train/n_params": n_params, "train/n_params_with_model": n_params_with_model})
 
     # # training args
     training_args = TrainingArguments(
@@ -469,6 +495,9 @@ def main():
     parser.add_argument('-t', '--temperature', type=float, default=None)
     parser.add_argument('-top_p', '--top_p', type=float, default=None)
     parser.add_argument('-top_k', '--top_k', type=float, default=None)
+
+    # lora add-ons
+    parser.add_argument('-use_lora', '--use_lora', action='store_true')
 
     args = parser.parse_args()
 
