@@ -63,6 +63,62 @@ def get_intervention_locations(**kwargs):
     
     return intervention_locations
 
+
+def get_image_intervention_locations(**kwargs):
+    """
+    This function generates the intervention locations.
+    For simplicity, this function does not implement padding.
+
+    For your customized dataset, you want to create your own function.
+    """
+    # parse kwargs
+    share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
+    last_text_position = kwargs["last_position"]
+    assert "image_positions" in kwargs, "Image positions must be provided"
+    assert "positions" in kwargs, "Text positions must be provided"
+    first_n, last_n = parse_positions(kwargs["positions"])
+    first_image_n, last_image_n = parse_positions(kwargs["image_positions"])
+
+    num_interventions = kwargs["num_interventions"]
+    image_offset = kwargs["last_offset"] if "last_offset" in kwargs else 0
+
+    pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
+    pad_position = -1 if pad_mode == "first" else last_text_position + image_offset
+
+    if share_weights or ((first_n == 0 or last_n == 0) and (first_image_n == 0 or last_image_n == 0)):
+        position_list = [i for i in range(first_n)] + \
+            [i for i in range(last_text_position - last_n, last_text_position)]
+        image_position_list = [i for i in range(last_text_position, last_text_position + first_image_n)] + \
+            [i for i in range(last_text_position + image_offset - last_image_n, last_text_position + image_offset)]
+        text_len = len(position_list)
+        image_len = len(image_position_list)
+        if text_len > image_len:
+            image_position_list += [pad_position for _ in range(text_len-image_len)]
+        else:
+            position_list += [pad_position for _ in range(image_len-text_len)]
+        intervention_locations = [position_list]*(num_interventions//2) + \
+            [image_position_list]*(num_interventions//2)
+    else:
+        assert first_n == last_n, "For now, we only support same first and last positions"
+        left_intervention_locations = [i for i in range(first_n)]
+        right_intervention_locations = [i for i in range(last_text_position - last_n, last_text_position)]
+        left_image_intervention_locations = [i for i in range(last_text_position, last_text_position + first_image_n)]
+        right_image_intervention_locations = [i for i in range(last_text_position + image_offset - last_image_n, last_text_position + image_offset)]
+        text_len = len(left_intervention_locations)
+        image_len = len(left_image_intervention_locations)
+        if text_len > image_len:
+            left_image_intervention_locations += [pad_position for _ in range(text_len-image_len)]
+            right_image_intervention_locations += [pad_position for _ in range(text_len-image_len)]
+        else:
+            left_intervention_locations += [pad_position for _ in range(image_len-text_len)]
+            right_intervention_locations += [pad_position for _ in range(image_len-text_len)]
+
+        intervention_locations = [left_intervention_locations]*(num_interventions//4) + \
+            [right_intervention_locations]*(num_interventions//4) + \
+            [left_image_intervention_locations]*(num_interventions//4) + \
+            [right_image_intervention_locations]*(num_interventions//4)
+    return intervention_locations
+
     
 def compute_intervention(
     id: int, 
@@ -73,7 +129,10 @@ def compute_intervention(
     **kwargs):
     pad_mode = kwargs["pad_mode"]
     # compute intervention locs
-    intervention_locations = get_intervention_locations(**kwargs)
+    if "image_positions" in kwargs:
+        intervention_locations = get_image_intervention_locations(**kwargs)
+    else:
+        intervention_locations = get_intervention_locations(**kwargs)
     result["intervention_locations"] = intervention_locations
     result["id"] = id
 
@@ -88,6 +147,7 @@ def compute_intervention(
                 else:
                     result[field] = torch.cat((torch.tensor([tokenizer.pad_token_id,]), result[field]))
             result["intervention_locations"] = (torch.IntTensor(result["intervention_locations"]) + 1).tolist()
+            result["input_length"] += 1
         elif pad_mode == "last":
             for field in fields_to_pad:
                 if field not in result:
@@ -96,6 +156,7 @@ def compute_intervention(
                     result[field] = torch.cat((result[field], torch.tensor([IGNORE_INDEX,])))
                 else:
                     result[field] = torch.cat((result[field], torch.tensor([tokenizer.pad_token_id,])))
+            result["input_length"] += 1
         
     # attention masks
     if len(fields_to_mask) == 1:
@@ -118,6 +179,7 @@ def reft_post_process(
     fields_to_pad = [],
     fields_to_mask = []
 ):
+    # print("Out_dict keys:", out_dict.keys())
     out_dict["instruction"] = tokenizer.decode(
         out_dict["input_ids"], skip_special_tokens=True)
     # out_dict["logits"] = out_dict["labels"]
@@ -128,6 +190,9 @@ def reft_post_process(
         kwargs["share_weights"] = args.share_weights
         layers = [int(l) for l in args.layers.split(";")]
         kwargs["num_interventions"] = len(layers) if args.share_weights else 2 * len(layers)
+        if args.reft_image_rank != -1:
+            kwargs["num_interventions"] *= 2
+            kwargs["image_positions"] = args.image_positions
         kwargs["last_offset"] = args.n_boxes
         kwargs["pad_mode"] = pad_mode
         kwargs["last_position"] = last_position

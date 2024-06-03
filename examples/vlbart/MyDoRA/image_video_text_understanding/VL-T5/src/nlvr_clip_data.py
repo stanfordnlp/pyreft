@@ -172,7 +172,7 @@ class NLVRFineTuneDataset(Dataset):
         out_dict['label'] = label
 
         ### Added
-        last_position = len(out_dict['input_ids'])
+        last_position = len(out_dict['input_ids']) - 1
         from reft_utils import reft_post_process
         out_dict = reft_post_process(
             out_dict,
@@ -180,6 +180,8 @@ class NLVRFineTuneDataset(Dataset):
             idx,
             last_position,
             self.args,
+            pad_mode="first",
+            fields_to_pad=["input_ids"],
             fields_to_mask=["input_ids"]
         )
         ### End Added

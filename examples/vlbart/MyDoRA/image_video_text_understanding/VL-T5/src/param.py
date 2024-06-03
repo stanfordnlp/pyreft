@@ -279,8 +279,11 @@ def parse_args(parse=True, **optional_kwargs):
     # ReFT
     parser.add_argument('--layers', type=str, default="0;1;2;3;4;5")
     parser.add_argument('--reft_rank', type=int, default=1)
+    parser.add_argument('--reft_image_rank', type=int, default=-1)
     parser.add_argument('--reft_dropout', type=float, default=0.0)
+    parser.add_argument('--reft_image_dropout', type=float, default=0.0)
     parser.add_argument('--positions', type=str, default="f1+l1")
+    parser.add_argument('--image_positions', type=str, default="f1+l1")
     parser.add_argument('--share_weights', action='store_true')
     
 
