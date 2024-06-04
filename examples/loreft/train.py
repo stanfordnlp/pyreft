@@ -117,6 +117,10 @@ def finetune(
     top_p: float,
     top_k: float,
     use_lora: bool,
+    lora_rank: int,
+    lora_alpha: int,
+    lora_modules: str,
+    lora_layers: str,
     args,
 ):
     """
@@ -156,6 +160,12 @@ def finetune(
     else:
         temp_config = AutoConfig.from_pretrained(model)
         layers = [l for l in range(temp_config.num_hidden_layers)]
+
+    if lora_layers != "all":
+        lora_layers = [int(l) for l in lora_layers.split(";")]
+    else:
+        temp_config = AutoConfig.from_pretrained(model)
+        lora_layers = [l for l in range(temp_config.num_hidden_layers)]
 
     unique_layers = copy.deepcopy(layers)
     # position str takes the following formats:
@@ -277,9 +287,10 @@ def finetune(
         from peft import LoraConfig, get_peft_model
         
         print("WARNING: enabling lora for finetuning...")
+        lora_modules = [m for m in lora_modules.split(";")]
         peft_config = LoraConfig(
-            r=rank, lora_alpha=32, target_modules=["o_proj"],
-            layers_to_transform=unique_layers, use_rslora=True,
+            r=lora_rank, lora_alpha=lora_alpha, target_modules=lora_modules,
+            layers_to_transform=lora_layers, use_rslora=True,
             lora_dropout=dropout, bias="none", task_type="CAUSAL_LM"
         )
         model = get_peft_model(model, peft_config)
@@ -498,6 +509,10 @@ def main():
 
     # lora add-ons
     parser.add_argument('-use_lora', '--use_lora', action='store_true')
+    parser.add_argument('-lora_rank', '--lora_rank', type=int, default=8)
+    parser.add_argument('-lora_alpha', '--lora_alpha', type=int, default=32)
+    parser.add_argument('-lora_modules', '--lora_modules', type=str, default="o_proj")
+    parser.add_argument('-lora_layers', '--lora_layers', type=str, help='2;10;18;26', default='2;10;18;26')
 
     args = parser.parse_args()
 
