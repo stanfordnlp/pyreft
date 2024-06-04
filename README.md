@@ -11,6 +11,7 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 - Finetuning any pretrained LMs on HuggingFace with ReFT
 - Setting ReFT hyperparameters via configs
 - Sharing the fine-tuned results easily to HuggingFace
+- Support quantized model
 - 🔥 [DPO+ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/dpo)
 - 🔥 [LoRA+ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/peft)
 
@@ -52,6 +53,23 @@ tokenizer = transformers.AutoTokenizer.from_pretrained(
     model_name_or_path, model_max_length=2048, 
     padding_side="right", use_fast=False)
 tokenizer.pad_token = tokenizer.unk_token
+```
+
+You can also load quantized model as,
+
+```py
+from transformers import BitsAndBytesConfig
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name_or_path, quantization_config=bnb_config, device_map=device
+)
 ```
 
 ### Step 2: set up the ReFT config by giving details about the interventions we want to learn.
