@@ -682,6 +682,95 @@ class VQAEvaluator:
             self.setAccuracy(accQA, accQuesType, accAnsType)
 
         return self.accuracy
+    
+    def evaluate_comp(self, quesid2ans: dict, dora_quesid2ans: dict, is_topk_optimal=None):
+        """https://github.com/GT-Vision-Lab/VQA/blob/master/PythonEvaluationTools/vqaEvaluation/vqaEval.py"""
+
+        gts = self.dataset.id2datum_gt
+
+        self.accuracy     = {}
+        self.evalQA       = {}
+        self.evalQuesType = {}
+        self.evalAnsType  = {}
+
+        accQA = []
+        accQuesType = {}
+        accAnsType = {}
+
+        # print("Computing accuracy")
+
+        for quesId, resAns in tqdm(quesid2ans.items(), total=len(quesid2ans), ncols=80):
+
+            quesId = int(quesId)
+
+            datum = self.dataset.id2datum[quesId]
+
+            # if is_topk_optimal is None:
+            #     pass
+            # elif 'is_topk_optimal' in datum:
+            #     if datum['is_topk_optimal'] != is_topk_optimal:
+            #         continue
+
+            resAns      = resAns.replace('\n', ' ')
+            resAns      = resAns.replace('\t', ' ')
+            resAns      = resAns.strip()
+            resAns      = self.processPunctuation(resAns)
+            resAns      = self.processDigitArticle(resAns)
+
+            doraResAns = dora_quesid2ans[quesId]
+
+            doraResAns      = doraResAns.replace('\n', ' ')
+            doraResAns      = doraResAns.replace('\t', ' ')
+            doraResAns      = doraResAns.strip()
+            doraResAns      = self.processPunctuation(doraResAns)
+            doraResAns      = self.processDigitArticle(doraResAns)
+
+            gtAcc  = []
+            doraGtAcc = []
+            gtAnswers = [ans['answer'] for ans in gts[quesId]['answers']]
+            if len(set(gtAnswers)) > 1:
+                for ansDic in gts[quesId]['answers']:
+                    ansDic['answer'] = self.processPunctuation(ansDic['answer'])
+            for gtAnsDatum in gts[quesId]['answers']:
+                otherGTAns = [item for item in gts[quesId]['answers'] if item!=gtAnsDatum]
+                matchingAns = [item for item in otherGTAns if item['answer']==resAns]
+                doraMatchingAns = [item for item in otherGTAns if item['answer']==doraResAns]
+                acc = min(1, float(len(matchingAns))/3)
+                doraacc = min(1, float(len(doraMatchingAns))/3)
+                gtAcc.append(acc)
+                doraGtAcc.append(doraacc)
+            
+            quesType    = gts[quesId]['question_type']
+            ansType     = gts[quesId]['answer_type']
+            avgGTAcc = float(sum(gtAcc))/len(gtAcc)
+            avgDoraGTAcc = float(sum(doraGtAcc))/len(doraGtAcc)
+            if avgDoraGTAcc > avgGTAcc:
+                print("[REFT FAIL] Question ID:", quesId, "Dora:", avgDoraGTAcc, "GT:", avgGTAcc, "Dora:", doraResAns, "Res:", resAns, "GT:", gts[quesId]['answers'])
+            elif avgGTAcc > avgDoraGTAcc:
+                print("[DORA FAIL] Question ID:", quesId, "Dora:", avgDoraGTAcc, "GT:", avgGTAcc, "Dora:", doraResAns, "Res:", resAns, "GT:", gts[quesId]['answers'])
+            accQA.append(avgGTAcc)
+            if quesType not in accQuesType:
+                accQuesType[quesType] = []
+            accQuesType[quesType].append(avgGTAcc)
+            if ansType not in accAnsType:
+                accAnsType[ansType] = []
+            accAnsType[ansType].append(avgGTAcc)
+
+            self.setEvalQA(quesId, avgGTAcc)
+            self.setEvalQuesType(quesId, quesType, avgGTAcc)
+            self.setEvalAnsType(quesId, ansType, avgGTAcc)
+
+
+        if len(accQA) == 0:
+            return {
+                'overall': 0,
+                'perQuestionType': {},
+                'perAnswerType': {}
+            }
+        else:
+            self.setAccuracy(accQA, accQuesType, accAnsType)
+
+        return self.accuracy
 
     def normalize_answer(self, resAns):
         resAns      = resAns.replace('\n', ' ')
