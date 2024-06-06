@@ -7,8 +7,21 @@ from pyvene import (
     TrainableIntervention,
     DistributedRepresentationIntervention,
 )
-from pyvene.models.layers import LowRankRotateLayer
 from transformers.activations import ACT2FN
+
+
+class LowRankRotateLayer(torch.nn.Module):
+    """A linear transformation with orthogonal initialization."""
+
+    def __init__(self, n, m, init_orth=True):
+        super().__init__()
+        # n > m
+        self.weight = torch.nn.Parameter(torch.empty(n, m), requires_grad=True)
+        if init_orth:
+            torch.nn.init.orthogonal_(self.weight)
+
+    def forward(self, x):
+        return torch.matmul(x.to(self.weight.dtype), self.weight)
 
 
 class LoreftIntervention(
@@ -22,7 +35,7 @@ class LoreftIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
@@ -99,7 +112,7 @@ class ConsreftIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
         self.learned_source = torch.nn.Parameter(
             torch.rand(kwargs["low_rank_dimension"]), requires_grad=True)
         
@@ -124,7 +137,7 @@ class LobireftIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
         self.learned_source = torch.nn.Parameter(
             torch.rand(kwargs["low_rank_dimension"]), requires_grad=True)
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
@@ -149,7 +162,7 @@ class DireftIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
