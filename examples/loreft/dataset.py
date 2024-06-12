@@ -103,7 +103,7 @@ class LoReftSupervisedDataset(ReftDataset):
             self.data_path = "main" # huggingface dir.
             if self.data_split != "test":
                 self.data_split = "train" # we split l300 examples from train for validation.
-        elif self.task in ["math", "commonsense", "ultrafeedback"]:
+        elif self.task in ["math", "commonsense", "ultrafeedback", "alpaca"]:
             self.data_path = os.path.join(self.data_path, self.data_split + ".json")
 
     def postprocess(self, kwargs):
