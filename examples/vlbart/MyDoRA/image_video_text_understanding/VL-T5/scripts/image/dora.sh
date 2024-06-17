@@ -31,7 +31,7 @@ echo $backbone
 
 feature=RN101
 
-lr=2e-4
+lr=1e-3
 
 text_rank=4
 image_rank=64
@@ -47,7 +47,7 @@ python -m torch.distributed.launch \
     src/${task}.py \
     --distributed --multiGPU \
     --optim adamw \
-    --warmup_ratio 0.00 \
+    --warmup_ratio 0.10 \
     --clip_grad_norm 5 \
     --weight_decay 0.01 \
     --lr ${lr} \
@@ -59,7 +59,7 @@ python -m torch.distributed.launch \
     --use_tasks_prompts \
     --batch_size ${batch_size} \
     --valid_batch_size ${batch_size} \
-    --tasks "vqa,gqa,nlvr,caption" \
+    --tasks "nlvr" \
     --dropout 0.00 \
     --reft_dropout 0.00 \
     --reft_image_dropout 0.00 \

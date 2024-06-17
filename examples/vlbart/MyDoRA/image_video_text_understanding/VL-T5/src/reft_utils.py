@@ -84,12 +84,17 @@ def get_image_intervention_locations(**kwargs):
 
     pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
     pad_position = -1 if pad_mode == "first" else last_text_position + image_offset
+    if pad_mode != "first" and "nlvr" in kwargs["tasks"]:
+        pad_position = last_text_position + 2 * image_offset
 
     if share_weights or ((first_n == 0 or last_n == 0) and (first_image_n == 0 or last_image_n == 0)):
         position_list = [i for i in range(first_n)] + \
             [i for i in range(last_text_position - last_n, last_text_position)]
         image_position_list = [i for i in range(last_text_position, last_text_position + first_image_n)] + \
             [i for i in range(last_text_position + image_offset - last_image_n, last_text_position + image_offset)]
+        if "nlvr" in kwargs["tasks"]:
+            image_position_list += [i for i in range(last_text_position + image_offset, last_text_position + image_offset + first_image_n)] + \
+            [i for i in range(last_text_position + 2 * image_offset - last_image_n, last_text_position + 2 * image_offset)]
         text_len = len(position_list)
         image_len = len(image_position_list)
         if text_len > image_len:
@@ -104,6 +109,9 @@ def get_image_intervention_locations(**kwargs):
         right_intervention_locations = [i for i in range(last_text_position - last_n, last_text_position)]
         left_image_intervention_locations = [i for i in range(last_text_position, last_text_position + first_image_n)]
         right_image_intervention_locations = [i for i in range(last_text_position + image_offset - last_image_n, last_text_position + image_offset)]
+        if "nlvr" in kwargs["tasks"]:
+            left_image_intervention_locations += [i for i in range(last_text_position + image_offset, last_text_position + image_offset + first_image_n)]
+            right_image_intervention_locations += [i for i in range(last_text_position + 2 * image_offset - last_image_n, last_text_position + 2 * image_offset)]
         text_len = len(left_intervention_locations)
         image_len = len(left_image_intervention_locations)
         if text_len > image_len:
@@ -196,6 +204,7 @@ def reft_post_process(
         kwargs["last_offset"] = args.n_boxes
         kwargs["pad_mode"] = pad_mode
         kwargs["last_position"] = last_position
+        kwargs["tasks"] = args.prompt
     # print(kwargs)
 
     # print("BEFORE:", out_dict["input_ids"].shape, kwargs["last_position"])
