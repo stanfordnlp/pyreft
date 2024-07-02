@@ -63,6 +63,57 @@ def get_intervention_locations(**kwargs):
     
     return intervention_locations
 
+def get_all_intervention_locations(**kwargs):
+    positions = kwargs["positions"]
+    amt = int(positions.strip("all"))
+    pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
+    last_offset = kwargs["last_offset"] if "last_offset" in kwargs else 0
+    last_position = kwargs["last_position"]
+    last_position += last_offset
+    pad_position = -1 if pad_mode == "first" else last_position
+    intervention_locations = [i for i in range(last_position)] + [pad_position for _ in range(amt - last_position)]
+    return [intervention_locations]*kwargs["num_interventions"]
+
+def get_image_only_intervention_locations(**kwargs):
+    """
+    This function generates the intervention locations.
+    For simplicity, this function does not implement padding.
+
+    For your customized dataset, you want to create your own function.
+    """
+    # parse kwargs
+    share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
+    last_text_position = kwargs["last_position"]
+    assert "image_positions" in kwargs, "Image positions must be provided"
+    first_image_n, last_image_n = parse_positions(kwargs["image_positions"])
+
+    num_interventions = kwargs["num_interventions"]
+    image_offset = kwargs["last_offset"] if "last_offset" in kwargs else 0
+
+    pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
+    pad_position = -1 if pad_mode == "first" else last_text_position + image_offset
+    if pad_mode != "first" and "nlvr" in kwargs["tasks"]:
+        pad_position = last_text_position + 2 * image_offset
+
+    if share_weights or (first_image_n == 0 or last_image_n == 0):
+        image_position_list = [i for i in range(last_text_position, last_text_position + first_image_n)] + \
+            [i for i in range(last_text_position + image_offset - last_image_n, last_text_position + image_offset)]
+        if "nlvr" in kwargs["tasks"]:
+            image_position_list += [i for i in range(last_text_position + image_offset, last_text_position + image_offset + first_image_n)] + \
+            [i for i in range(last_text_position + 2 * image_offset - last_image_n, last_text_position + 2 * image_offset)]
+        intervention_locations = [image_position_list]* num_interventions
+    else:
+        left_image_intervention_locations = [i for i in range(last_text_position, last_text_position + first_image_n)]
+        right_image_intervention_locations = [i for i in range(last_text_position + image_offset - last_image_n, last_text_position + image_offset)]
+        if "nlvr" in kwargs["tasks"]:
+            left_image_intervention_locations += [i for i in range(last_text_position + image_offset, last_text_position + image_offset + first_image_n)]
+            right_image_intervention_locations += [i for i in range(last_text_position + 2 * image_offset - last_image_n, last_text_position + 2 * image_offset)]
+        intervention_locations = \
+            [left_image_intervention_locations]*(num_interventions//2) + \
+            [right_image_intervention_locations]*(num_interventions//2)
+    return intervention_locations
+
+
 
 def get_image_intervention_locations(**kwargs):
     """
@@ -137,8 +188,12 @@ def compute_intervention(
     **kwargs):
     pad_mode = kwargs["pad_mode"]
     # compute intervention locs
-    if "image_positions" in kwargs:
+    if "positions" in kwargs and "all" in kwargs["positions"]:
+        intervention_locations =  get_all_intervention_locations(**kwargs)
+    elif "image_positions" in kwargs and "positions" in kwargs:
         intervention_locations = get_image_intervention_locations(**kwargs)
+    elif "image_positions" in kwargs:
+        intervention_locations = get_image_only_intervention_locations(**kwargs)
     else:
         intervention_locations = get_intervention_locations(**kwargs)
     result["intervention_locations"] = intervention_locations
@@ -194,13 +249,15 @@ def reft_post_process(
     # out_dict["labels"] = out_dict["target_ids"]
     kwargs = {}
     if args is not None:
-        kwargs["positions"] = args.positions
+        if args.reft_rank != -1:
+            kwargs["positions"] = args.positions
+        if args.reft_image_rank != -1:
+            kwargs["image_positions"] = args.image_positions
         kwargs["share_weights"] = args.share_weights
         layers = [int(l) for l in args.layers.split(";")]
         kwargs["num_interventions"] = len(layers) if args.share_weights else 2 * len(layers)
-        if args.reft_image_rank != -1:
+        if args.reft_image_rank != -1 and args.reft_rank != -1:
             kwargs["num_interventions"] *= 2
-            kwargs["image_positions"] = args.image_positions
         kwargs["last_offset"] = args.n_boxes
         kwargs["pad_mode"] = pad_mode
         kwargs["last_position"] = last_position

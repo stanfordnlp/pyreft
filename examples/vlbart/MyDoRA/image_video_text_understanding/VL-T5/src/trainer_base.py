@@ -193,31 +193,23 @@ class TrainerBase(object):
         if '+' in self.args.positions and not args.share_weights:
             layers += layers
         
-        rank = args.reft_rank
         image_rank = args.reft_image_rank
+        text_rank = args.reft_rank
         embed_dim = args.mid_dim
 
         # print("REFT PARAMS:",embed_dim, rank, args.dropout)
-        if image_rank == -1:
-            representations = [{
+        representations = []
+        if text_rank != -1:
+            representations += [{
                 "layer": l, "component": "block_output",
-                "low_rank_dimension": rank,
+                "low_rank_dimension": text_rank,
                 "intervention": LoreftIntervention(
-                    embed_dim=embed_dim, low_rank_dimension=rank,
+                    embed_dim=embed_dim, low_rank_dimension=text_rank,
                     dropout=args.reft_dropout, dtype=torch.float32, act_fn=None, device="cuda",
                     add_bias=True
                 )
             } for l in layers]
-        else:
-            representations = [{
-                "layer": l, "component": "block_output",
-                "low_rank_dimension": rank,
-                "intervention": LoreftIntervention(
-                    embed_dim=embed_dim, low_rank_dimension=rank,
-                    dropout=args.reft_dropout, dtype=torch.float32, act_fn=None, device="cuda",
-                    add_bias=True
-                )
-            } for l in layers]
+        if image_rank != -1:
             representations += [{
                 "layer": l, "component": "block_output",
                 "low_rank_dimension": image_rank,
@@ -227,7 +219,6 @@ class TrainerBase(object):
                     add_bias=True
                 )
             } for l in layers]
-            layers += layers
         reft_config = ReftConfig(representations=representations)
         # print(reft_config)
         return reft_config

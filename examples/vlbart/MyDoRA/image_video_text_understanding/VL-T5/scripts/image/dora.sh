@@ -33,8 +33,8 @@ feature=RN101
 
 lr=1e-3
 
-text_rank=4
-image_rank=64
+text_rank=32
+image_rank=-1
 
 project_name=${feature}_LM_reft_${text_rank}_${image_rank}_bs${batch_size}_image224
 run_name=tune+lr${lr}_plzplz2
@@ -59,7 +59,7 @@ python -m torch.distributed.launch \
     --use_tasks_prompts \
     --batch_size ${batch_size} \
     --valid_batch_size ${batch_size} \
-    --tasks "nlvr" \
+    --tasks "vqa" \
     --dropout 0.00 \
     --reft_dropout 0.00 \
     --reft_image_dropout 0.00 \
@@ -67,8 +67,7 @@ python -m torch.distributed.launch \
     --reft_image_rank ${image_rank} \
     --unfreeze_bias \
     --unfreeze_layer_norms \
-    --positions "f6+l6" \
-    --image_positions "f6+l6" \
+    --positions "all56" \
     --feature ${feature} --n_boxes 36 --downsample \
     --image_size "(224,224)" \
     --project_name $project_name \
