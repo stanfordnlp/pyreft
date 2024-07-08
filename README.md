@@ -11,6 +11,9 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 - Finetuning any pretrained LMs on HuggingFace with ReFT
 - Setting ReFT hyperparameters via configs
 - Sharing the fine-tuned results easily to HuggingFace
+- Support quantized model
+- 🔥 [DPO+ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/dpo)
+- 🔥 [LoRA+ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/peft)
 
 > [!TIP]
 > **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**]  
@@ -21,7 +24,7 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 
 ## A step-by-step guide: training an 😀 Emoji-Chatbot ([live demo](https://huggingface.co/spaces/pyvene/reft_emoji_chat)) with ReFT in 30 seconds!
 
-**🔥Train TinyLlama Emoji-Chatbot**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb)
+**🔥 Train TinyLlama Emoji-Chatbot**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb)
 
 First, install **`pyreft`** from pip+git:
 
@@ -52,12 +55,31 @@ tokenizer = transformers.AutoTokenizer.from_pretrained(
 tokenizer.pad_token = tokenizer.unk_token
 ```
 
+You can also load quantized model as,
+
+```py
+from transformers import BitsAndBytesConfig
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name_or_path, quantization_config=bnb_config, device_map=device
+)
+```
+
 ### Step 2: set up the ReFT config by giving details about the interventions we want to learn.
 ReFT has been shown to be parameter-efficient. We start with a minimal set-up for our intervention: applying a single rank-4 LoReFT intervention at 15-th layer to the residual stream of the last prompt token:
 ```py
 # get reft model
 reft_config = pyreft.ReftConfig(representations={
     "layer": 15, "component": "block_output",
+    # alternatively, you can specify as string component access,
+    # "component": "model.layers[0].output",
     "low_rank_dimension": 4,
     "intervention": pyreft.LoreftIntervention(embed_dim=model.config.hidden_size,
     low_rank_dimension=4)})
@@ -68,6 +90,35 @@ reft_model.print_trainable_parameters()
 """
 trainable intervention params: 32,772 || trainable model params: 0
 model params: 6,738,415,616 || trainable%: 0.00048634578018881287
+"""
+```
+
+Alternatively, you can also train ReFT together with LoRA as well by taking advantage of [the `peft` library](https://github.com/huggingface/peft):
+
+```py
+from peft import LoraConfig, get_peft_model
+
+peft_config = LoraConfig(
+    r=4, lora_alpha=32, target_modules=["o_proj"], layers_to_transform=[15],
+    use_rslora=True, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"
+)
+model = get_peft_model(model, peft_config)
+
+reft_config = pyreft.ReftConfig(representations=[{
+    # string component access is enforced for customized model such as a peft model!
+    "layer": l, "component": f"base_model.model.model.layers[{l}].output",
+    "low_rank_dimension": 4,
+    "intervention": pyreft.LoreftIntervention(embed_dim=model.config.hidden_size,
+    low_rank_dimension=4)} for l in [15]])
+
+reft_model = pyreft.get_reft_model(model, reft_config)
+# you need to call this to re-enable lora grads!
+reft_model.model.enable_adapter_layers()
+reft_model.print_trainable_parameters()
+
+"""
+trainable intervention params: 32,772 || trainable model params: 32,768
+model params: 6,738,448,384 || trainable%: 0.0009726274694871952
 """
 ```
 

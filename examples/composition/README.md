@@ -1,5 +1,5 @@
 # Composable ReFT
-Based on the notebook [`compreft.ipynb`](http://localhost:10008/notebooks/dev_tmp/reft/examples/composition/compreft.ipynb).
+Based on the notebook [`compreft.ipynb`](https://github.com/stanfordnlp/pyreft/blob/main/examples/composition/compreft.ipynb).
 
 
 ## Are ReFTs composable?
