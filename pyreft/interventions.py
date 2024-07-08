@@ -34,14 +34,21 @@ class LoreftIntervention(
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
-        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
+        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_oath=True)
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
+        self.dtype = kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
+        # self.dtype = torch.float32
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
-            kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
+                self.convert_type(self.dtype)
+            )
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
         self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
         
+    def convert_type(self, dtype):
+        return torch.bfloat16 if dtype == "bfloat16" else dtype
+
+
     def forward(
         self, base, source=None, subspaces=None
     ):
