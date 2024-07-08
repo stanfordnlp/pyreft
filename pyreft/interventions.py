@@ -34,7 +34,7 @@ class LoreftIntervention(
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
-        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_oath=True)
+        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
         self.dtype = kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
         # self.dtype = torch.float32
