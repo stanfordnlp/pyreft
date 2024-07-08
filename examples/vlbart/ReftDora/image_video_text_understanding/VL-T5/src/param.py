@@ -120,7 +120,6 @@ def parse_args(parse=True, **optional_kwargs):
     parser.add_argument('--oneddownsample', action="store_true")
     parser.add_argument('--expand_vis_embedding', action="store_true")
     parser.add_argument('--n_image_tokens', type=int, default=4)
-    parser.add_argument('--vis_use_transformer', action="store_true")
 
     # Training
     parser.add_argument('--batch_size', type=int, default=256)
@@ -239,26 +238,11 @@ def parse_args(parse=True, **optional_kwargs):
 
     parser.add_argument('--feature_type', type=str, default="butd", choices=feature_types)
 
-    # Pretraining
-    parser.add_argument('--ground_upsample', type=int, default=1)
-    parser.add_argument('--ground_weight', type=int, default=1)
-    parser.add_argument('--itm_cocoonly', default=True, type=str2bool)
-    parser.add_argument('--single_vqa_prefix', action='store_true')
-
-    # COCO Caption
-    parser.add_argument('--no_prefix', action='store_true')
-
     # VQA
     parser.add_argument("--raw_label", action='store_true')
     parser.add_argument("--answer_normalize", action='store_true')
     parser.add_argument("--classifier", action='store_true')
     parser.add_argument("--test_answerable", action='store_true')
-
-    # RefCOCOg
-    parser.add_argument('--RefCOCO_GT', action='store_true')
-    parser.add_argument('--RefCOCO_BUTD', action='store_true')
-    parser.add_argument("--shuffle_boxes", action='store_true')
-    parser.add_argument('--vis_pointer', action='store_true')
 
     # Classification
     parser.add_argument('--cls_task', type=str, default='tinyimagenet')

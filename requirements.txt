@@ -1,4 +1,5 @@
-torch>=2.0.0
+torch==2.0.1
+torchvision==0.15.2
 # Removed flash-attn for now.
 # flash-attn>=2.5.6 --install-option='--no-build-isolation'
 pyvene>=0.1.1
@@ -22,3 +23,13 @@ ydata-profiling>=4.7.0
 seaborn==0.12.2
 # Colab notebook setup.
 gcsfs>=2024.2.0
+h5py
+tqdm
+numpy
+pandas
+ftfy
+timm
+pyyaml
+sacrebleu
+git+https://github.com/bckim92/language-evaluation.git
+wget

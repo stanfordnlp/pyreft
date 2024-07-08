@@ -15,11 +15,9 @@ import re
 
 from torch.utils.data.distributed import DistributedSampler
 
-from transformers import T5TokenizerFast, BartTokenizer
-from tokenization import VLT5TokenizerFast
+from transformers import BartTokenizer
 
-
-project_dir = Path(__file__).resolve().parent.parent  # VLT5
+project_dir = Path(__file__).resolve().parent.parent
 workspace_dir = project_dir.parent
 dataset_dir = workspace_dir.joinpath('datasets/').resolve()
 coco_dir = dataset_dir.joinpath('COCO')
@@ -45,19 +43,7 @@ class VQAFineTuneDataset(Dataset):
         if self.verbose:
             print('Data sources: ', self.sources)
 
-        if 't5' in self.args.backbone:
-            if self.args.use_vision:
-                self.tokenizer = VLT5TokenizerFast.from_pretrained(
-                    args.backbone,
-                    max_length=self.args.max_text_length,
-                    do_lower_case=self.args.do_lower_case)
-            else:
-                self.tokenizer = T5TokenizerFast.from_pretrained(
-                    args.backbone,
-                    max_length=self.args.max_text_length,
-                    do_lower_case=self.args.do_lower_case)
-
-        elif 'bart' in self.args.backbone:
+        if 'bart' in self.args.backbone:
             self.tokenizer = BartTokenizer.from_pretrained(
                 args.backbone,
                 # max_length=self.args.max_text_length,

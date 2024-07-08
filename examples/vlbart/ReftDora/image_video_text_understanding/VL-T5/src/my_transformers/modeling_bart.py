@@ -48,17 +48,7 @@ from transformers.models.bart.configuration_bart import BartConfig
 import os
 import sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
-from adapters import (
-    AdapterLayer, 
-    AdapterController,
-    OutputParallelAdapterLayer,
-    TaskEmbeddingController,
-    AdapterLayersHyperNetController,
-    AdapterLayersOneHyperNetController,
-    MetaLayersAdapterController
-)
 
-import lora
 
 
 logger = logging.get_logger(__name__)
@@ -278,169 +268,16 @@ class BartAttention(nn.Module):
         return attn_output, attn_weights_reshaped, past_key_value
 
 
-class LoraBartAttention(BartAttention):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
-    def __init__(
-        self,
-        embed_dim: int,
-        num_heads: int,
-        dropout: float = 0.0,
-        is_decoder: bool = False,
-        bias: bool = True,
-        config=None,
-    ):
-        super().__init__(
-            embed_dim,
-            num_heads,
-            dropout,
-            is_decoder,
-            bias,
-        )
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-        self.dropout = dropout
-        self.head_dim = embed_dim // num_heads
-        assert (
-            self.head_dim * num_heads == self.embed_dim
-        ), f"embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim} and `num_heads`: {num_heads})."
-        self.scaling = self.head_dim ** -0.5
-        self.is_decoder = is_decoder
-
-        self.k_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-        self.v_proj = lora.LoRALinearController(embed_dim, embed_dim, config=config, bias=bias)
-        self.q_proj = lora.LoRALinearController(embed_dim, embed_dim, config=config, bias=bias)
-        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        key_value_states: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        output_attentions: bool = False,
-        task=None,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        """Input shape: Batch x Time x Channel"""
-
-        # if key_value_states are provided this layer is used as a cross-attention layer
-        # for the decoder
-        is_cross_attention = key_value_states is not None
-        bsz, tgt_len, embed_dim = hidden_states.size()
-
-        # import pdb
-        # pdb.set_trace()
-
-        # get query proj
-        query_states = self.q_proj(hidden_states, task) * self.scaling
-        # get key, value proj
-        if is_cross_attention and past_key_value is not None:
-            # reuse k,v, cross_attentions
-            key_states = past_key_value[0]
-            value_states = past_key_value[1]
-        elif is_cross_attention:
-            # cross_attentions
-            key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
-            value_states = self._shape(self.v_proj(key_value_states, task), -1, bsz)
-        elif past_key_value is not None:
-            # reuse k, v, self_attention
-            key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
-            value_states = self._shape(self.v_proj(hidden_states, task), -1, bsz)
-
-            key_states = torch.cat([past_key_value[0], key_states], dim=2)
-            value_states = torch.cat([past_key_value[1], value_states], dim=2)
-        else:
-            # self_attention
-            key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
-            value_states = self._shape(self.v_proj(hidden_states, task), -1, bsz)
-
-        # print(key_states.shape)
-
-        if self.is_decoder:
-            # if cross_attention save Tuple(torch.Tensor, torch.Tensor) of all cross attention key/value_states.
-            # Further calls to cross_attention layer can then reuse all cross-attention
-            # key/value_states (first "if" case)
-            # if uni-directional self-attention (decoder) save Tuple(torch.Tensor, torch.Tensor) of
-            # all previous decoder key/value_states. Further calls to uni-directional self-attention
-            # can concat previous decoder key/value_states to current projected key/value_states (third "elif" case)
-            # if encoder bi-directional self-attention `past_key_value` is always `None`
-            past_key_value = (key_states, value_states)
-
-        proj_shape = (bsz * self.num_heads, -1, self.head_dim)
-        query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
-        key_states = key_states.view(*proj_shape)
-        value_states = value_states.view(*proj_shape)
-
-        src_len = key_states.size(1)
-        attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))
-
-        assert attn_weights.size() == (
-            bsz * self.num_heads,
-            tgt_len,
-            src_len,
-        ), f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is {attn_weights.size()}"
-
-        if attention_mask is not None:
-            assert attention_mask.size() == (
-                bsz,
-                1,
-                tgt_len,
-                src_len,
-            ), f"Attention mask should be of size {(bsz, 1, tgt_len, src_len)}, but is {attention_mask.size()}"
-            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len) + attention_mask
-            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
-
-        attn_weights = F.softmax(attn_weights, dim=-1)
-
-        if output_attentions:
-            # this operation is a bit akward, but it's required to
-            # make sure that attn_weights keeps its gradient.
-            # In order to do so, attn_weights have to reshaped
-            # twice and have to be reused in the following
-            attn_weights_reshaped = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-            attn_weights = attn_weights_reshaped.view(bsz * self.num_heads, tgt_len, src_len)
-        else:
-            attn_weights_reshaped = None
-
-        attn_probs = F.dropout(attn_weights, p=self.dropout, training=self.training)
-
-        attn_output = torch.bmm(attn_probs, value_states)
-
-        assert attn_output.size() == (
-            bsz * self.num_heads,
-            tgt_len,
-            self.head_dim,
-        ), f"`attn_output` should be of size {(bsz, self.num_heads, tgt_len, self.head_dim)}, but is {attn_output.size()}"
-
-        attn_output = (
-            attn_output.view(bsz, self.num_heads, tgt_len, self.head_dim)
-            .transpose(1, 2)
-            .reshape(bsz, tgt_len, embed_dim)
-        )
-
-        attn_output = self.out_proj(attn_output)
-
-        return attn_output, attn_weights_reshaped, past_key_value
-
 
 class BartEncoderLayer(nn.Module):
     def __init__(self, config: BartConfig):
         super().__init__()
         self.embed_dim = config.d_model
-
-        self.use_lora = config.use_lora
-        if config.use_lora:
-            self.self_attn = LoraBartAttention(
-                embed_dim=self.embed_dim,
-                num_heads=config.encoder_attention_heads,
-                dropout=config.attention_dropout,
-                config=config.lora_config,
-            )
-        else:
-            self.self_attn = BartAttention(
-                embed_dim=self.embed_dim,
-                num_heads=config.encoder_attention_heads,
-                dropout=config.attention_dropout,
-            )
+        self.self_attn = BartAttention(
+            embed_dim=self.embed_dim,
+            num_heads=config.encoder_attention_heads,
+            dropout=config.attention_dropout,
+        )
 
         self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
         self.dropout = config.dropout
@@ -449,17 +286,6 @@ class BartEncoderLayer(nn.Module):
         self.fc1 = nn.Linear(self.embed_dim, config.encoder_ffn_dim)
         self.fc2 = nn.Linear(config.encoder_ffn_dim, self.embed_dim)
         self.final_layer_norm = nn.LayerNorm(self.embed_dim)
-
-        if config.use_adapter or config.use_compacter or config.use_lradapter:
-            self.attn_adapter = AdapterController(config.adapter_config)
-            self.ff_adapter = AdapterController(config.adapter_config)
-        else:
-            self.attn_adapter = None
-            self.ff_adapter = None
-
-        self.adapter_hypernet = None
-        if config.use_hyperformer:
-            self.adapter_hypernet = MetaLayersAdapterController(config.adapter_config)
 
     def forward(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor, past_key_value: tuple = None, block_adapters=None, task=None, output_attentions: bool = False):
         """
@@ -473,20 +299,9 @@ class BartEncoderLayer(nn.Module):
         """
         residual = hidden_states
 
-        if self.use_lora:
-            hidden_states, attn_weights, _ = self.self_attn(
-                hidden_states=hidden_states, attention_mask=attention_mask, past_key_value=past_key_value, output_attentions=output_attentions, task=task
-            )
-        else:
-            hidden_states, attn_weights, _ = self.self_attn(
-                hidden_states=hidden_states, attention_mask=attention_mask, past_key_value=past_key_value, output_attentions=output_attentions
-            )
-
-        if self.attn_adapter is not None:
-            hidden_states = self.attn_adapter(hidden_states, task)
-
-        if self.adapter_hypernet is not None:
-            hidden_states = self.adapter_hypernet(hidden_states, block_adapters.self_attention)
+        hidden_states, attn_weights, _ = self.self_attn(
+            hidden_states=hidden_states, attention_mask=attention_mask, past_key_value=past_key_value, output_attentions=output_attentions
+        )
 
         hidden_states = F.dropout(hidden_states, p=self.dropout, training=self.training)
         hidden_states = residual + hidden_states
@@ -496,12 +311,6 @@ class BartEncoderLayer(nn.Module):
         hidden_states = self.activation_fn(self.fc1(hidden_states))
         hidden_states = F.dropout(hidden_states, p=self.activation_dropout, training=self.training)
         hidden_states = self.fc2(hidden_states)
-
-        if self.ff_adapter is not None:
-            hidden_states = self.ff_adapter(hidden_states, task)
-
-        if self.adapter_hypernet is not None:
-            hidden_states = self.adapter_hypernet(hidden_states, block_adapters.feed_forward)
 
         hidden_states = F.dropout(hidden_states, p=self.dropout, training=self.training)
         hidden_states = residual + hidden_states
@@ -524,22 +333,12 @@ class BartDecoderLayer(nn.Module):
         super().__init__()
         self.embed_dim = config.d_model
 
-        self.use_lora = config.use_lora
-        if config.use_lora:
-            self.self_attn = LoraBartAttention(
-                embed_dim=self.embed_dim,
-                num_heads=config.decoder_attention_heads,
-                dropout=config.attention_dropout,
-                is_decoder=True,
-                config=config.lora_config,
-            )
-        else:
-            self.self_attn = BartAttention(
-                embed_dim=self.embed_dim,
-                num_heads=config.decoder_attention_heads,
-                dropout=config.attention_dropout,
-                is_decoder=True,
-            )
+        self.self_attn = BartAttention(
+            embed_dim=self.embed_dim,
+            num_heads=config.decoder_attention_heads,
+            dropout=config.attention_dropout,
+            is_decoder=True,
+        )
 
         self.dropout = config.dropout
         self.activation_fn = ACT2FN[config.activation_function]
@@ -547,46 +346,17 @@ class BartDecoderLayer(nn.Module):
 
         self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
 
-
-        if config.use_lora:
-            self.encoder_attn = LoraBartAttention(
-                self.embed_dim,
-                config.decoder_attention_heads,
-                dropout=config.attention_dropout,
-                is_decoder=True,
-                config=config.lora_config
-            )
-        else:
-            self.encoder_attn = BartAttention(
-                self.embed_dim,
-                config.decoder_attention_heads,
-                dropout=config.attention_dropout,
-                is_decoder=True,
-            )
+        self.encoder_attn = BartAttention(
+            self.embed_dim,
+            config.decoder_attention_heads,
+            dropout=config.attention_dropout,
+            is_decoder=True,
+        )
 
         self.encoder_attn_layer_norm = nn.LayerNorm(self.embed_dim)
         self.fc1 = nn.Linear(self.embed_dim, config.decoder_ffn_dim)
         self.fc2 = nn.Linear(config.decoder_ffn_dim, self.embed_dim)
         self.final_layer_norm = nn.LayerNorm(self.embed_dim)
-
-        self.add_adapter_cross_attn = config.add_adapter_cross_attn
-
-        if config.use_adapter or config.use_compacter or config.use_lradapter:
-            self.self_attn_adapter = AdapterController(config.adapter_config)
-
-            if config.add_adapter_cross_attn:
-                self.enc_attn_adapter = AdapterController(config.adapter_config)
-            else:
-                self.enc_attn_adapter = None
-            self.ff_adapter = AdapterController(config.adapter_config)
-        else:
-            self.self_attn_adapter = None
-            self.enc_attn_adapter = None
-            self.ff_adapter = None
-
-        self.adapter_hypernet = None
-        if config.use_hyperformer:
-            self.adapter_hypernet = MetaLayersAdapterController(config.adapter_config)
 
     def forward(
         self,
@@ -620,27 +390,12 @@ class BartDecoderLayer(nn.Module):
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
         # add present self-attn cache to positions 1,2 of present_key_value tuple
 
-        if self.use_lora:
-            hidden_states, self_attn_weights, present_key_value = self.self_attn(
-                hidden_states=hidden_states,
-                past_key_value=self_attn_past_key_value,
-                attention_mask=attention_mask,
-                output_attentions=output_attentions,
-                task=task,
-            )
-        else:
-            hidden_states, self_attn_weights, present_key_value = self.self_attn(
-                hidden_states=hidden_states,
-                past_key_value=self_attn_past_key_value,
-                attention_mask=attention_mask,
-                output_attentions=output_attentions,
-            )
-
-        if self.self_attn_adapter is not None:
-            hidden_states = self.self_attn_adapter(hidden_states, task)
-
-        if self.adapter_hypernet is not None:
-            hidden_states = self.adapter_hypernet(hidden_states, block_adapters.self_attention)
+        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+            hidden_states=hidden_states,
+            past_key_value=self_attn_past_key_value,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+        )
 
         hidden_states = F.dropout(hidden_states, p=self.dropout, training=self.training)
         hidden_states = residual + hidden_states
@@ -657,30 +412,13 @@ class BartDecoderLayer(nn.Module):
             cross_attn_past_key_value = None
             if past_key_value is not None and len(past_key_value) == 4: # len(past_key_value) is for prefix
                 cross_attn_past_key_value = past_key_value[-2:] if past_key_value is not None else None
-
-            if self.use_lora:
-                hidden_states, cross_attn_weights, cross_attn_present_key_value = self.encoder_attn(
-                    hidden_states=hidden_states,
-                    key_value_states=encoder_hidden_states,
-                    attention_mask=encoder_attention_mask,
-                    past_key_value=cross_attn_past_key_value,
-                    output_attentions=output_attentions,
-                    task=task,
-                )
-            else:
-                hidden_states, cross_attn_weights, cross_attn_present_key_value = self.encoder_attn(
-                    hidden_states=hidden_states,
-                    key_value_states=encoder_hidden_states,
-                    attention_mask=encoder_attention_mask,
-                    past_key_value=cross_attn_past_key_value,
-                    output_attentions=output_attentions,
-                )
-
-            if self.enc_attn_adapter is not None:
-                hidden_states = self.enc_attn_adapter(hidden_states, task)
-
-            if self.adapter_hypernet is not None and self.add_adapter_cross_attn:
-                hidden_states = self.adapter_hypernet(hidden_states, block_adapters.cross_attention)
+            hidden_states, cross_attn_weights, cross_attn_present_key_value = self.encoder_attn(
+                hidden_states=hidden_states,
+                key_value_states=encoder_hidden_states,
+                attention_mask=encoder_attention_mask,
+                past_key_value=cross_attn_past_key_value,
+                output_attentions=output_attentions,
+            )
 
             hidden_states = F.dropout(hidden_states, p=self.dropout, training=self.training)
             hidden_states = residual + hidden_states
@@ -694,12 +432,6 @@ class BartDecoderLayer(nn.Module):
         hidden_states = self.activation_fn(self.fc1(hidden_states))
         hidden_states = F.dropout(hidden_states, p=self.activation_dropout, training=self.training)
         hidden_states = self.fc2(hidden_states)
-
-        if self.ff_adapter is not None:
-            hidden_states = self.ff_adapter(hidden_states, task)
-
-        if self.adapter_hypernet is not None:
-            hidden_states = self.adapter_hypernet(hidden_states, block_adapters.feed_forward)
 
         hidden_states = F.dropout(hidden_states, p=self.dropout, training=self.training)
         hidden_states = residual + hidden_states
@@ -905,15 +637,6 @@ class BartEncoder(BartPretrainedModel):
 
         self.task_embed = task_embed
 
-        self.adapter_layers_hyper_net = None
-        if config.use_hyperformer:
-            if config.adapter_config.unique_hyper_net:
-                self.adapter_layers_hyper_net = AdapterLayersHyperNetController(config.adapter_config, config.encoder_layers)
-            if config.adapter_config.efficient_unique_hyper_net:
-                self.adapter_layers_hyper_net = AdapterLayersOneHyperNetController(config.adapter_config, config.encoder_layers)
-            
-            assert self.adapter_layers_hyper_net is not None
-
         self.embed_positions = BartLearnedPositionalEmbedding(
             config.max_position_embeddings,
             embed_dim,
@@ -1007,10 +730,6 @@ class BartEncoder(BartPretrainedModel):
 
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
-            block_adapters = None
-            if self.adapter_layers_hyper_net:
-                block_adapters = self.adapter_layers_hyper_net(task_embedding, idx)
-
             if self.training and (dropout_probability < self.layerdrop):  # skip the layer
                 layer_outputs = (None, None)
             else:
@@ -1027,11 +746,11 @@ class BartEncoder(BartPretrainedModel):
                         hidden_states,
                         attention_mask,
                         past_key_value,
-                        block_adapters,
+                        None, # block_adapters
                         task,
                     )
                 else:
-                    layer_outputs = encoder_layer(hidden_states, attention_mask, past_key_value, block_adapters, task, output_attentions=output_attentions)
+                    layer_outputs = encoder_layer(hidden_states, attention_mask, past_key_value, None, task, output_attentions=output_attentions) # block_adapters
 
                 hidden_states = layer_outputs[0]
 
@@ -1070,15 +789,6 @@ class BartDecoder(BartPretrainedModel):
             self.embed_tokens = nn.Embedding(config.vocab_size, config.d_model, self.padding_idx)
 
         self.task_embed = task_embed
-
-        self.adapter_layers_hyper_net = None
-        if config.use_hyperformer:
-            if config.adapter_config.unique_hyper_net:
-                self.adapter_layers_hyper_net = AdapterLayersHyperNetController(config.adapter_config, config.decoder_layers, True)
-            if config.adapter_config.efficient_unique_hyper_net:
-                self.adapter_layers_hyper_net = AdapterLayersOneHyperNetController(config.adapter_config, config.decoder_layers, True)
-            
-            assert self.adapter_layers_hyper_net is not None
 
         self.embed_positions = BartLearnedPositionalEmbedding(
             config.max_position_embeddings,
@@ -1218,9 +928,6 @@ class BartDecoder(BartPretrainedModel):
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             block_adapters = None
-            if self.adapter_layers_hyper_net:
-                block_adapters = self.adapter_layers_hyper_net(task_embedding, idx)
-
             if getattr(self.config, "gradient_checkpointing", False):
                 if use_cache:
                     raise ValueError(
@@ -1296,11 +1003,8 @@ class BartModel(BartPretrainedModel):
 
         padding_idx, vocab_size = config.pad_token_id, config.vocab_size
         self.shared = nn.Embedding(vocab_size, config.d_model, padding_idx)
-
-        if config.use_hyperformer:
-            self.shared_task_embed = TaskEmbeddingController(config.adapter_config)
-        else:
-            self.shared_task_embed = None
+        
+        self.shared_task_embed = None
 
         self.encoder = BartEncoder(config, self.shared, self.shared_task_embed)
         self.decoder = BartDecoder(config, self.shared, self.shared_task_embed)
@@ -1433,9 +1137,6 @@ class BartForConditionalGeneration(BartPretrainedModel):
     def resize_token_embeddings(self, new_num_tokens: int) -> nn.Embedding:
         new_embeddings = super().resize_token_embeddings(new_num_tokens)
         self._resize_final_logits_bias(new_num_tokens)
-
-        if self.output_adapter is not None:
-            self.output_adapter.resize_output_dim(new_num_tokens)
 
         return new_embeddings
 

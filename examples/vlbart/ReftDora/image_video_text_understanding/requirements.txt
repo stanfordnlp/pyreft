@@ -1,5 +1,5 @@
 torch==2.0.1
-transformers==4.2.1
+#transformers==4.2.1
 torchvision==0.15.2
 sentencepiece
 h5py
