@@ -79,6 +79,9 @@ def get_intervention_locations(**kwargs):
         _first_n, _last_n = kwargs["first_n"], kwargs["last_n"]
     num_interventions = kwargs["num_interventions"]
     pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
+    last_offset = kwargs["last_offset"] if "last_offset" in kwargs else 0
+    last_position += last_offset
+
 
     first_n = min(last_position // 2, _first_n)
     last_n = min(last_position // 2, _last_n)
@@ -251,7 +254,6 @@ class ReftDataset(Dataset):
             result["subspaces"] = _subspaces
 
         return result
-
 
 class ReftRawDataset(Dataset):
 
