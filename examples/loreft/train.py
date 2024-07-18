@@ -40,7 +40,7 @@ from pyreft import (
     ConsreftIntervention, # constant bias only
     LobireftIntervention, # low-rank bitfit reft
     DireftIntervention,   # direct edit reft
-    NodireftIntervention, # remove ortho + direct edit reft <- this is like LoRA on time-step
+    LodireftIntervention, # remove ortho + direct edit reft <- this is like LoRA on time-step
     ReftDataCollator
 )
 
@@ -69,7 +69,7 @@ intervention_mapping = {
     "ConsreftIntervention": ConsreftIntervention,
     "LobireftIntervention": LobireftIntervention,
     "DireftIntervention": DireftIntervention,
-    "NodireftIntervention": NodireftIntervention,
+    "LodireftIntervention": LodireftIntervention,
 }
 
 
@@ -121,6 +121,8 @@ def finetune(
     lora_alpha: int,
     lora_modules: str,
     lora_layers: str,
+    layerwise_share_weights_stride: int,
+    lsw_blockwise: bool,
     args,
 ):
     """
@@ -326,19 +328,82 @@ def finetune(
         } for l in layers]
         task_type=TaskType.SEQ_CLS
     else:
-        representations = [{
-            "layer": l, "component": f"base_model.model.model.layers[{l}].output" if use_lora else "block_output",
-            "low_rank_dimension": rank,
-            "intervention": intervention_type(
-                embed_dim=config.hidden_size, low_rank_dimension=rank,
-                dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
-                add_bias=add_bias
-            )
-        } for l in layers]
+        if layerwise_share_weights_stride != 1:
+            representations = []
+            print("WARNING: enabling sharing intervention weights across layers...")
+            if "+" in position and not share_weights:
+                # layer is doubled, so we will do the stride separately.
+                layer_count = 0
+                for l in unique_layers:
+                    if lsw_blockwise:
+                        link_key = layer_count % layerwise_share_weights_stride
+                    else:
+                        link_key = layer_count // layerwise_share_weights_stride
+                    representations += [{
+                        "layer": l, "component": f"base_model.model.model.layers[{l}].output" if use_lora else "block_output",
+                        "low_rank_dimension": rank,
+                        "intervention": intervention_type(
+                            embed_dim=config.hidden_size, low_rank_dimension=rank,
+                            dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
+                            add_bias=add_bias
+                        ),
+                        "intervention_link_key": link_key
+                    }]
+                    layer_count += 1
+
+                # make sure the second set does not share weights with the first set.
+                layer_count = (link_key+1)*layerwise_share_weights_stride 
+                for l in unique_layers:
+                    if lsw_blockwise:
+                        link_key = layer_count % layerwise_share_weights_stride
+                    else:
+                        link_key = layer_count // layerwise_share_weights_stride
+                    representations += [{
+                        "layer": l, "component": f"base_model.model.model.layers[{l}].output" if use_lora else "block_output",
+                        "low_rank_dimension": rank,
+                        "intervention": intervention_type(
+                            embed_dim=config.hidden_size, low_rank_dimension=rank,
+                            dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
+                            add_bias=add_bias
+                        ),
+                        "intervention_link_key": link_key
+                    }]
+                    layer_count += 1
+            else:
+                layer_count = 0
+                for l in layers:
+                    if lsw_blockwise:
+                        link_key = layer_count % layerwise_share_weights_stride
+                    else:
+                        link_key = layer_count // layerwise_share_weights_stride
+                    representations += [{
+                        "layer": l, "component": f"base_model.model.model.layers[{l}].output" if use_lora else "block_output",
+                        "low_rank_dimension": rank,
+                        "intervention": intervention_type(
+                            embed_dim=config.hidden_size, low_rank_dimension=rank,
+                            dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
+                            add_bias=add_bias
+                        ),
+                        "intervention_link_key": link_key
+                    }]
+                    layer_count += 1
+        else:
+            representations = [{
+                "layer": l, "component": f"base_model.model.model.layers[{l}].output" if use_lora else "block_output",
+                "low_rank_dimension": rank,
+                "intervention": intervention_type(
+                    embed_dim=config.hidden_size, low_rank_dimension=rank,
+                    dropout=dropout, dtype=intervention_dtype, act_fn=act_fn, device=device,
+                    add_bias=add_bias
+                )
+            } for l in layers]
         task_type=TaskType.CAUSAL_LM
-    
+        
+    print("representations: ", representations)
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config, set_device=not isinstance(dtype, str))
+    
+    
     if use_lora:
         # you need to call this to re-enable lora grads!
         reft_model.model.enable_adapter_layers()
@@ -513,6 +578,10 @@ def main():
     parser.add_argument('-lora_alpha', '--lora_alpha', type=int, default=32)
     parser.add_argument('-lora_modules', '--lora_modules', type=str, default="o_proj")
     parser.add_argument('-lora_layers', '--lora_layers', type=str, help='2;10;18;26', default='2;10;18;26')
+
+    # weight sharing across layers, 1 means not sharing, 2 means share weights among two adjacent interventions.
+    parser.add_argument('-lsw_stride', '--layerwise_share_weights_stride', type=int, default=1)
+    parser.add_argument('-lsw_blockwise', '--lsw_blockwise', action='store_true')
 
     args = parser.parse_args()
 

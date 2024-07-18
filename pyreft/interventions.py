@@ -151,13 +151,13 @@ class LobireftIntervention(
         return self.dropout(output.to(base.dtype))
 
 
-class DireftIntervention(
+class LodireftIntervention(
     SourcelessIntervention,
     TrainableIntervention, 
     DistributedRepresentationIntervention
 ):
     """
-    DiReFT(h) = h + R^T(Wh + b)
+    LodiReFT(h) = h + R^T(Wh + b)
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
@@ -179,13 +179,13 @@ class DireftIntervention(
         return self.dropout(output.to(base.dtype))
 
 
-class NodireftIntervention(
+class DireftIntervention(
     SourcelessIntervention,
     TrainableIntervention, 
     DistributedRepresentationIntervention
 ):
     """
-    NodiReFT(h) = h + W2^T(W1h + b)
+    DiReFT(h) = h + W2^T(W1h + b)
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)

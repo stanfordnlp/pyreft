@@ -16,12 +16,13 @@ from .reft_trainer import (
 
 # interventions
 from .interventions import (
+    LowRankRotateLayer,
     NoreftIntervention,
     LoreftIntervention,
     ConsreftIntervention,
     LobireftIntervention,
-    DireftIntervention,
-    NodireftIntervention
+    LodireftIntervention,
+    DireftIntervention
 )
 
 # dataloader helpers
