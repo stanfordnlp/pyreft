@@ -79,28 +79,85 @@ class ReftTrainer(Trainer):
         return_outputs=False
     ):
         # run intervened forward pass
+        unit_locations = None
+        if "intervention_locations" in inputs:
+            unit_locations={"sources->base": (
+                None,
+                inputs["intervention_locations"].permute(1, 0, 2).tolist()
+            )}
+            
         _, cf_outputs = intervenable(
             {
                 "input_ids": inputs["input_ids"],
                 "attention_mask": inputs["attention_mask"]
             },
-            unit_locations={"sources->base": (
-                None,
-                inputs["intervention_locations"].permute(1, 0, 2).tolist()
-            )},
+            unit_locations=unit_locations,
             labels=inputs["labels"],
             subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None
         )
         # return
-        return (cf_outputs.loss, cf_outputs) if return_outputs else cf_outputs.loss
+        return (cf_outputs, cf_outputs) if return_outputs else cf_outputs.loss
 
 
 class ReftTrainerForCausalLM(ReftTrainer):
     def get_train_dataloader(self) -> DataLoader:
         return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator, shuffle=True)
 
-
+    
 class ReftTrainerForSequenceClassification(ReftTrainer):
+    def compute_loss(
+        self,
+        intervenable: pv.IntervenableModel,
+        inputs,
+        return_outputs=False
+    ):
+        # run intervened forward pass
+        unit_locations = None
+        if "intervention_locations" in inputs:
+            unit_locations={"sources->base": (
+                None,
+                inputs["intervention_locations"].permute(1, 0, 2).tolist()
+            )}
+            
+        _, cf_outputs = intervenable(
+            {
+                "input_ids": inputs["input_ids"],
+                "attention_mask": inputs["attention_mask"]
+            },
+            unit_locations=unit_locations,
+            labels=inputs["labels"],
+            subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None
+        )
+        # classification loss on counterfactual labels
+        logits = cf_outputs.logits
+        labels = inputs["labels"]
+
+        if self.model.model.config.problem_type is None:
+            if self.model.model.num_labels == 1:
+                problem_type = "regression"
+            elif self.model.model.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                problem_type = "single_label_classification"
+            else:
+                problem_type = "multi_label_classification"
+        else:
+            problem_type = self.model.model.config.problem_type
+            
+        if problem_type == "regression":
+            loss_fct = MSELoss()
+            if self.model.model.num_labels == 1:
+                loss = loss_fct(logits.squeeze(), labels.squeeze().to(torch.bfloat16))
+            else:
+                loss = loss_fct(logits, labels.to(torch.bfloat16))
+        elif problem_type == "single_label_classification":
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.model.model.num_labels), labels.view(-1))
+        elif problem_type == "multi_label_classification":
+            loss_fct = BCEWithLogitsLoss()
+            loss = loss_fct(logits, labels)
+
+        # return
+        return (loss, cf_outputs) if return_outputs else loss
+    
     def evaluate(
         self, ignore_keys,
     ):

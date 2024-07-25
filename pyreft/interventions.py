@@ -34,8 +34,9 @@ class LoreftIntervention(
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
-        rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
+        rotate_layer = LowRankRotateLayer(
+            self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
@@ -59,16 +60,25 @@ class LoreftIntervention(
         for k, v in self.learned_source.state_dict().items():
             state_dict[k] = v
         state_dict["rotate_layer"] = self.rotate_layer.weight.data
+        print(self.rotate_layer.weight.data)
         return state_dict
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """
         Overwrite for data-efficiency.
         """
-        self.learned_source.load_state_dict(state_dict, strict=False)
+        super().load_state_dict(state_dict, strict=False)
+
+        # Caveat: without creating a new layer, it might not work (still not sure why)
+        # We have to recreate a layer, and load back the columns.
         overload_w = state_dict["rotate_layer"]
         overload_w_width = overload_w.shape[-1]
-        self.rotate_layer.parametrizations.weight[0].base[:,:overload_w_width] = overload_w
+        rotate_layer = LowRankRotateLayer(
+            self.embed_dim, overload_w_width, init_orth=True).to(
+            self.learned_source.weight.device)
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer.parametrizations.weight[0].base[:,:overload_w_width] = overload_w.to("cuda")
+        
         return
 
 
@@ -112,7 +122,7 @@ class ConsreftIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Parameter(
             torch.rand(kwargs["low_rank_dimension"]), requires_grad=True)
         
@@ -137,7 +147,7 @@ class LobireftIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Parameter(
             torch.rand(kwargs["low_rank_dimension"]), requires_grad=True)
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
@@ -162,7 +172,7 @@ class DireftIntervention(
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer, orthogonal_map='householder')
+        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
             self.embed_dim, kwargs["low_rank_dimension"]).to(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
