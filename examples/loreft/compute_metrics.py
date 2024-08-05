@@ -177,6 +177,9 @@ def compute_metrics(
                 left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
                 if left_padding.numel() > 0:
                     left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+                    if left_padding.shape[1] != intervention_locations.shape[1]:
+                        # we need to fall back to recalculate the padding
+                        left_padding = ((inputs["input_ids"] == tokenizer.bos_token_id).sum(dim=-1)-1).reshape(1, -1, 1).to(device)
                     intervention_locations += left_padding
                     intervention_locations -= 1 # offset for the sink padding
                 else:

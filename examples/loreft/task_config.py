@@ -52,6 +52,58 @@ task_config = {
             }
         }
     },
+    "math_mistral": {
+        "train_datasets": [
+            "math_10k"
+        ],
+        "eval_datasets": [
+            "MultiArith", "gsm8k", "SVAMP", "mawps", "AddSub", "AQuA", "SingleEq", 
+        ],
+        "task_prompt_template": "<s>[INST] %s [/INST]\n",
+        "trigger_tokens": "[/INST]",
+        "generation_args": {
+            # slightly changed to optimize our performance on top of
+            # https://github.com/AGI-Edgerunners/LLM-Adapters
+            True: {
+                "max_new_tokens": 512,
+                "do_sample": False,
+            },
+            False: {
+                "max_new_tokens": 512,
+                "temperature": 0.3,
+                "top_p": 0.75,
+                "top_k": 40,
+                "num_beams": 4,
+                "do_sample": True,
+            }
+        }
+    },
+    "math_phi3": {
+        "train_datasets": [
+            "math_10k"
+        ],
+        "eval_datasets": [
+            "MultiArith", "gsm8k", "SVAMP", "mawps", "AddSub", "AQuA", "SingleEq", 
+        ],
+        "task_prompt_template": "<|endoftext|><|user|>\n%s <|end|>\n<|assistant|>",
+        "trigger_tokens": "<|assistant|>",
+        "generation_args": {
+            # slightly changed to optimize our performance on top of
+            # https://github.com/AGI-Edgerunners/LLM-Adapters
+            True: {
+                "max_new_tokens": 512,
+                "do_sample": False,
+            },
+            False: {
+                "max_new_tokens": 512,
+                "temperature": 0.3,
+                "top_p": 0.75,
+                "top_k": 40,
+                "num_beams": 4,
+                "do_sample": True,
+            }
+        }
+    },
     "alpaca": {
         "train_datasets": ["alpaca_data_cleaned"],
         "eval_datasets": ["alpaca_eval"],

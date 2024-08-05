@@ -126,8 +126,21 @@ class LoReftSupervisedDataset(ReftDataset):
             base_prompt = self.task_prompt_template % (data_item['instruction'])
             base_input = base_prompt + self.trigger_tokens + data_item["answer"] + self.tokenizer.eos_token
         elif self.task == "math": # we strip since these are model generated examples.
-            base_prompt = self.task_prompt_template % (data_item['instruction'])
-            base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
+            if "Meta-Llama-3-8B-Instruct" in self.tokenizer.name_or_path: # pretty bad workaround for llama-3, forgive me
+                system_prompt = "You are a helpful assistant."
+                # we remove the BOS, otherwise there will be redundant BOS tokens.
+                base_prompt = self.tokenizer.apply_chat_template(
+                    [{"role": "system", "content": system_prompt}, {"role": "user", "content": data_item['instruction']}], 
+                    tokenize=False,
+                )[len("<|begin_of_text|>"):]
+                base_input = self.tokenizer.apply_chat_template(
+                    [{"role": "system", "content": system_prompt}, {"role": "user", "content": data_item['instruction']},
+                     {"role": "assistant", "content": data_item["output"]}], 
+                    tokenize=False,
+                )[len("<|begin_of_text|>"):] + self.tokenizer.eos_token
+            else:
+                base_prompt = self.task_prompt_template % (data_item['instruction'])
+                base_input = base_prompt + data_item["output"] + self.tokenizer.eos_token
         elif self.task in ["alpaca", "instruct", "ultrafeedback", "ultrafeedback_pair", "tatsu-lab/alpaca_eval"]:
             if 'input' not in data_item or data_item['input'] == "":
                 base_prompt = alpaca_prompt_no_input_template % (data_item['instruction'])

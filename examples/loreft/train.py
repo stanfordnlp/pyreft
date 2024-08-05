@@ -55,7 +55,9 @@ except ModuleNotFoundError:
 device = "cuda" if torch.cuda.is_available() else "cpu"
 classification_tasks = {"glue"}
 residual_stream_component_mapping = {
-    "robertaformaskedlm": "roberta.encoder.layer[%s].output"
+    "robertaformaskedlm": "roberta.encoder.layer[%s].output",
+    "mistralforcausallm": "model.layers[%s].output",
+    "phi3smallforcausallm": "model.layers[%s].output",
 }
 dtype_mapping = {
     "float32": torch.float32,
@@ -154,17 +156,22 @@ def finetune(
     else:
         run_name = f"{model_str}.{task}.{now}"
 
+    if "phi" in model_name.lower():
+        trust_remote_code = True
+    else:
+        trust_remote_code = False
+
     # which layers to intervene on
     if layers != "all":
         layers = [int(l) for l in layers.split(";")]
     else:
-        temp_config = AutoConfig.from_pretrained(model)
+        temp_config = AutoConfig.from_pretrained(model, trust_remote_code=trust_remote_code)
         layers = [l for l in range(temp_config.num_hidden_layers)]
 
     if lora_layers != "all":
         lora_layers = [int(l) for l in lora_layers.split(";")]
     else:
-        temp_config = AutoConfig.from_pretrained(model)
+        temp_config = AutoConfig.from_pretrained(model, trust_remote_code=trust_remote_code)
         lora_layers = [l for l in range(temp_config.num_hidden_layers)]
 
     unique_layers = copy.deepcopy(layers)
@@ -181,15 +188,21 @@ def finetune(
         model_max_length=max_length,
         padding_side="right",
         use_fast=False,
+        trust_remote_code=trust_remote_code,
     )
-    if tokenizer.unk_token == None and tokenizer.pad_token == None:
-        # raw llama3
-        print("adding a special padding token...")
-        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-        need_resize = True
-    else:
-        tokenizer.pad_token = tokenizer.unk_token
+    if "phi" in model_name.lower():
+        # we handle inside.
+        # tokenizer.pad_token = tokenizer.eos_token
         need_resize = False
+    else:
+        if tokenizer.unk_token == None and tokenizer.pad_token == None:
+            # raw llama3
+            print("adding a special padding token...")
+            tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+            need_resize = True
+        else:
+            tokenizer.pad_token = tokenizer.unk_token
+            need_resize = False
 
     # load dataset splits
     assert task in task_config, f"Unrecognized task: {task}"
@@ -276,7 +289,7 @@ def finetune(
             model,
             torch_dtype=dtype if dtype != "float8" else None,  # save memory
             load_in_8bit=True if dtype == "float8" else False,
-            device_map=device
+            device_map=device, trust_remote_code=trust_remote_code
         )
         config = model.config
     if need_resize:
