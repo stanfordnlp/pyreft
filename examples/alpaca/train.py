@@ -15,7 +15,8 @@ from pyreft import (
     ReftTrainerForCausalLM, 
     LoreftIntervention,
     ReftDataCollator,
-    ReftSupervisedDataset
+    ReftSupervisedDataset,
+    ReftModel
 )
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -102,6 +103,8 @@ def train():
     )
     representations = [{
         "layer": l, "component": "block_output",
+        # this is needed for loading although dummy.
+        "low_rank_dimension": training_args.rank, 
         "intervention": LoreftIntervention(
             embed_dim=model.config.hidden_size, 
             low_rank_dimension=training_args.rank,
@@ -122,7 +125,16 @@ def train():
         model=reft_model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.train()
     trainer.save_state()
-    trainer.save_model(output_dir=training_args.output_dir)
+
+    # uncomment this line to only saving the interventons, 
+    # you need to reinit the reft model with random init 
+    # interventions mounted then load these weights
+    # trainer.save_model(output_dir=training_args.output_dir)
+
+    reft_model.save(save_directory=training_args.output_dir)
+
+    # test if we can load.
+    ReftModel.load(training_args.output_dir, model)
 
 
 if __name__ == "__main__":

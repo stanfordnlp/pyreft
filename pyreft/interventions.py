@@ -70,7 +70,8 @@ class LoreftIntervention(
 
         # Caveat: without creating a new layer, it might not work (still not sure why)
         # We have to recreate a layer, and load back the columns.
-        overload_w = state_dict["rotate_layer"]
+        overload_w = state_dict["rotate_layer"].to(
+            self.learned_source.weight.device)
         overload_w_width = overload_w.shape[-1]
         rotate_layer = LowRankRotateLayer(
             self.embed_dim, overload_w_width, init_orth=True).to(
