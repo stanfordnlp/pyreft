@@ -26,6 +26,11 @@ We copy everything from [LLM-Adapters](https://github.com/AGI-Edgerunners/LLM-Ad
 - For instrution following training:
   - [`train.json`](https://github.com/frankaging/ultrafeedback-dataset/blob/main/train.json)
 
+## Before you start to replicate our results
+
+`pyreft` is built after we aggregate all of our results. All of our results are based on our original source code under the folder [`original_code`](https://github.com/stanfordnlp/pyreft/blob/main/examples/loreft/original_code). If you want to replicate our results more closely, feel free to read the README in the original source code folder.
+
+
 ## Hyperparameter tuning
 
 As described in our Appendix C in the paper, we are using the last 300 examples from  the GSM8K training set for hyperparameter tuning. Here is an example of our running command:
