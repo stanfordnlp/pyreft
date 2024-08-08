@@ -189,3 +189,33 @@ python train.py -task math \
 You only need to add `--use_lora` flag to enable this. Feel free to look at the code for our implementation.
 
 
+## Baselining LoRA with matched parameter count as ReFT
+
+Our library now also supports running LoRA or other PEFTs so you can baseline PEFTs with controlled parameter count to get the prato-frontier of each method:
+
+```bash
+python train.py -task commonsense \
+-data_dir ../../datasets \
+-model yahma/llama-7b-hf \
+-seed 42 \
+--use_lora \
+--lora_rank 8 \
+--lora_alpha 32 \
+--lora_modules "o_proj" \
+--lora_layers "all" \
+--dropout 0.05 \
+-lr 1e-4 \
+-l "" -e 6 \
+-gradient_accumulation_steps 2 \
+-batch_size 16 \
+-eval_batch_size 4 \
+--test_split test \
+--use_normalized_template \
+--share_weights \
+--warmup_ratio 0.1 \
+--greedy_decoding
+```
+
+Note that setting the layer to be an empty string will let you bypass any model ReFTing, see `-l ""` in the command. Now, you can run any PEFTs using our code as well to ensure a fair comparison. For instance, by setting `--lora_rank 8`, `--lora_modules "o_proj"` and `--lora_layers "all"`, you will get a parameter-matched LoRA model! Try it out and see if it can beat ReFT.
+
+
