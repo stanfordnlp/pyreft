@@ -154,8 +154,11 @@ def compute_metrics(
                     inputs[k] = v.to(device)
             
             # [layers, batch_size, positions]
-            intervention_locations = inputs["intervention_locations"].permute(1, 0, 2)
-    
+            if inputs["intervention_locations"].dim() == 3:
+                intervention_locations = inputs["intervention_locations"].permute(1, 0, 2)
+            else:
+                intervention_locations = None
+            
             if task == "glue":
     
                 _, cf_outputs = intervenable(
@@ -174,18 +177,21 @@ def compute_metrics(
             
             else:
                 # get left padding count, [batch_size], and add to locations
-                left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
-                if left_padding.numel() > 0:
-                    left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
-                    intervention_locations += left_padding
-                    intervention_locations -= 1 # offset for the sink padding
+                if intervention_locations is not None:
+                    left_padding = (inputs["input_ids"] == tokenizer.bos_token_id).nonzero(as_tuple=True)[1]
+                    if left_padding.numel() > 0:
+                        left_padding = left_padding.reshape(1, -1, 1).to(device) # [1, batch_size, 1]
+                        intervention_locations += left_padding
+                        intervention_locations -= 1 # offset for the sink padding
+                    else:
+                        print("Warning: No BOS token found, skipping left padding adjustment.")
+    
+                    # repeat each batch by num_beams times in intervention locations
+                    # -> [layers, batch_size * num_beams, positions]
+                    intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
                 else:
-                    print("Warning: No BOS token found, skipping left padding adjustment.")
-
-                # repeat each batch by num_beams times in intervention locations
-                # -> [layers, batch_size * num_beams, positions]
-                intervention_locations = intervention_locations.repeat_interleave(num_beams, dim=1).tolist()
-
+                    intervention_locations = 0 # dummy for lora only baseline
+                    
                 # set generation args depending on task
                 generation_args = {
                     "base": {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]},

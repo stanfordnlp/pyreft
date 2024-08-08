@@ -81,12 +81,15 @@ class ReftTrainer(Trainer):
         # run intervened forward pass
         unit_locations = None
         if "intervention_locations" in inputs:
-            unit_locations={"sources->base": (
-                None,
-                inputs["intervention_locations"].permute(1, 0, 2).tolist()
-            )}
-            
-        _, cf_outputs = intervenable(
+            if inputs["intervention_locations"].dim() == 3:
+                unit_locations={"sources->base": (
+                    None,
+                    inputs["intervention_locations"].permute(1, 0, 2).tolist()
+                )}
+            else:
+                # this is dummy for lora only baseline
+                unit_locations={"sources->base": (None, 0)}
+        base_outputs, cf_outputs = intervenable(
             {
                 "input_ids": inputs["input_ids"],
                 "attention_mask": inputs["attention_mask"]
@@ -96,8 +99,11 @@ class ReftTrainer(Trainer):
             subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None
         )
         # return
-        return (cf_outputs, cf_outputs) if return_outputs else cf_outputs.loss
+        output = cf_outputs
+        if cf_outputs is None:
+            output = base_outputs # in case of lora only training
 
+        return (output, output) if return_outputs else output.loss
 
 class ReftTrainerForCausalLM(ReftTrainer):
     def get_train_dataloader(self) -> DataLoader:

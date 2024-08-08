@@ -116,6 +116,7 @@ def finetune(
     temperature: float,
     top_p: float,
     top_k: float,
+    disable_reft: bool, # this will run baselines with LoRA only
     use_lora: bool,
     lora_rank: int,
     lora_alpha: int,
@@ -155,13 +156,17 @@ def finetune(
         run_name = f"{model_str}.{task}.{now}"
 
     # which layers to intervene on
-    if layers != "all":
+    if layers.strip() == "":
+        layers = []
+    elif layers != "all":
         layers = [int(l) for l in layers.split(";")]
     else:
         temp_config = AutoConfig.from_pretrained(model)
         layers = [l for l in range(temp_config.num_hidden_layers)]
-
-    if lora_layers != "all":
+        
+    if lora_layers.strip() == "":
+        lora_layers = []
+    elif lora_layers != "all":
         lora_layers = [int(l) for l in lora_layers.split(";")]
     else:
         temp_config = AutoConfig.from_pretrained(model)
@@ -294,6 +299,7 @@ def finetune(
             lora_dropout=dropout, bias="none", task_type="CAUSAL_LM"
         )
         model = get_peft_model(model, peft_config)
+
     intervention_type = intervention_mapping[intervention_type]
         
     # select collator based on the type
@@ -508,6 +514,7 @@ def main():
     parser.add_argument('-top_k', '--top_k', type=float, default=None)
 
     # lora add-ons
+    parser.add_argument('-disable_reft', '--disable_reft', action='store_true')
     parser.add_argument('-use_lora', '--use_lora', action='store_true')
     parser.add_argument('-lora_rank', '--lora_rank', type=int, default=8)
     parser.add_argument('-lora_alpha', '--lora_alpha', type=int, default=32)
