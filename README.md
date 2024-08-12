@@ -22,6 +22,46 @@ Want to try a fine-tuning method that uses a fraction of the parameter count of 
 <img src="https://github.com/stanfordnlp/pyreft/assets/15223704/580d6cfd-4c3c-49a7-bc9f-1f9cc9a5aee7" width="400"/>
 </kbd>
 
+## What makes ReFT different from LoRA or PEFTs?
+
+We've got a lot of questions regarding why ReFT is any different from LoRA or Adaptor? What does "representation" mean in *Re*FT? We try to answer these questions through concrete case studies.
+
+First of all, ReFT shares a lot of common grounds with existing PEFTs:
+- LoRA on transformer's `o_proj` weights can be seen as an intervention applied on the attention output stream with *mergeable* weights. Formally, if the original input to `o_proj` is `x` and the original output is `h`, the new output `h' = Wx + WaWbx = (W+WaWb)x`. This transformation follows our intervention definition very closely.
+- Adaptor on each transformer layer output can also be seen as an intervention applied on residual stream with *un-mergeable* weights. With a similar notation, the new output `h' = x + f(x)` where `f(.)` is parameterized by the Adaptor.
+
+However, these PEFTs usually operate on weights. As a result, they apply the intervention across **all timesteps**. ReFT is different: (1) **ReFT selects timesteps to intervene on**; and (2) **ReFT targets representations instead of weights**. To help you understand these differences, let's consider these cases:
+
+##### Case I:
+- Learning LoRA weights on `o_proj`.
+- Learning ReFT interventons that apply to `o_proj` across all timesteps.
+- Learning ReFT interventons that apply to `o_proj` only on the first token.
+They have the exact same trainable parameter count.
+
+##### Case II:
+- Learning LoRA weights on `mlp_down`.
+- Learning ReFT interventons that apply to the residual stream across all timesteps.
+LoRA has slightly more trainable parameters; and LoRA intervenes the pre-residual representation.
+
+##### Case III:
+- Learning Adaptor that apply to the residual stream across all timesteps.
+- Learning ReFT interventons that apply to the residual stream only on the first token.
+They have the exact same trainable parameter count.
+
+##### Case IV:
+- Learning two distinct ReFT interventions, one applies to the residual stream of the first token and the other to the last token.
+- Learning Adaptor that apply to the residual stream across all timesteps.
+ReFT doubles the parameter count. Adaptor treats all tokens the same, but ReFT does not.
+
+##### Case V:
+- Learning a single ReFT intervention that applies to the concatenated representation of the last two tokens.
+- Learning a single ReFT intervention that applies to the last token conditioned on some similarity metric between two other representations.
+- LoRA? Adaptor?
+Now, we are entering zones that can only be easily achieved if you start to doing ReFT. 
+
+Hopefully, these case studies could help you to understand what ReFT is aiming towards!
+
+
 ## A step-by-step guide: training an 😀 Emoji-Chatbot ([live demo](https://huggingface.co/spaces/pyvene/reft_emoji_chat)) with ReFT in 30 seconds!
 
 **🔥 Train TinyLlama Emoji-Chatbot**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb)
