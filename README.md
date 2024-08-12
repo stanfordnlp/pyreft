@@ -51,6 +51,7 @@ However, these PEFTs usually operate on weights. As a result, they apply the int
 > ##### Case V:
 > - Learning a single ReFT intervention that applies to the concatenated representation of the last two tokens.
 > - Learning a single ReFT intervention that applies to the last token conditioned on some similarity metric between two other representations.
+> - Learning a single LoReFT intervention that applies to a linear subspace of the last token representation. ([Why](https://proceedings.mlr.press/v236/geiger24a/geiger24a.pdf) a linear subspace?)
 > - LoRA? Adaptor?
 > 
 > **Conclusion**: Now, we are entering zones that can only be easily achieved if you start to doing ReFT. 
