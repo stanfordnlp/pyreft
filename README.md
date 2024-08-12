@@ -32,32 +32,37 @@ First of all, ReFT shares a lot of common grounds with existing PEFTs:
 
 However, these PEFTs usually operate on weights. As a result, they apply the intervention across **all timesteps**. ReFT is different: (1) **ReFT selects timesteps to intervene on**; and (2) **ReFT targets representations instead of weights**. To help you understand these differences, let's consider these cases:
 
-##### Case I:
-- Learning LoRA weights on `o_proj`.
-- Learning ReFT interventons that apply to `o_proj` across all timesteps.
-- Learning ReFT interventons that apply to `o_proj` only on the first token.
-They have the exact same trainable parameter count.
+> ##### Case I:
+> - Learning LoRA weights on `o_proj`.
+> - Learning ReFT interventons that apply to `o_proj` across all timesteps.
+> - Learning ReFT interventons that apply to `o_proj` only on the first token.
+> 
+> **Conclusion**: They have the exact same trainable parameter count.
 
-##### Case II:
-- Learning LoRA weights on `mlp_down`.
-- Learning ReFT interventons that apply to the residual stream across all timesteps.
-LoRA has slightly more trainable parameters; and LoRA intervenes the pre-residual representation.
+> ##### Case II:
+> - Learning LoRA weights on `mlp_down`.
+> - Learning ReFT interventons that apply to the residual stream across all timesteps.
+> 
+> **Conclusion**: LoRA has slightly more trainable parameters; and LoRA intervenes the pre-residual representation.
 
-##### Case III:
-- Learning Adaptor that apply to the residual stream across all timesteps.
-- Learning ReFT interventons that apply to the residual stream only on the first token.
-They have the exact same trainable parameter count.
+> ##### Case III:
+> - Learning Adaptor that apply to the residual stream across all timesteps.
+> - Learning ReFT interventons that apply to the residual stream only on the first token.
+> 
+> **Conclusion**: They have the exact same trainable parameter count.
 
-##### Case IV:
-- Learning two distinct ReFT interventions, one applies to the residual stream of the first token and the other to the last token.
-- Learning Adaptor that apply to the residual stream across all timesteps.
-ReFT doubles the parameter count. Adaptor treats all tokens the same, but ReFT does not.
+> ##### Case IV:
+> - Learning two distinct ReFT interventions, one applies to the residual stream of the first token and the other to the last token.
+> - Learning Adaptor that apply to the residual stream across all timesteps.
+> 
+> **Conclusion**: ReFT doubles the parameter count. Adaptor treats all tokens the same, but ReFT does not.
 
-##### Case V:
-- Learning a single ReFT intervention that applies to the concatenated representation of the last two tokens.
-- Learning a single ReFT intervention that applies to the last token conditioned on some similarity metric between two other representations.
-- LoRA? Adaptor?
-Now, we are entering zones that can only be easily achieved if you start to doing ReFT. 
+> ##### Case V:
+> - Learning a single ReFT intervention that applies to the concatenated representation of the last two tokens.
+> - Learning a single ReFT intervention that applies to the last token conditioned on some similarity metric between two other representations.
+> - LoRA? Adaptor?
+> 
+> **Conclusion**: Now, we are entering zones that can only be easily achieved if you start to doing ReFT. 
 
 Hopefully, these case studies could help you to understand what ReFT is aiming towards!
 
