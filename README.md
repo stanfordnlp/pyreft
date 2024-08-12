@@ -1,26 +1,17 @@
 <h1 align="center"> <p>pyreft<sub> by <a href="https://github.com/stanfordnlp/pyvene">pyvene</a></sub></p></h1>
 <h3 align="center">
     <p>State-of-the-art Representation Fine-Tuning (ReFT) methods</p>
+    <a href="https://arxiv.org/abs/2404.03592"><strong>Read our paper »</strong></a></a>
 </h3>
-
-# A _Powerful_, _Efficient_ and _Interpretable_ fine-tuning method.
-Want to try a fine-tuning method that uses a fraction of the parameter count of SoTA PEFTs, while achieving potentially better performance? Introducing **`pyreft`**, a **representation fine-tuning (ReFT)** library that supports adapting internal language model representations via trainable interventions. With fewer fine-tuning parameters and more robust performance, **`pyreft`** can boost fine-tuning efficiency, decrease fine-tuning cost, while opening the doors to study the interpretability of adapting parameters.
 
 **`pyreft`** supports
 
-- Finetuning any pretrained LMs on HuggingFace with ReFT
+- Training ReFT with any pretrained LMs on HuggingFace
 - Setting ReFT hyperparameters via configs
-- Sharing the fine-tuned results easily to HuggingFace
-- Support quantized model
-- 🔥 [DPO+ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/dpo)
-- 🔥 [LoRA+ReFT](https://github.com/stanfordnlp/pyreft/tree/main/examples/peft)
+- Sharing the ReFT results easily to HuggingFace
 
 > [!TIP]
-> **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**]  
-
-<kbd>
-<img src="https://github.com/stanfordnlp/pyreft/assets/15223704/580d6cfd-4c3c-49a7-bc9f-1f9cc9a5aee7" width="400"/>
-</kbd>
+> **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**] 
 
 ## What makes ReFT different from LoRA or PEFTs?
 
@@ -68,6 +59,10 @@ Hopefully, these case studies could help you to understand what ReFT is aiming t
 
 
 ## A step-by-step guide: training an 😀 Emoji-Chatbot ([live demo](https://huggingface.co/spaces/pyvene/reft_emoji_chat)) with ReFT in 30 seconds!
+
+<kbd>
+<img src="https://github.com/stanfordnlp/pyreft/assets/15223704/580d6cfd-4c3c-49a7-bc9f-1f9cc9a5aee7" width="400"/>
+</kbd>
 
 **🔥 Train TinyLlama Emoji-Chatbot**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb)
 
