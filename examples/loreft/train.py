@@ -295,7 +295,9 @@ def finetune(
         lora_modules = [m for m in lora_modules.split(";")]
         peft_config = LoraConfig(
             r=lora_rank, lora_alpha=lora_alpha, target_modules=lora_modules,
-            layers_to_transform=lora_layers, use_rslora=True,
+            layers_to_transform=lora_layers, 
+            # disable this to follow previous settings.
+            use_rslora=False, 
             lora_dropout=dropout, bias="none", task_type="CAUSAL_LM"
         )
         model = get_peft_model(model, peft_config)
