@@ -18,7 +18,7 @@
 We've got a lot of questions regarding why ReFT is any different from LoRA or Adaptor? What does "representation" mean in *Re*FT? We try to answer these questions through concrete case studies.
 
 First of all, ReFT shares a lot of common grounds with existing PEFTs:
-- LoRA on transformer's `o_proj` weights can be seen as an intervention applied on the attention output stream with *mergeable* weights. Formally, if the original input to `o_proj` is `x` and the original output is `h`, the new output `h' = Wx + WaWbx = (W+WaWb)x`. This transformation follows our intervention definition very closely.
+- LoRA on transformer's `o_proj` weights can be seen as an intervention applied on the attention **input** stream with *mergeable* weights. Formally, if the original input to `o_proj` is `x` and the original output is `h`, the new output `h' = Wx + WaWbx = (W+WaWb)x`. This transformation follows our intervention definition very closely.
 - Adaptor on each transformer layer output can also be seen as an intervention applied on residual stream with *un-mergeable* weights. With a similar notation, the new output `h' = x + f(x)` where `f(.)` is parameterized by the Adaptor.
 
 However, these PEFTs usually operate on weights. As a result, they apply the intervention across **all timesteps**. ReFT is different: (1) **ReFT selects timesteps to intervene on**; and (2) **ReFT targets representations instead of weights**. To help you understand these differences, let's consider these cases:
@@ -28,7 +28,7 @@ However, these PEFTs usually operate on weights. As a result, they apply the int
 > - Learning ReFT interventons that apply to `o_proj` across all timesteps.
 > - Learning ReFT interventons that apply to `o_proj` only on the first token.
 > 
-> **Conclusion**: They have the exact same trainable parameter count.
+> **Conclusion**: They have the exact same trainable parameter count. LoRA applies to the input of `o_proj`, but ReFT applies to the output of `o_proj`.
 
 > ##### Case II:
 > - Learning LoRA weights on `mlp_down`.
