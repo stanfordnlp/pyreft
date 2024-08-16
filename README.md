@@ -13,6 +13,11 @@
 > [!TIP]
 > **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**] 
 
+Install **`pyreft`** from pip+git:
+```bash
+pip install git+https://github.com/stanfordnlp/pyreft.git
+```
+
 ## What makes ReFT different from LoRA or PEFTs?
 
 We've got a lot of questions regarding why ReFT is any different from LoRA or Adaptor? What does "representation" mean in *Re*FT? We try to answer these questions through concrete case studies.
@@ -64,14 +69,6 @@ Hopefully, these case studies could help you to understand what ReFT is aiming t
 <kbd>
 <img src="https://github.com/stanfordnlp/pyreft/assets/15223704/580d6cfd-4c3c-49a7-bc9f-1f9cc9a5aee7" width="400"/>
 </kbd>
-
-**🔥 Train TinyLlama Emoji-Chatbot**: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb)
-
-First, install **`pyreft`** from pip+git:
-
-```bash
-pip install git+https://github.com/stanfordnlp/pyreft.git
-```
 
 ### Step 1: loading the raw LM you want to train with ReFT.
 We first load in any model we want to gain controls over. In this case, we load an instruct-tuned **`Llama-2-chat 7B`** from HuggingFace:
