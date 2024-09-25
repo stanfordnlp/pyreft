@@ -13,7 +13,12 @@
 > [!TIP]
 > **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**] 
 
-Install **`pyreft`** from pip+git:
+Install **`pyreft`** from pip:
+```bash
+pip install pyreft
+```
+
+Alternatively, install our latest **`pyreft`** from pip+git:
 ```bash
 pip install git+https://github.com/stanfordnlp/pyreft.git
 ```
