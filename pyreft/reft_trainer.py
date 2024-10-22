@@ -21,7 +21,7 @@ from tqdm import tqdm
 import os
 import torch
 import re
-import evaluate
+
 import numpy as np
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers.utils import logging
