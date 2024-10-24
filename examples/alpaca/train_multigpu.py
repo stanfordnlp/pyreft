@@ -132,13 +132,14 @@ def train(rank, world_size):
     
     missing_in_ddp = original_params - ddp_params
     missing_in_ddp = sorted(missing_in_ddp)
-    print("Missing in DDP is", missing_in_ddp)
-    print("Printing original params")
-    for x in reft_model.named_parameters():
-        print(f"{x[0]} -> {x[1].device}")
-    print("Printing DDP params")
-    for x in reft_model_ddp.named_parameters():
-        print(f"{x[0]} -> {x[1].device}")
+    if rank == 0:
+        print("Missing in DDP is", missing_in_ddp)
+        print("Printing original params")
+        for x in reft_model.named_parameters():
+            print(f"{x[0]} -> {x[1].device}")
+        print("Printing DDP params")
+        for x in reft_model_ddp.named_parameters():
+            print(f"{x[0]} -> {x[1].device}")
 
     # get training data
     data_module = make_supervised_data_module(

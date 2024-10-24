@@ -125,6 +125,7 @@ def train():
         model=reft_model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.train()
     trainer.save_state()
+    # print(reft_model)
 
     # uncomment this line to only saving the interventons, 
     # you need to reinit the reft model with random init 
