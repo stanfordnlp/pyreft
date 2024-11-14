@@ -1,6 +1,7 @@
 import pyvene as pv
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data.sampler import Sampler
+from torch.utils.data import DataLoader, DistributedSampler
 from transformers import (
     Trainer,
     TrainingArguments,
@@ -15,7 +16,7 @@ from transformers.trainer_utils import (
 )
 from datasets import Dataset
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Union, Iterable
 
 from tqdm import tqdm
 import os
@@ -25,6 +26,7 @@ import evaluate
 import numpy as np
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers.utils import logging
+import torch.distributed as dist
 
 logger = logging.get_logger(__name__)
 
@@ -52,7 +54,13 @@ def make_data_collator(tokenizer, model) -> ReftDataCollator:
     return ReftDataCollator(data_collator=data_collator_fn)
 
 
-def make_dataloader(dataset: Dataset, batch_size: int, collate_fn: DataCollatorForSeq2Seq, shuffle: bool) -> DataLoader:
+def make_dataloader(
+    dataset: Dataset,
+    batch_size: int,
+    collate_fn: DataCollatorForSeq2Seq,
+    shuffle: bool,
+    sampler: Union[Sampler, Iterable, None]=None
+) -> DataLoader:
     return DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=collate_fn)
 
 
@@ -78,7 +86,8 @@ class ReftTrainer(Trainer):
         inputs,
         return_outputs=False
     ):
-        # run intervened forward pass
+        rank = dist.get_rank()
+        device = torch.device(f'cuda:{rank}')
         unit_locations = None
         if "intervention_locations" in inputs:
             if inputs["intervention_locations"].dim() == 3:
@@ -91,12 +100,12 @@ class ReftTrainer(Trainer):
                 unit_locations={"sources->base": (None, 0)}
         base_outputs, cf_outputs = intervenable(
             {
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"]
+                "input_ids": inputs["input_ids"], # .to(device),
+                "attention_mask": inputs["attention_mask"], # .to(device),
             },
             unit_locations=unit_locations,
-            labels=inputs["labels"],
-            subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None
+            labels=inputs["labels"], # .to(device),
+            subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None # .to(device)
         )
         # return
         output = cf_outputs
@@ -109,6 +118,19 @@ class ReftTrainerForCausalLM(ReftTrainer):
     def get_train_dataloader(self) -> DataLoader:
         return make_dataloader(self.train_dataset, self._train_batch_size, self.data_collator, shuffle=True)
 
+class ReftTrainerForCausalLMDistributed(ReftTrainer):
+    def save_model(self, output_dir, _internal_call=False):
+        if dist.get_rank() == 0:
+            super().save_model(output_dir, _internal_call)
+
+    def get_train_dataloader(self) -> DataLoader:
+        return make_dataloader(
+            self.train_dataset,
+            self._train_batch_size,
+            self.data_collator,
+            shuffle=False,
+            sampler=DistributedSampler(self.train_dataset, shuffle=True),
+        )
     
 class ReftTrainerForSequenceClassification(ReftTrainer):
     def compute_loss(
