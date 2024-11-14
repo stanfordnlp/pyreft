@@ -12,7 +12,7 @@ from pyreft import (
     TaskType,
     get_reft_model,
     ReftConfig,
-    ReftTrainerForCausalLM, 
+    ReftTrainerForCausalLMDistributed, 
     LoreftIntervention,
     ReftDataCollator,
     ReftSupervisedDataset,
@@ -59,6 +59,7 @@ class TrainingArguments(transformers.TrainingArguments):
     share_weights: bool = field(default=False)
     remove_unused_columns: bool = field(default=False)
     rank: int = field(default=1)
+    # local_rank: int = field(default=-1)
     max_n_train_example: int = field(default=None)
 
 
@@ -123,8 +124,12 @@ def train(rank, world_size):
 
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config)
-    reft_model.print_trainable_parameters()
-    reft_model_ddp = DDP(reft_model) # , device_ids=[device_id], find_unused_parameters=False)
+    reft_model.set_device(device)
+    reft_model.train()
+    reft_model.model.train()
+    reft_model.training = True
+    reft_model = reft_model.to(rank)
+    reft_model_ddp = DDP(reft_model, device_ids=[device_id])
 
     # check params and devices
     original_params = {name for name, _ in reft_model.named_parameters()}
@@ -132,29 +137,35 @@ def train(rank, world_size):
     
     missing_in_ddp = original_params - ddp_params
     missing_in_ddp = sorted(missing_in_ddp)
-    if rank == 0:
-        print("Missing in DDP is", missing_in_ddp)
-        print("Printing original params")
-        for x in reft_model.named_parameters():
-            print(f"{x[0]} -> {x[1].device}")
-        print("Printing DDP params")
-        for x in reft_model_ddp.named_parameters():
-            print(f"{x[0]} -> {x[1].device}")
+    for param_name in missing_in_ddp:
+        param = dict(reft_model.named_parameters())[param_name]
+        new_param_name = param_name.replace(".", "_")
+        reft_model_ddp.register_parameter(new_param_name, param)
+        dist.broadcast(param.data, src=0)  # Broadcast from rank 0 to other processes
+
+    reft_model_ddp.train()
+    reft_model_ddp.module.train()
+    reft_model_ddp.training = True
 
     # get training data
     data_module = make_supervised_data_module(
         tokenizer=tokenizer, model=model, layers=layers,
         training_args=training_args, data_args=data_args)
 
-    # train
-    trainer = ReftTrainerForCausalLM(
+    trainer = ReftTrainerForCausalLMDistributed(
         model=reft_model_ddp, tokenizer=tokenizer, args=training_args, **data_module)
+
+    # assert all parameters on same device
+    for (n, p) in trainer.model.named_parameters():
+        print(n, p.get_device(), rank)
+        assert(p.get_device() == rank)
+
+    # train
     trainer.train()
-    print("Rank is", rank)
     if rank == 0:
         trainer.save_state()
         reft_model_ddp.module.save(save_directory=training_args.output_dir)
-        # uncomment this line to only saving the interventons, 
+        # uncomment this line to only save the interventons, 
         # you need to reinit the reft model with random init 
         # interventions mounted then load these weights
         # trainer.save_model(output_dir=training_args.output_dir)
@@ -162,23 +173,11 @@ def train(rank, world_size):
     # test if we can load.
     ReftModel.load(training_args.output_dir, model)
 
-def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
-    dist.init_process_group("gloo", rank = rank, world_size = world_size)
-
-def cleanup():
-    dist.destroy_process_group()
-
-def process_fn(rank, world_size):
-    setup(rank, world_size)
-    print("Rank", rank, "world size", world_size)
-    train(rank, world_size)
-    cleanup()
-
 if __name__ == "__main__":
-    assert torch.cuda.is_available(), "MultiGPU script needs CUDA to run"
-    n_gpus = torch.cuda.device_count()
-    assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
-    world_size = n_gpus
-    mp.spawn(process_fn, args=(world_size,), nprocs=world_size, join=True)
+    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+    dist.init_process_group("nccl")
+    rank = dist.get_rank()
+    print("Starting on rank", rank)
+    train(rank, -1)
+    dist.destroy_process_group()
+    print("Finished on rank", rank)
