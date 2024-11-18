@@ -59,7 +59,6 @@ class TrainingArguments(transformers.TrainingArguments):
     share_weights: bool = field(default=False)
     remove_unused_columns: bool = field(default=False)
     rank: int = field(default=1)
-    # local_rank: int = field(default=-1)
     max_n_train_example: int = field(default=None)
 
 
@@ -147,6 +146,14 @@ def train(rank, world_size):
     reft_model_ddp.module.train()
     reft_model_ddp.training = True
 
+    # log to wandb from main process only
+    if rank == 0:
+        training_args.report_to = ['wandb']
+        training_args.run_name = 'multigpu_reft_alpaca_example'
+        training_args.logging_steps = 1
+    else:
+        training_args.report_to = []
+
     # get training data
     data_module = make_supervised_data_module(
         tokenizer=tokenizer, model=model, layers=layers,
@@ -154,24 +161,24 @@ def train(rank, world_size):
 
     trainer = ReftTrainerForCausalLMDistributed(
         model=reft_model_ddp, tokenizer=tokenizer, args=training_args, **data_module)
-
     # assert all parameters on same device
     for (n, p) in trainer.model.named_parameters():
-        print(n, p.get_device(), rank)
         assert(p.get_device() == rank)
 
     # train
     trainer.train()
     if rank == 0:
+        print("Saving")
         trainer.save_state()
         reft_model_ddp.module.save(save_directory=training_args.output_dir)
         # uncomment this line to only save the interventons, 
         # you need to reinit the reft model with random init 
         # interventions mounted then load these weights
         # trainer.save_model(output_dir=training_args.output_dir)
-
-    # test if we can load.
-    ReftModel.load(training_args.output_dir, model)
+        print("Loading")
+        # test if we can load.
+        ReftModel.load(training_args.output_dir, model)
+        print("Complete")
 
 if __name__ == "__main__":
     torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))

@@ -86,8 +86,7 @@ class ReftTrainer(Trainer):
         inputs,
         return_outputs=False
     ):
-        rank = dist.get_rank()
-        device = torch.device(f'cuda:{rank}')
+        # run intervened forward pass
         unit_locations = None
         if "intervention_locations" in inputs:
             if inputs["intervention_locations"].dim() == 3:
@@ -100,12 +99,12 @@ class ReftTrainer(Trainer):
                 unit_locations={"sources->base": (None, 0)}
         base_outputs, cf_outputs = intervenable(
             {
-                "input_ids": inputs["input_ids"], # .to(device),
-                "attention_mask": inputs["attention_mask"], # .to(device),
+                "input_ids": inputs["input_ids"],
+                "attention_mask": inputs["attention_mask"]
             },
             unit_locations=unit_locations,
-            labels=inputs["labels"], # .to(device),
-            subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None # .to(device)
+            labels=inputs["labels"],
+            subspaces=inputs["subspaces"].permute(1, 0, 2).tolist() if "subspaces" in inputs else None
         )
         # return
         output = cf_outputs
