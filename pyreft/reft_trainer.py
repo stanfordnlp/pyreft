@@ -61,7 +61,7 @@ def make_dataloader(
     shuffle: bool,
     sampler: Union[Sampler, Iterable, None]=None
 ) -> DataLoader:
-    return DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=collate_fn)
+    return DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, sampler=sampler, collate_fn=collate_fn)
 
 
 class ReftTrainer(Trainer):
