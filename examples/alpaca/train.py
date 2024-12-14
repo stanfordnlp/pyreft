@@ -74,6 +74,10 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
 
 
 def train():
+    seed = 42
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 

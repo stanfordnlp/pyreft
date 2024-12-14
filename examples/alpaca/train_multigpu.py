@@ -82,6 +82,10 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
 
 
 def train(rank, world_size):
+    seed = 42
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
     device_id = rank
     device = torch.device(f'cuda:{device_id}')
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
