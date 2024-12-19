@@ -11,6 +11,7 @@ from .reft_model import (
 from .reft_trainer import (
     ReftTrainer,
     ReftTrainerForCausalLM,
+    ReftTrainerForCausalLMDistributed,
     ReftTrainerForSequenceClassification
 )
 

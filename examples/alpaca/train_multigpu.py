@@ -12,14 +12,22 @@ from pyreft import (
     TaskType,
     get_reft_model,
     ReftConfig,
-    ReftTrainerForCausalLM, 
+    ReftTrainerForCausalLMDistributed, 
     LoreftIntervention,
     ReftDataCollator,
     ReftSupervisedDataset,
     ReftModel
 )
+import pyvene as pv
+import os
+import sys
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+def count_parameters(model):
+    """Count parameters of a model that require gradients"""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 @dataclass
 class ModelArguments:
@@ -73,11 +81,13 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, mod
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
-def train():
+def train(rank, world_size):
     seed = 42
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+    device_id = rank
+    device = torch.device(f'cuda:{device_id}')
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
@@ -117,29 +127,68 @@ def train():
 
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config)
-    reft_model.print_trainable_parameters()
+    reft_model.set_device(device)
+    reft_model.train()
+    reft_model.model.train()
+    reft_model.training = True
+    reft_model = reft_model.to(rank)
+    reft_model_ddp = DDP(reft_model, device_ids=[device_id])
+
+    # check params and devices
+    original_params = {name for name, _ in reft_model.named_parameters()}
+    ddp_params = {name for name, _ in reft_model_ddp.named_parameters()}
+    
+    missing_in_ddp = original_params - ddp_params
+    missing_in_ddp = sorted(missing_in_ddp)
+    for param_name in missing_in_ddp:
+        param = dict(reft_model.named_parameters())[param_name]
+        new_param_name = param_name.replace(".", "_")
+        reft_model_ddp.register_parameter(new_param_name, param)
+        dist.broadcast(param.data, src=0)  # Broadcast from rank 0 to other processes
+
+    reft_model_ddp.train()
+    reft_model_ddp.module.train()
+    reft_model_ddp.training = True
+
+    # log to wandb from main process only
+    if rank == 0:
+        training_args.report_to = ['wandb']
+        training_args.run_name = 'multigpu_reft_alpaca_example'
+        training_args.logging_steps = 1
+    else:
+        training_args.report_to = []
 
     # get training data
     data_module = make_supervised_data_module(
         tokenizer=tokenizer, model=model, layers=layers,
         training_args=training_args, data_args=data_args)
 
+    trainer = ReftTrainerForCausalLMDistributed(
+        model=reft_model_ddp, tokenizer=tokenizer, args=training_args, **data_module)
+    # assert all parameters on same device
+    for (n, p) in trainer.model.named_parameters():
+        assert(p.get_device() == rank)
+
     # train
-    trainer = ReftTrainerForCausalLM(
-        model=reft_model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.train()
-    trainer.save_state()
-
-    # uncomment this line to only saving the interventons, 
-    # you need to reinit the reft model with random init 
-    # interventions mounted then load these weights
-    # trainer.save_model(output_dir=training_args.output_dir)
-
-    reft_model.save(save_directory=training_args.output_dir)
-
-    # test if we can load.
-    ReftModel.load(training_args.output_dir, model)
-
+    if rank == 0:
+        print("Saving")
+        trainer.save_state()
+        reft_model_ddp.module.save(save_directory=training_args.output_dir)
+        # uncomment this line to only save the interventons, 
+        # you need to reinit the reft model with random init 
+        # interventions mounted then load these weights
+        # trainer.save_model(output_dir=training_args.output_dir)
+        print("Loading")
+        # test if we can load.
+        ReftModel.load(training_args.output_dir, model)
+        print("Complete")
 
 if __name__ == "__main__":
-    train()
+    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+    dist.init_process_group("nccl")
+    rank = dist.get_rank()
+    print("Starting on rank", rank)
+    train(rank, -1)
+    dist.destroy_process_group()
+    print("Finished on rank", rank)
