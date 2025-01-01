@@ -436,6 +436,25 @@ class ReftSupervisedDataset(ReftDataset):
     Remember to pass in the input_field, output_field, and instruction_field as kwargs.
     """
 
+    def __init__(
+        self, task: str, data_path: str,
+        tokenizer: transformers.PreTrainedTokenizer,
+        data_split="train", dataset=None, seed=42, max_n_example=None,
+        no_stop = False,
+        **kwargs,
+    ):
+        self.no_stop = no_stop
+        super().__init__(
+            task=task,
+            data_path=data_path,
+            tokenizer=tokenizer,
+            data_split=data_split,
+            dataset=dataset,
+            seed=seed,
+            max_n_example=max_n_example,
+            **kwargs
+        )
+
     def preprocess(self, kwargs):
         self.input_field = kwargs["input_field"]
         self.output_field = kwargs["output_field"]
@@ -455,7 +474,9 @@ class ReftSupervisedDataset(ReftDataset):
         last_position = base_prompt_length - 1
         
         # input
-        base_input = base_prompt + data_item[self.output_field] + self.tokenizer.eos_token
+        base_input = base_prompt + data_item[self.output_field]
+        if not self.no_stop:
+            base_input += self.tokenizer.eos_token
         input_ids = self.tokenizer(base_input, max_length=self.tokenizer.model_max_length,
             truncation=True, return_tensors="pt")["input_ids"][0]
         result["input_ids"] = input_ids
