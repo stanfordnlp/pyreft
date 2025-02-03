@@ -66,12 +66,13 @@ def make_dataloader(
 
 class ReftTrainer(Trainer):
     def save_model(self, output_dir, _internal_call=False):
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        self.model.save_intervention(
-            save_directory=f"{output_dir}/intervenable_model", 
-            include_model=True
-        )
+        if dist.get_rank() == 0:
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            self.model.save_intervention(
+                save_directory=f"{output_dir}/intervenable_model", 
+                include_model=True
+            )
 
     def _load_best_model(self):
         logger.warning(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
