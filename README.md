@@ -10,6 +10,10 @@
 - Setting ReFT hyperparameters via configs
 - Sharing the ReFT results easily to HuggingFace
 
+<a href="https://pypi.org/project/pyreft/"><img src="https://img.shields.io/pepy/dt/pyreft?color=green"></img></a>
+<a href="https://pypi.org/project/pyreft/"><img src="https://img.shields.io/pypi/v/pyreft?color=red"></img></a> 
+<a href="https://pypi.org/project/pyreft/"><img src="https://img.shields.io/pypi/l/pyreft?color=blue"></img></a>
+
 > [!TIP]
 > **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**]     
 > **FSDP Integration:** See our instruction-tuning example [here](https://github.com/stanfordnlp/pyreft/tree/main/examples/alpaca)
