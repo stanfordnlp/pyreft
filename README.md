@@ -11,7 +11,8 @@
 - Sharing the ReFT results easily to HuggingFace
 
 > [!TIP]
-> **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**] 
+> **Getting Started:** [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/pyreft/blob/main/main_demo.ipynb) [**ReFT with TinyLlama**]     
+> **FSDP Integration:** See our instruction-tuning example [here](https://github.com/stanfordnlp/pyreft/tree/main/examples/alpaca)
 
 Install **`pyreft`** from pip:
 ```bash
