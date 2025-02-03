@@ -50,3 +50,33 @@ python train.py --model_name_or_path yahma/llama-7b-hf \
 ```
 
 Training will take less than 15 mins on a single A100 (40G MEM) GPU.
+
+## Multi-GPU with FSDP
+
+You can also train Alpaca with FSDP on multi-GPUs.
+
+```bash
+torchrun --nproc_per_node=<your_n_gpu> --master_port=<your_port> train.py \
+    --model_name_or_path <your_model_name> \
+    --layers "8;19" \
+    --rank 4 \
+    --position "f1+l1" \
+    --data_path <your_data> \
+    --bf16 True \
+    --output_dir <your_output_dir> \
+    --num_train_epochs 3 \
+    --per_device_train_batch_size 4 \
+    --per_device_eval_batch_size 4 \
+    --gradient_accumulation_steps 8 \
+    --evaluation_strategy "no" \
+    --save_strategy "steps" \
+    --save_steps 2000 \
+    --save_total_limit 1 \
+    --learning_rate 2e-5 \
+    --weight_decay 0. \
+    --warmup_ratio 0.03 \
+    --lr_scheduler_type "cosine" \
+    --logging_steps 1 \
+    --fsdp_config ./fsdp_config.json \
+    --tf32 True
+```

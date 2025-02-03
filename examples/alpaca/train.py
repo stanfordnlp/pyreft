@@ -1,25 +1,22 @@
-import copy
-import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional
 
 import torch
 import transformers
-from torch.utils.data import Dataset
-from transformers import Trainer
 
 from pyreft import (
-    TaskType,
     get_reft_model,
     ReftConfig,
-    ReftTrainerForCausalLM, 
     LoreftIntervention,
     ReftDataCollator,
     ReftSupervisedDataset,
-    ReftModel
+    ReftTrainer,
 )
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+
+def count_parameters(model):
+    """Count parameters of a model that require gradients"""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 @dataclass
 class ModelArguments:
@@ -102,9 +99,7 @@ def train():
     # get reft model
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
-        torch_dtype=torch.bfloat16, 
-        device_map=device
-    )
+        torch_dtype=torch.bfloat16)
     representations = [{
         "layer": l, "component": "block_output",
         # this is needed for loading although dummy.
@@ -117,28 +112,18 @@ def train():
 
     reft_config = ReftConfig(representations=representations)
     reft_model = get_reft_model(model, reft_config)
-    reft_model.print_trainable_parameters()
 
     # get training data
     data_module = make_supervised_data_module(
         tokenizer=tokenizer, model=model, layers=layers,
         training_args=training_args, data_args=data_args)
 
-    # train
-    trainer = ReftTrainerForCausalLM(
-        model=reft_model, tokenizer=tokenizer, args=training_args, **data_module)
+    trainer = ReftTrainer(
+        model=reft_model, tokenizer=tokenizer, 
+        args=training_args, **data_module)
     trainer.train()
     trainer.save_state()
-
-    # uncomment this line to only saving the interventons, 
-    # you need to reinit the reft model with random init 
-    # interventions mounted then load these weights
-    # trainer.save_model(output_dir=training_args.output_dir)
-
-    reft_model.save(save_directory=training_args.output_dir)
-
-    # test if we can load.
-    ReftModel.load(training_args.output_dir, model)
+    trainer.save_model(output_dir=training_args.output_dir)
 
 
 if __name__ == "__main__":
