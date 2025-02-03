@@ -80,3 +80,35 @@ torchrun --nproc_per_node=<your_n_gpu> --master_port=<your_port> train.py \
     --fsdp_config ./fsdp_config.json \
     --tf32 True
 ```
+
+Here is an example `fsdp_config.json`:
+
+```json
+{
+    "compute_environment": "LOCAL_MACHINE",
+    "debug": false,
+    "distributed_type": "FSDP",
+    "downcast_bf16": "no",
+    "fsdp_config": {
+      "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+      "fsdp_backward_prefetch_policy": "BACKWARD_PRE",
+      "fsdp_forward_prefetch": false,
+      "fsdp_cpu_ram_efficient_loading": true,
+      "fsdp_offload_params": false,
+      "fsdp_sharding_strategy": "FULL_SHARD",
+      "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+      "fsdp_sync_module_states": true,
+      "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+      "fsdp_use_orig_params": true
+    },
+    "machine_rank": 0,
+    "main_training_function": "main",
+    "mixed_precision": "bf16",
+    "rdzv_backend": "static",
+    "same_network": true,
+    "tpu_env": [],
+    "tpu_use_cluster": false,
+    "tpu_use_sudo": false,
+    "use_cpu": false
+}
+```
