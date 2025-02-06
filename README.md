@@ -276,6 +276,14 @@ reft_model = pyreft.ReftModel.load(
 )
 ```
 
+> [!Warning]
+> When you try to load an unsupported model by pyvene, you will get KeyError. In order to avoid that, set up a ReFT model first, and load your model in the following way.
+
+```py
+reft_model = pyreft.ReftModel.load_pv_undefined_model(
+    "./reft_to_share", reft_model)
+```
+
 ### LM training and serving with ReFT.
 ReFT enables intervention-based model training and serving at scale. It allows continuous batching while only keeping a single copy of the base LM. The base LM, when intervened, can solve different user tasks with batched inputs.
 
