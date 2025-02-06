@@ -65,7 +65,7 @@ def make_dataloader(
 
 
 class ReftTrainer(Trainer):
-    def save_model(self, output_dir, _internal_call=False):
+    def save_model(self, output_dir, _internal_call=False, **kwargs):
         # Handle CPU training and non-distributed cases
         try:
             is_main_process = not dist.is_initialized() or dist.get_rank() == 0
@@ -94,10 +94,20 @@ class ReftTrainer(Trainer):
                 logger.error(f"Error saving model to {target_dir}: {str(e)}")
                 raise  # Re-raise the exception after logging
 
-    def _load_best_model(self):
+    def _load_best_model(self, **kwargs):
         logger.warning(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
         self.model.load_intervention(
             f"{self.state.best_model_checkpoint}/intervenable_model", 
+            include_model=True
+        )
+    
+    def _load_from_checkpoint(self, resume_from_checkpoint, model=None, **kwargs):
+        if model is None:
+            model = self.model
+
+        logger.warning(f"Loading checkpoint from {resume_from_checkpoint}.")
+        model.load_intervention(
+            f"{resume_from_checkpoint}/intervenable_model", 
             include_model=True
         )
 
@@ -105,7 +115,8 @@ class ReftTrainer(Trainer):
         self,
         intervenable: pv.IntervenableModel,
         inputs,
-        return_outputs=False
+        return_outputs=False,
+        **kwargs
     ):
         # run intervened forward pass
         unit_locations = None
