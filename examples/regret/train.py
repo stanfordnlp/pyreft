@@ -36,11 +36,11 @@ from tqdm import tqdm
 from pyreft import (
     get_reft_model,
     ReftConfig,
-    ReftTrainerForCausalLM,
     LoreftIntervention,
     ReftDataCollator,
     ReftGenerationDataset,
 )
+from trainer import ReftTrainerForCausalLMWithEval
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -189,9 +189,21 @@ def train(args):
     
     if args.max_n_train_example is not None:
         raw_dataset = raw_dataset.shuffle(seed=args.seed)
-        raw_dataset = raw_dataset.select(range(min(args.max_n_train_example, len(raw_dataset))))
+        # Request extra examples for eval split
+        total_needed = int(args.max_n_train_example / (1 - args.eval_split))
+        raw_dataset = raw_dataset.select(range(min(total_needed, len(raw_dataset))))
     
     processed_dataset = preprocess_tulu3_to_prompt_completion(raw_dataset, tokenizer)
+    
+    # Split into train/eval
+    if args.eval_split > 0:
+        split_dataset = processed_dataset.train_test_split(test_size=args.eval_split, seed=args.seed)
+        train_hf_dataset = split_dataset["train"]
+        eval_hf_dataset = split_dataset["test"]
+        print(f"Split dataset: {len(train_hf_dataset)} train, {len(eval_hf_dataset)} eval")
+    else:
+        train_hf_dataset = processed_dataset
+        eval_hf_dataset = None
     
     # Use ReftGenerationDataset from pyreft
     train_dataset = ReftGenerationDataset(
@@ -199,7 +211,7 @@ def train(args):
         data_path=None,
         tokenizer=tokenizer,
         data_split="train",
-        dataset=processed_dataset,
+        dataset=train_hf_dataset,
         seed=args.seed,
         max_n_example=None,  # Already handled above
         prompt_field="prompt",
@@ -208,6 +220,24 @@ def train(args):
         position=args.position,
         share_weights=args.share_weights,
     )
+    
+    # Create eval dataset if we have eval data
+    eval_dataset = None
+    if eval_hf_dataset is not None:
+        eval_dataset = ReftGenerationDataset(
+            task="tulu3",
+            data_path=None,
+            tokenizer=tokenizer,
+            data_split="train",  # Use "train" to get labels
+            dataset=eval_hf_dataset,
+            seed=args.seed,
+            max_n_example=None,
+            prompt_field="prompt",
+            completion_field="completion",
+            num_interventions=len(layers),
+            position=args.position,
+            share_weights=args.share_weights,
+        )
     
     # Create data collator
     data_collator_fn = transformers.DataCollatorForSeq2Seq(
@@ -228,12 +258,15 @@ def train(args):
         run_name=run_name,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.lr,
         lr_scheduler_type=args.schedule,
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         logging_steps=args.logging_steps,
+        eval_strategy="steps" if eval_dataset is not None else "no",
+        eval_steps=args.eval_steps if eval_dataset is not None else None,
         save_strategy="epoch",
         save_total_limit=2,
         bf16=(args.dtype == "bfloat16" and device == "cuda"),
@@ -247,11 +280,12 @@ def train(args):
     )
     
     # Create trainer
-    trainer = ReftTrainerForCausalLM(
+    trainer = ReftTrainerForCausalLMWithEval(
         model=reft_model,
         tokenizer=tokenizer,
         args=training_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         data_collator=data_collator,
     )
     
@@ -392,6 +426,24 @@ def main():
         type=int,
         default=None,
         help="Maximum number of training examples (default: None = use all)"
+    )
+    parser.add_argument(
+        "--eval_split",
+        type=float,
+        default=0.05,
+        help="Fraction of data to hold out for evaluation (default: 0.05)"
+    )
+    parser.add_argument(
+        "--eval_batch_size",
+        type=int,
+        default=8,
+        help="Batch size for evaluation (default: 8)"
+    )
+    parser.add_argument(
+        "--eval_steps",
+        type=int,
+        default=500,
+        help="Evaluate every N steps (default: 500)"
     )
     
     # Logging and output arguments

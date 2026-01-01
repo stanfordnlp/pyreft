@@ -74,6 +74,16 @@ python train.py \
 | `--max_length` | 2048 | Maximum sequence length |
 | `--max_n_train_example` | None | Limit training examples (useful for debugging) |
 
+### Evaluation Parameters
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--eval_split` | 0.05 | Fraction of data to hold out for evaluation |
+| `--eval_batch_size` | 8 | Batch size for evaluation |
+| `--eval_steps` | 500 | Evaluate every N steps |
+
+The trainer logs **NLL (negative log-likelihood)** and **perplexity** on the held-out eval set to wandb (if enabled) or console.
+
 ### Other Parameters
 
 | Argument | Default | Description |
