@@ -125,6 +125,29 @@ python train.py --rank 8 --layers "4;8;12" --max_n_train_example 50000
 python train.py --rank 16 --layers "all" --epochs 3 --gradient_checkpointing
 ```
 
+## Running Sweeps (SLURM)
+
+For hyperparameter sweeps on a cluster:
+
+```bash
+# Preview the jobs that will be submitted
+./launch_sweep.sh --dry-run
+
+# Submit full grid (7 ranks x 6 LRs = 42 jobs)
+./launch_sweep.sh
+```
+
+The sweep covers:
+- **Ranks**: 1, 2, 4, 8, 16, 32, 64
+- **Learning rates**: 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3
+
+Modify `launch_sweep.sh` to adjust the grid, or run individual jobs:
+```bash
+sbatch --export=RANK=8,LR=5e-4 sweep.sbatch
+```
+
+Edit `sweep.sbatch` to set your cluster-specific options (partition, account, modules, conda env).
+
 ## Output
 
 The script saves:
