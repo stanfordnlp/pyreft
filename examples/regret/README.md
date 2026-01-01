@@ -1,0 +1,133 @@
+# LoReFT Training on Tulu-3 SFT Mixture
+
+This directory contains a script for fine-tuning Llama 3.2 1B (base) on the [allenai/tulu-3-sft-mixture](https://huggingface.co/datasets/allenai/tulu-3-sft-mixture) dataset using LoReFT (Low-Rank Representation Fine-Tuning).
+
+## Requirements
+
+```bash
+pip install torch transformers datasets pyvene tqdm wandb
+```
+
+You'll also need access to the Llama 3.2 model on Hugging Face. Make sure you're logged in:
+```bash
+huggingface-cli login
+```
+
+## Quick Start
+
+Basic training with default settings:
+```bash
+python train.py \
+    --model_name_or_path meta-llama/Llama-3.2-1B \
+    --max_n_train_example 10000 \
+    --output_dir ./outputs
+```
+
+## Full Usage
+
+```bash
+python train.py \
+    --model_name_or_path meta-llama/Llama-3.2-1B \
+    --rank 4 \
+    --layers "all" \
+    --position "f1+l1" \
+    --lr 5e-4 \
+    --epochs 1 \
+    --batch_size 4 \
+    --gradient_accumulation_steps 8 \
+    --max_length 2048 \
+    --max_n_train_example 10000 \
+    --output_dir ./outputs \
+    --use_wandb
+```
+
+## Key Arguments
+
+### LoReFT Parameters
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--rank` | 4 | Low-rank dimension for LoReFT intervention |
+| `--layers` | "all" | Layers to intervene on (semicolon-separated, e.g., "0;4;8;12") |
+| `--position` | "f1+l1" | Position string for intervention |
+| `--share_weights` | False | Share intervention weights across positions |
+| `--dropout` | 0.0 | Dropout rate for LoReFT |
+| `--act_fn` | None | Activation function (linear by default) |
+
+### Training Parameters
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--lr` | 5e-4 | Learning rate |
+| `--epochs` | 1 | Number of training epochs |
+| `--batch_size` | 4 | Per-device batch size |
+| `--gradient_accumulation_steps` | 8 | Gradient accumulation steps |
+| `--warmup_ratio` | 0.03 | Warmup ratio |
+| `--weight_decay` | 0.0 | Weight decay |
+| `--schedule` | "linear" | LR scheduler type |
+| `--gradient_checkpointing` | False | Enable gradient checkpointing |
+
+### Data Parameters
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--max_length` | 2048 | Maximum sequence length |
+| `--max_n_train_example` | None | Limit training examples (useful for debugging) |
+
+### Other Parameters
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--dtype` | "bfloat16" | Model dtype (float32/float16/bfloat16) |
+| `--output_dir` | "./outputs" | Output directory |
+| `--seed` | 42 | Random seed |
+| `--use_wandb` | False | Enable W&B logging |
+
+## Position String Format
+
+The position string controls where interventions are applied:
+
+- `f1` - First token only
+- `l1` - Last token only  
+- `f1+l1` - First and last tokens (recommended)
+- `f2+l2` - First 2 and last 2 tokens
+
+## Layer Selection
+
+- `"all"` - Intervene on all layers
+- `"0;4;8;12"` - Intervene on specific layers (semicolon-separated)
+- `""` - No intervention (for ablation)
+
+## Example Configurations
+
+### Small-scale experiment (for debugging)
+```bash
+python train.py --rank 2 --max_n_train_example 1000 --epochs 1
+```
+
+### Medium rank, subset of layers
+```bash
+python train.py --rank 8 --layers "4;8;12" --max_n_train_example 50000
+```
+
+### Full training with higher rank
+```bash
+python train.py --rank 16 --layers "all" --epochs 3 --gradient_checkpointing
+```
+
+## Output
+
+The script saves:
+- Model checkpoints (via HuggingFace Trainer)
+- ReFT intervention weights
+- `training_args.json` with all hyperparameters used
+
+## Loading a Trained Model
+
+```python
+from pyreft import ReftModel
+
+# Load the trained ReFT model
+reft_model = ReftModel.load("./outputs/<run_name>")
+```
+
