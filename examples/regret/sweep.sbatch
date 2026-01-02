@@ -37,6 +37,7 @@ EVAL_STEPS=${EVAL_STEPS:-500}
 MODEL=${MODEL:-"meta-llama/Llama-3.2-1B-Instruct"}
 OUTPUT_DIR=${OUTPUT_DIR:-"./outputs"}
 WANDB_PROJECT=${WANDB_PROJECT:-"loreft-regret"}
+FULL_FINETUNE=${FULL_FINETUNE:-false}
 
 # --- Setup ---
 echo "============================================"
@@ -59,24 +60,31 @@ cd "$SLURM_SUBMIT_DIR"
 # Create logs directory if needed
 mkdir -p logs
 
-# --- Run training ---
-uv run train.py \
-    --model_name_or_path "$MODEL" \
-    --rank "$RANK" \
-    --lr "$LR" \
-    --layers "$LAYERS" \
-    --position "$POSITION" \
-    --epochs "$EPOCHS" \
-    --batch_size "$BATCH_SIZE" \
-    --gradient_accumulation_steps "$GRAD_ACCUM" \
-    --max_length "$MAX_LENGTH" \
-    --max_n_train_example "$MAX_EXAMPLES" \
-    --eval_split "$EVAL_SPLIT" \
-    --eval_steps "$EVAL_STEPS" \
-    --output_dir "$OUTPUT_DIR" \
+# --- Build command ---
+CMD="uv run train.py \
+    --model_name_or_path $MODEL \
+    --rank $RANK \
+    --lr $LR \
+    --layers $LAYERS \
+    --position $POSITION \
+    --epochs $EPOCHS \
+    --batch_size $BATCH_SIZE \
+    --gradient_accumulation_steps $GRAD_ACCUM \
+    --max_length $MAX_LENGTH \
+    --max_n_train_example $MAX_EXAMPLES \
+    --eval_split $EVAL_SPLIT \
+    --eval_steps $EVAL_STEPS \
+    --output_dir $OUTPUT_DIR \
     --use_wandb \
-    --wandb_project "$WANDB_PROJECT" \
-    --gradient_checkpointing
+    --wandb_project $WANDB_PROJECT"
+
+# Add full finetune flag and gradient checkpointing if needed
+if [ "$FULL_FINETUNE" = "true" ]; then
+    CMD="$CMD --full_finetune --gradient_checkpointing"
+fi
+
+# --- Run training ---
+$CMD
 
 echo "============================================"
 echo "Finished at: $(date)"
