@@ -39,7 +39,9 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         # Ensure model is in eval mode
         self.model.model.eval()
         for k, v in self.model.interventions.items():
-            _ = v[0].eval()
+            # Handle both old (tuple) and new (direct) intervention formats
+            intervention = v[0] if isinstance(v, (list, tuple)) else v
+            intervention.eval()
 
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         
@@ -84,7 +86,8 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         # Set model back to train mode
         self.model.model.train()
         for k, v in self.model.interventions.items():
-            _ = v[0].train()
+            intervention = v[0] if isinstance(v, (list, tuple)) else v
+            intervention.train()
         
         return metrics
 
