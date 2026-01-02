@@ -60,9 +60,17 @@ cd "$SLURM_SUBMIT_DIR"
 # Create logs directory if needed
 mkdir -p logs
 
+# --- Build run name ---
+if [ "$FULL_FINETUNE" = "true" ]; then
+    RUN_NAME="fullft_lr${LR}"
+else
+    RUN_NAME="r${RANK}___${POSITION}___lr${LR}"
+fi
+
 # --- Build command ---
 CMD="uv run train.py \
     --model_name_or_path $MODEL \
+    --run_name $RUN_NAME \
     --rank $RANK \
     --lr $LR \
     --layers $LAYERS \

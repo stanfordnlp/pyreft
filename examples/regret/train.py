@@ -145,12 +145,15 @@ def train(args):
     set_seed(args.seed)
     
     # Setup run name
-    model_str = args.model_name_or_path.split("/")[-1]
-    now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    if args.full_finetune:
-        run_name = f"{model_str}.tulu3.fullft.{now}"
+    if args.run_name:
+        run_name = args.run_name
     else:
-        run_name = f"{model_str}.tulu3.r{args.rank}.{now}"
+        model_str = args.model_name_or_path.split("/")[-1]
+        now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        if args.full_finetune:
+            run_name = f"{model_str}.tulu3.fullft.{now}"
+        else:
+            run_name = f"{model_str}.tulu3.r{args.rank}.{now}"
     
     print(f"Starting training run: {run_name}")
     print(f"Model: {args.model_name_or_path}")
@@ -553,6 +556,12 @@ def main():
     
     # Logging and output arguments
     parser.add_argument(
+        "--run_name",
+        type=str,
+        default=None,
+        help="Wandb run name (default: auto-generated)"
+    )
+    parser.add_argument(
         "--output_dir",
         type=str,
         default="./outputs",
@@ -589,7 +598,11 @@ def main():
     # Set wandb project if using wandb
     if args.use_wandb:
         import wandb
-        wandb.init(project=args.wandb_project)
+        wandb.init(
+            project=args.wandb_project,
+            name=args.run_name,
+            config=vars(args),
+        )
     
     train(args)
 
