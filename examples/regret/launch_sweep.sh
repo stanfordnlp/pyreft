@@ -49,7 +49,7 @@ for rank in "${RANKS[@]}"; do
             $cmd
         fi
         
-        ((job_count++))
+        job_count=$((job_count + 1))
     done
 done
 
