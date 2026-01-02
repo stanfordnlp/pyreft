@@ -2,17 +2,14 @@
 #SBATCH --job-name=loreft-regret
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=14-0
+#SBATCH --partition=jag-standard
+#SBATCH --account=nlp
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gpus=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-
-# Uncomment and modify for your cluster:
-# #SBATCH --partition=gpu
-# #SBATCH --account=your_account
-# #SBATCH --constraint=a100  # or h100, etc.
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
 
 # ============================================================
 # LoReFT Sweep Script for "ReFT Without Regret" experiments
