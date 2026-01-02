@@ -347,6 +347,7 @@ def train(args):
         logging_steps=args.logging_steps,
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=args.eval_steps if eval_dataset is not None else None,
+        eval_delay=0,  # Evaluate at step 0
         save_strategy="epoch",
         save_total_limit=2,
         bf16=(args.dtype == "bfloat16" and device == "cuda"),
