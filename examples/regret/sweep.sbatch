@@ -3,7 +3,7 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=14-0
-#SBATCH --partition=jag-standard
+#SBATCH --partition=sphinx
 #SBATCH --account=nlp
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

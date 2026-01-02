@@ -221,10 +221,8 @@ def train(args):
         print("Enabling gradients on all model parameters...")
         for param in model.parameters():
             param.requires_grad = True
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        total_params = sum(p.numel() for p in model.parameters())
-        print(f"trainable params: {trainable_params:,d} || total params: {total_params:,d} || trainable%: {100 * trainable_params / total_params:.4f}")
         reft_model = None  # Not using ReFT
+        train_model = model
     else:
         # Create LoReFT interventions
         print(f"Creating LoReFT interventions with rank={args.rank}")
@@ -245,6 +243,20 @@ def train(args):
         reft_config = ReftConfig(representations=representations)
         reft_model = get_reft_model(model, reft_config, set_device=(device == "cuda"))
         reft_model.print_trainable_parameters()
+        train_model = reft_model
+    
+    # Count params with requires_grad=True (catches bugs where grads aren't set correctly)
+    trainable_params = sum(p.numel() for p in train_model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in train_model.parameters())
+    print(f"trainable params: {trainable_params:,d} || total params: {total_params:,d} || trainable%: {100 * trainable_params / total_params:.4f}")
+    
+    # Log params to wandb
+    if args.use_wandb:
+        import wandb
+        wandb.log({
+            "trainable_params": trainable_params,
+            "total_params": total_params,
+        })
     
     # Load and preprocess Tulu-3 dataset
     # Note: We preprocess externally because ReftGenerationDataset.tokenize() expects
@@ -398,10 +410,8 @@ def train(args):
     # Save training args
     args_dict = vars(args)
     args_dict["layers_used"] = layers
-    if args.full_finetune:
-        args_dict["n_params"] = sum(p.numel() for p in model.parameters())
-    else:
-        args_dict["n_params"] = reft_model.count_parameters(include_model=False)
+    args_dict["trainable_params"] = trainable_params
+    args_dict["total_params"] = total_params
     with open(os.path.join(output_dir, "training_args.json"), "w") as f:
         json.dump(args_dict, f, indent=2)
     
