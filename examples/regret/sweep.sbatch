@@ -34,7 +34,7 @@ MAX_LENGTH=${MAX_LENGTH:-2048}
 MAX_EXAMPLES=${MAX_EXAMPLES:-50000}
 EVAL_SPLIT=${EVAL_SPLIT:-0.05}
 EVAL_STEPS=${EVAL_STEPS:-500}
-MODEL=${MODEL:-"meta-llama/Llama-3.2-1B"}
+MODEL=${MODEL:-"meta-llama/Llama-3.2-1B-Instruct"}
 OUTPUT_DIR=${OUTPUT_DIR:-"./outputs"}
 WANDB_PROJECT=${WANDB_PROJECT:-"loreft-regret"}
 
@@ -53,11 +53,11 @@ echo "  Position: $POSITION"
 echo "  Max examples: $MAX_EXAMPLES"
 echo "============================================"
 
+# Change to submit directory (where sbatch was called from)
+cd "$SLURM_SUBMIT_DIR"
+
 # Create logs directory if needed
 mkdir -p logs
-
-# Change to script directory
-cd "$(dirname "$0")"
 
 # --- Run training ---
 uv run train.py \
