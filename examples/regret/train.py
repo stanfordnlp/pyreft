@@ -40,7 +40,7 @@ from pyreft import (
     ReftDataCollator,
     ReftGenerationDataset,
 )
-from trainer import ReftTrainerForCausalLMWithEval
+from trainer import ReftTrainerForCausalLMWithEval, FullFinetuneTrainer
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -49,6 +49,51 @@ dtype_mapping = {
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,
 }
+
+IGNORE_INDEX = -100
+
+
+class SimpleGenerationDataset(torch.utils.data.Dataset):
+    """
+    Simple dataset for full fine-tuning (no intervention locations).
+    """
+    def __init__(self, hf_dataset, tokenizer, max_length=2048):
+        self.data = []
+        print("Tokenizing dataset for full fine-tuning...")
+        
+        for item in hf_dataset:
+            prompt = item["prompt"]
+            completion = item["completion"]
+            
+            # Tokenize prompt to get its length
+            prompt_ids = tokenizer(
+                prompt, max_length=max_length, truncation=True, return_tensors="pt"
+            )["input_ids"][0]
+            prompt_length = len(prompt_ids)
+            
+            # Tokenize full sequence
+            full_text = prompt + completion + tokenizer.eos_token
+            full_ids = tokenizer(
+                full_text, max_length=max_length, truncation=True, return_tensors="pt"
+            )["input_ids"][0]
+            
+            # Create labels (mask prompt)
+            labels = full_ids.clone()
+            labels[:prompt_length] = IGNORE_INDEX
+            
+            self.data.append({
+                "input_ids": full_ids,
+                "attention_mask": torch.ones_like(full_ids),
+                "labels": labels,
+            })
+        
+        print(f"Prepared {len(self.data)} examples")
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        return self.data[idx]
 
 
 def preprocess_tulu3_to_prompt_completion(dataset, tokenizer):
@@ -102,27 +147,35 @@ def train(args):
     # Setup run name
     model_str = args.model_name_or_path.split("/")[-1]
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    run_name = f"{model_str}.tulu3.r{args.rank}.{now}"
+    if args.full_finetune:
+        run_name = f"{model_str}.tulu3.fullft.{now}"
+    else:
+        run_name = f"{model_str}.tulu3.r{args.rank}.{now}"
     
     print(f"Starting training run: {run_name}")
     print(f"Model: {args.model_name_or_path}")
-    print(f"Rank: {args.rank}, Layers: {args.layers}, Position: {args.position}")
+    if args.full_finetune:
+        print("Mode: Full fine-tuning (baseline)")
+    else:
+        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position})")
     print(f"LR: {args.lr}, Epochs: {args.epochs}, Batch size: {args.batch_size}")
     
-    # Parse layers
-    if args.layers == "all":
-        temp_config = AutoConfig.from_pretrained(args.model_name_or_path)
-        layers = list(range(temp_config.num_hidden_layers))
-    elif args.layers.strip() == "":
-        layers = []
-    else:
-        layers = [int(l) for l in args.layers.split(";")]
-    
-    # Duplicate layers if using multiple positions without weight sharing
-    if "+" in args.position and not args.share_weights:
-        layers = layers + layers
-    
-    print(f"Intervening on {len(layers)} layer(s): {layers[:5]}..." if len(layers) > 5 else f"Intervening on layers: {layers}")
+    # Parse layers (only needed for ReFT)
+    layers = []
+    if not args.full_finetune:
+        if args.layers == "all":
+            temp_config = AutoConfig.from_pretrained(args.model_name_or_path)
+            layers = list(range(temp_config.num_hidden_layers))
+        elif args.layers.strip() == "":
+            layers = []
+        else:
+            layers = [int(l) for l in args.layers.split(";")]
+        
+        # Duplicate layers if using multiple positions without weight sharing
+        if "+" in args.position and not args.share_weights:
+            layers = layers + layers
+        
+        print(f"Intervening on {len(layers)} layer(s): {layers[:5]}..." if len(layers) > 5 else f"Intervening on layers: {layers}")
     
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -159,25 +212,36 @@ def train(args):
     if need_resize:
         model.resize_token_embeddings(len(tokenizer))
     
-    # Create LoReFT interventions
-    print(f"Creating LoReFT interventions with rank={args.rank}")
-    representations = [{
-        "layer": l,
-        "component": "block_output",
-        "low_rank_dimension": args.rank,
-        "intervention": LoreftIntervention(
-            embed_dim=model.config.hidden_size,
-            low_rank_dimension=args.rank,
-            dropout=args.dropout,
-            dtype=dtype,
-            act_fn=args.act_fn,
-        )
-    } for l in layers]
-    
-    # Create ReFT config and model
-    reft_config = ReftConfig(representations=representations)
-    reft_model = get_reft_model(model, reft_config, set_device=(device == "cuda"))
-    reft_model.print_trainable_parameters()
+    # Setup model based on training mode
+    if args.full_finetune:
+        # Full fine-tuning: enable all gradients
+        print("Enabling gradients on all model parameters...")
+        for param in model.parameters():
+            param.requires_grad = True
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total_params = sum(p.numel() for p in model.parameters())
+        print(f"trainable params: {trainable_params:,d} || total params: {total_params:,d} || trainable%: {100 * trainable_params / total_params:.4f}")
+        reft_model = None  # Not using ReFT
+    else:
+        # Create LoReFT interventions
+        print(f"Creating LoReFT interventions with rank={args.rank}")
+        representations = [{
+            "layer": l,
+            "component": "block_output",
+            "low_rank_dimension": args.rank,
+            "intervention": LoreftIntervention(
+                embed_dim=model.config.hidden_size,
+                low_rank_dimension=args.rank,
+                dropout=args.dropout,
+                dtype=dtype,
+                act_fn=args.act_fn,
+            )
+        } for l in layers]
+        
+        # Create ReFT config and model
+        reft_config = ReftConfig(representations=representations)
+        reft_model = get_reft_model(model, reft_config, set_device=(device == "cuda"))
+        reft_model.print_trainable_parameters()
     
     # Load and preprocess Tulu-3 dataset
     # Note: We preprocess externally because ReftGenerationDataset.tokenize() expects
@@ -205,48 +269,64 @@ def train(args):
         train_hf_dataset = processed_dataset
         eval_hf_dataset = None
     
-    # Use ReftGenerationDataset from pyreft
-    train_dataset = ReftGenerationDataset(
-        task="tulu3",
-        data_path=None,
-        tokenizer=tokenizer,
-        data_split="train",
-        dataset=train_hf_dataset,
-        seed=args.seed,
-        max_n_example=None,  # Already handled above
-        prompt_field="prompt",
-        completion_field="completion",
-        num_interventions=len(layers),
-        position=args.position,
-        share_weights=args.share_weights,
-    )
-    
-    # Create eval dataset if we have eval data
-    eval_dataset = None
-    if eval_hf_dataset is not None:
-        eval_dataset = ReftGenerationDataset(
+    # Create datasets based on training mode
+    if args.full_finetune:
+        # Simple dataset for full fine-tuning
+        train_dataset = SimpleGenerationDataset(train_hf_dataset, tokenizer, args.max_length)
+        eval_dataset = None
+        if eval_hf_dataset is not None:
+            eval_dataset = SimpleGenerationDataset(eval_hf_dataset, tokenizer, args.max_length)
+        
+        # Standard data collator
+        data_collator = transformers.DataCollatorForSeq2Seq(
+            tokenizer=tokenizer,
+            model=model,
+            label_pad_token_id=-100,
+            padding="longest",
+        )
+    else:
+        # Use ReftGenerationDataset from pyreft
+        train_dataset = ReftGenerationDataset(
             task="tulu3",
             data_path=None,
             tokenizer=tokenizer,
-            data_split="train",  # Use "train" to get labels
-            dataset=eval_hf_dataset,
+            data_split="train",
+            dataset=train_hf_dataset,
             seed=args.seed,
-            max_n_example=None,
+            max_n_example=None,  # Already handled above
             prompt_field="prompt",
             completion_field="completion",
             num_interventions=len(layers),
             position=args.position,
             share_weights=args.share_weights,
         )
-    
-    # Create data collator
-    data_collator_fn = transformers.DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        model=model,
-        label_pad_token_id=-100,
-        padding="longest",
-    )
-    data_collator = ReftDataCollator(data_collator=data_collator_fn)
+        
+        # Create eval dataset if we have eval data
+        eval_dataset = None
+        if eval_hf_dataset is not None:
+            eval_dataset = ReftGenerationDataset(
+                task="tulu3",
+                data_path=None,
+                tokenizer=tokenizer,
+                data_split="train",  # Use "train" to get labels
+                dataset=eval_hf_dataset,
+                seed=args.seed,
+                max_n_example=None,
+                prompt_field="prompt",
+                completion_field="completion",
+                num_interventions=len(layers),
+                position=args.position,
+                share_weights=args.share_weights,
+            )
+        
+        # Create data collator
+        data_collator_fn = transformers.DataCollatorForSeq2Seq(
+            tokenizer=tokenizer,
+            model=model,
+            label_pad_token_id=-100,
+            padding="longest",
+        )
+        data_collator = ReftDataCollator(data_collator=data_collator_fn)
     
     # Create output directory
     output_dir = os.path.join(args.output_dir, run_name)
@@ -279,15 +359,25 @@ def train(args):
         gradient_checkpointing=args.gradient_checkpointing,
     )
     
-    # Create trainer
-    trainer = ReftTrainerForCausalLMWithEval(
-        model=reft_model,
-        tokenizer=tokenizer,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=data_collator,
-    )
+    # Create trainer based on mode
+    if args.full_finetune:
+        trainer = FullFinetuneTrainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            data_collator=data_collator,
+        )
+    else:
+        trainer = ReftTrainerForCausalLMWithEval(
+            model=reft_model,
+            tokenizer=tokenizer,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            data_collator=data_collator,
+        )
     
     # Start training
     print("Starting training...")
@@ -295,17 +385,24 @@ def train(args):
     
     # Save final model
     print(f"Saving model to {output_dir}")
-    reft_model.save(output_dir)
+    if args.full_finetune:
+        model.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
+    else:
+        reft_model.save(output_dir)
     
     # Save training args
     args_dict = vars(args)
     args_dict["layers_used"] = layers
-    args_dict["n_params"] = reft_model.count_parameters(include_model=False)
+    if args.full_finetune:
+        args_dict["n_params"] = sum(p.numel() for p in model.parameters())
+    else:
+        args_dict["n_params"] = reft_model.count_parameters(include_model=False)
     with open(os.path.join(output_dir, "training_args.json"), "w") as f:
         json.dump(args_dict, f, indent=2)
     
     print(f"Training complete! Model saved to {output_dir}")
-    return reft_model
+    return model if args.full_finetune else reft_model
 
 
 def main():
@@ -326,6 +423,13 @@ def main():
         default="bfloat16",
         choices=["float32", "float16", "bfloat16"],
         help="Data type for model weights (default: bfloat16)"
+    )
+    
+    # Training mode
+    parser.add_argument(
+        "--full_finetune",
+        action="store_true",
+        help="Full fine-tuning baseline (no ReFT, trains all parameters)"
     )
     
     # LoReFT arguments
@@ -393,8 +497,8 @@ def main():
     parser.add_argument(
         "--warmup_ratio",
         type=float,
-        default=0.03,
-        help="Warmup ratio for learning rate scheduler (default: 0.03)"
+        default=0.0,
+        help="Warmup ratio for learning rate scheduler (default: 0.0)"
     )
     parser.add_argument(
         "--weight_decay",
@@ -405,8 +509,8 @@ def main():
     parser.add_argument(
         "--schedule",
         type=str,
-        default="linear",
-        help="Learning rate schedule (default: linear)"
+        default="constant",
+        help="Learning rate schedule (default: constant)"
     )
     parser.add_argument(
         "--gradient_checkpointing",
