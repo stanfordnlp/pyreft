@@ -59,16 +59,11 @@ echo "============================================"
 # Create logs directory if needed
 mkdir -p logs
 
-# Activate your environment (modify as needed)
-# source /path/to/your/venv/bin/activate
-# module load cuda/12.1
-# conda activate pyreft
-
 # Change to script directory
 cd "$(dirname "$0")"
 
 # --- Run training ---
-python train.py \
+uv run train.py \
     --model_name_or_path "$MODEL" \
     --rank "$RANK" \
     --lr "$LR" \

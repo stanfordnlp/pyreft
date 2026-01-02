@@ -4,6 +4,12 @@ This directory contains a script for fine-tuning Llama 3.2 1B (base) on the [all
 
 ## Requirements
 
+Using [uv](https://github.com/astral-sh/uv):
+```bash
+uv sync  # Install dependencies from pyproject.toml
+```
+
+Or with pip:
 ```bash
 pip install torch transformers datasets pyvene tqdm wandb
 ```
@@ -17,7 +23,7 @@ huggingface-cli login
 
 Basic training with default settings:
 ```bash
-python train.py \
+uv run train.py \
     --model_name_or_path meta-llama/Llama-3.2-1B \
     --max_n_train_example 10000 \
     --output_dir ./outputs
@@ -26,7 +32,7 @@ python train.py \
 ## Full Usage
 
 ```bash
-python train.py \
+uv run train.py \
     --model_name_or_path meta-llama/Llama-3.2-1B \
     --rank 4 \
     --layers "all" \
@@ -112,17 +118,17 @@ The position string controls where interventions are applied:
 
 ### Small-scale experiment (for debugging)
 ```bash
-python train.py --rank 2 --max_n_train_example 1000 --epochs 1
+uv run train.py --rank 2 --max_n_train_example 1000 --epochs 1
 ```
 
 ### Medium rank, subset of layers
 ```bash
-python train.py --rank 8 --layers "4;8;12" --max_n_train_example 50000
+uv run train.py --rank 8 --layers "4;8;12" --max_n_train_example 50000
 ```
 
 ### Full training with higher rank
 ```bash
-python train.py --rank 16 --layers "all" --epochs 3 --gradient_checkpointing
+uv run train.py --rank 16 --layers "all" --epochs 3 --gradient_checkpointing
 ```
 
 ## Running Sweeps (SLURM)
