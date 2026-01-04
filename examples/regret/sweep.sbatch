@@ -34,8 +34,10 @@ GRAD_ACCUM=${GRAD_ACCUM:-16}
 MAX_LENGTH=${MAX_LENGTH:-2048}
 MAX_EXAMPLES=${MAX_EXAMPLES:-50000}
 EVAL_SPLIT=${EVAL_SPLIT:-0.05}
+MAX_EVAL_SAMPLES=${MAX_EVAL_SAMPLES:-500}
 EVAL_STEPS=${EVAL_STEPS:-50}
 MODEL=${MODEL:-"meta-llama/Llama-3.2-1B-Instruct"}
+USE_FLASH_ATTN=${USE_FLASH_ATTN:-true}
 OUTPUT_DIR=${OUTPUT_DIR:-"./outputs"}
 WANDB_PROJECT=${WANDB_PROJECT:-"loreft-regret"}
 FULL_FINETUNE=${FULL_FINETUNE:-false}
@@ -82,6 +84,7 @@ CMD="uv run train.py \
     --max_length $MAX_LENGTH \
     --max_n_train_example $MAX_EXAMPLES \
     --eval_split $EVAL_SPLIT \
+    --max_eval_samples $MAX_EVAL_SAMPLES \
     --eval_steps $EVAL_STEPS \
     --output_dir $OUTPUT_DIR \
     --use_wandb \
@@ -90,6 +93,11 @@ CMD="uv run train.py \
 # Add share_weights flag if needed
 if [ "$SHARE_WEIGHTS" = "true" ]; then
     CMD="$CMD --share_weights"
+fi
+
+# Add flash attention if enabled
+if [ "$USE_FLASH_ATTN" = "true" ]; then
+    CMD="$CMD --use_flash_attn"
 fi
 
 # Add full finetune flag and gradient checkpointing if needed

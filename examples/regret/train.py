@@ -204,11 +204,17 @@ def train(args):
     dtype = dtype_mapping.get(args.dtype, torch.bfloat16)
     print(f"Loading model with dtype: {args.dtype}")
     
+    # Use flash attention if available (requires flash-attn package)
+    attn_implementation = "flash_attention_2" if args.use_flash_attn else None
+    if attn_implementation:
+        print("Using Flash Attention 2")
+    
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
         torch_dtype=dtype,
         device_map=device,
         trust_remote_code=True,
+        attn_implementation=attn_implementation,
     )
     
     # Resize embeddings if needed
@@ -279,7 +285,12 @@ def train(args):
         split_dataset = processed_dataset.train_test_split(test_size=args.eval_split, seed=args.seed)
         train_hf_dataset = split_dataset["train"]
         eval_hf_dataset = split_dataset["test"]
-        print(f"Split dataset: {len(train_hf_dataset)} train, {len(eval_hf_dataset)} eval")
+        # Subsample eval set if requested (for faster evaluation)
+        if args.max_eval_samples is not None and len(eval_hf_dataset) > args.max_eval_samples:
+            eval_hf_dataset = eval_hf_dataset.shuffle(seed=args.seed).select(range(args.max_eval_samples))
+            print(f"Split dataset: {len(train_hf_dataset)} train, {len(eval_hf_dataset)} eval (subsampled from {len(split_dataset['test'])})")
+        else:
+            print(f"Split dataset: {len(train_hf_dataset)} train, {len(eval_hf_dataset)} eval")
     else:
         train_hf_dataset = processed_dataset
         eval_hf_dataset = None
@@ -438,6 +449,11 @@ def main():
         choices=["float32", "float16", "bfloat16"],
         help="Data type for model weights (default: bfloat16)"
     )
+    parser.add_argument(
+        "--use_flash_attn",
+        action="store_true",
+        help="Use Flash Attention 2 (requires flash-attn package)"
+    )
     
     # Training mode
     parser.add_argument(
@@ -550,6 +566,12 @@ def main():
         type=float,
         default=0.05,
         help="Fraction of data to hold out for evaluation (default: 0.05)"
+    )
+    parser.add_argument(
+        "--max_eval_samples",
+        type=int,
+        default=None,
+        help="Maximum eval samples to use during evaluation (default: None = use all)"
     )
     parser.add_argument(
         "--eval_batch_size",
