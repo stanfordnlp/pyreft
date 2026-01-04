@@ -131,8 +131,28 @@ class ReftDataCollator(object):
     data_collator: DataCollator
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        # Extract intervention_locations before calling base collator
+        # (they may have variable lengths which the base collator can't handle)
+        intervention_locations_list = [inst.pop("intervention_locations") for inst in instances]
+        
+        # Call base collator on remaining fields
         batch_inputs = self.data_collator(instances)
         max_seq_length = batch_inputs["input_ids"].shape[-1]
+        
+        # Pad intervention_locations to same length and convert to tensor
+        # Use -1 as padding value (will be ignored during intervention)
+        max_intervention_len = max(len(locs[0]) if isinstance(locs[0], list) else len(locs) for locs in intervention_locations_list)
+        padded_locations = []
+        for locs in intervention_locations_list:
+            # locs is a list of lists: [[pos1, pos2, ...], [pos1, pos2, ...], ...] for each intervention
+            padded_intervention = []
+            for intervention_locs in locs:
+                pad_len = max_intervention_len - len(intervention_locs)
+                padded_intervention.append(intervention_locs + [-1] * pad_len)
+            padded_locations.append(padded_intervention)
+        
+        batch_inputs["intervention_locations"] = torch.tensor(padded_locations)
+        # Truncate to max_seq_length (positions beyond input length are invalid)
         batch_inputs["intervention_locations"] = batch_inputs["intervention_locations"][..., :max_seq_length]
         return batch_inputs
 
