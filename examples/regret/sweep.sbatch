@@ -27,6 +27,7 @@ RANK=${RANK:-4}
 LR=${LR:-5e-4}
 LAYERS=${LAYERS:-"all"}
 POSITION=${POSITION:-"f1+l1"}
+SHARE_WEIGHTS=${SHARE_WEIGHTS:-false}
 EPOCHS=${EPOCHS:-1}
 BATCH_SIZE=${BATCH_SIZE:-2}
 GRAD_ACCUM=${GRAD_ACCUM:-16}
@@ -85,6 +86,11 @@ CMD="uv run train.py \
     --output_dir $OUTPUT_DIR \
     --use_wandb \
     --wandb_project $WANDB_PROJECT"
+
+# Add share_weights flag if needed
+if [ "$SHARE_WEIGHTS" = "true" ]; then
+    CMD="$CMD --share_weights"
+fi
 
 # Add full finetune flag and gradient checkpointing if needed
 if [ "$FULL_FINETUNE" = "true" ]; then

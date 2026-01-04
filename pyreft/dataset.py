@@ -73,12 +73,19 @@ def get_intervention_locations(**kwargs):
     # parse kwargs
     share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
     last_position = kwargs["last_position"]
+    num_interventions = kwargs["num_interventions"]
+    pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
+    
+    # Handle "all" position: intervene on all prompt tokens
+    if kwargs.get("positions") == "all":
+        assert share_weights, "position='all' requires share_weights=True"
+        position_list = list(range(last_position))
+        return [position_list] * num_interventions
+    
     if "positions" in kwargs:
         _first_n, _last_n = parse_positions(kwargs["positions"])
     else:
         _first_n, _last_n = kwargs["first_n"], kwargs["last_n"]
-    num_interventions = kwargs["num_interventions"]
-    pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
 
     first_n = min(last_position // 2, _first_n)
     last_n = min(last_position // 2, _last_n)
