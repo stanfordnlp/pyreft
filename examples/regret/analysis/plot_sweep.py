@@ -46,14 +46,140 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
             "share_weights": config.get("share_weights", False),
             "full_finetune": config.get("full_finetune", False),
             "trainable_params": config.get("trainable_params") or summary.get("trainable_params"),
-            "eval_loss": summary.get("eval_loss"),
-            "eval_nll": summary.get("eval_nll"),
-            "eval_perplexity": summary.get("eval_perplexity"),
-            "train_loss": summary.get("train_loss"),
+            # Handle both key formats: eval/nll and eval_nll
+            "eval_loss": summary.get("eval/loss") or summary.get("eval_loss"),
+            "eval_nll": summary.get("eval/nll") or summary.get("eval_nll"),
+            "eval_perplexity": summary.get("eval/perplexity") or summary.get("eval_perplexity"),
+            "train_loss": summary.get("train/loss") or summary.get("train_loss"),
         }
         records.append(record)
     
     return pd.DataFrame(records)
+
+
+def fetch_run_history(project: str, run_id: str, entity: str = None) -> pd.DataFrame:
+    """Fetch training history for a single run."""
+    import wandb
+    
+    api = wandb.Api()
+    project_path = f"{entity}/{project}" if entity else project
+    run = api.run(f"{project_path}/{run_id}")
+    
+    history = run.history(keys=["_step", "eval/nll", "eval/loss", "train/loss"])
+    return history
+
+
+def plot_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity: str = None,
+                    position: str = "f1+l1", group_by: str = "rank"):
+    """Plot NLL over training steps for different configurations."""
+    import wandb
+    
+    subset = df[(df["position"] == position) & (~df["full_finetune"])].copy()
+    if subset.empty:
+        print(f"No data for position={position}")
+        return
+    
+    api = wandb.Api()
+    project_path = f"{entity}/{project}" if entity else project
+    
+    fig, ax = plt.subplots(figsize=(12, 7))
+    
+    if group_by == "rank":
+        # Plot curves grouped by rank (best LR for each rank)
+        best_runs = subset.loc[subset.groupby("rank")["eval_nll"].idxmin()]
+        groups = sorted(best_runs["rank"].unique())
+        label_fmt = "rank={:.0f}"
+    else:
+        # Plot curves grouped by LR (best rank for each LR)
+        best_runs = subset.loc[subset.groupby("lr")["eval_nll"].idxmin()]
+        groups = sorted(best_runs["lr"].unique())
+        label_fmt = "LR={:.0e}"
+    
+    for i, group_val in enumerate(groups):
+        if group_by == "rank":
+            run_row = best_runs[best_runs["rank"] == group_val].iloc[0]
+        else:
+            run_row = best_runs[best_runs["lr"] == group_val].iloc[0]
+        
+        run_id = run_row["run_id"]
+        
+        try:
+            run = api.run(f"{project_path}/{run_id}")
+            history = run.history(keys=["_step", "eval/nll"])
+            history = history.dropna(subset=["eval/nll"])
+            
+            if not history.empty:
+                ax.plot(history["_step"], history["eval/nll"],
+                        label=label_fmt.format(group_val),
+                        color=COLORS[i % len(COLORS)],
+                        linewidth=2, alpha=0.8)
+        except Exception as e:
+            print(f"Error fetching history for run {run_id}: {e}")
+    
+    ax.set_xlabel("Training Step", fontsize=12)
+    ax.set_ylabel("Eval NLL", fontsize=12)
+    ax.set_title(f"NLL over Training (position={position}, best {group_by}s)", fontsize=14)
+    ax.legend(title=group_by.capitalize(), loc="best")
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / f"nll_curves_by_{group_by}_{position.replace('+', '_')}.png", dpi=150)
+    plt.savefig(output_dir / f"nll_curves_by_{group_by}_{position.replace('+', '_')}.pdf")
+    plt.close()
+    print(f"Saved: nll_curves_by_{group_by}_{position.replace('+', '_')}.png")
+
+
+def plot_all_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity: str = None,
+                        position: str = "f1+l1"):
+    """Plot all NLL curves on one plot, colored by rank."""
+    import wandb
+    
+    subset = df[(df["position"] == position) & (~df["full_finetune"])].copy()
+    if subset.empty:
+        print(f"No data for position={position}")
+        return
+    
+    api = wandb.Api()
+    project_path = f"{entity}/{project}" if entity else project
+    
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    ranks = sorted(subset["rank"].unique())
+    rank_colors = {r: COLORS[i % len(COLORS)] for i, r in enumerate(ranks)}
+    
+    for _, run_row in subset.iterrows():
+        run_id = run_row["run_id"]
+        rank = run_row["rank"]
+        lr = run_row["lr"]
+        
+        try:
+            run = api.run(f"{project_path}/{run_id}")
+            history = run.history(keys=["_step", "eval/nll"])
+            history = history.dropna(subset=["eval/nll"])
+            
+            if not history.empty:
+                ax.plot(history["_step"], history["eval/nll"],
+                        color=rank_colors[rank],
+                        linewidth=1.5, alpha=0.6)
+        except Exception as e:
+            print(f"Error fetching history for run {run_id}: {e}")
+    
+    # Add legend for ranks
+    from matplotlib.lines import Line2D
+    legend_elements = [Line2D([0], [0], color=rank_colors[r], linewidth=2, label=f"rank={int(r)}") 
+                       for r in ranks]
+    ax.legend(handles=legend_elements, title="Rank", loc="best")
+    
+    ax.set_xlabel("Training Step", fontsize=12)
+    ax.set_ylabel("Eval NLL", fontsize=12)
+    ax.set_title(f"All NLL Curves (position={position})", fontsize=14)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / f"all_nll_curves_{position.replace('+', '_')}.png", dpi=150)
+    plt.savefig(output_dir / f"all_nll_curves_{position.replace('+', '_')}.pdf")
+    plt.close()
+    print(f"Saved: all_nll_curves_{position.replace('+', '_')}.png")
 
 
 def plot_nll_vs_rank(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
@@ -279,6 +405,8 @@ def main():
                         help="Output directory for plots")
     parser.add_argument("--save-csv", action="store_true",
                         help="Save fetched data to CSV")
+    parser.add_argument("--curves", action="store_true",
+                        help="Plot NLL curves over training steps (slow, fetches history)")
     args = parser.parse_args()
     
     output_dir = Path(args.output)
@@ -308,6 +436,12 @@ def main():
             plot_nll_vs_rank(df, output_dir, position)
             plot_nll_vs_lr(df, output_dir, position)
             plot_heatmap(df, output_dir, position)
+            
+            # NLL curves over steps (slow - requires fetching history)
+            if args.curves and not args.csv:
+                plot_nll_curves(df, output_dir, args.project, args.entity, position, group_by="rank")
+                plot_nll_curves(df, output_dir, args.project, args.entity, position, group_by="lr")
+                plot_all_nll_curves(df, output_dir, args.project, args.entity, position)
     
     plot_best_nll_vs_params(df, output_dir)
     plot_position_comparison(df, output_dir)
