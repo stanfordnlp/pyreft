@@ -367,8 +367,71 @@ def main():
         if max(locs[0]) < prompt_length - 1:
             print(f"  ⚠️  BUG: Missing position {prompt_length - 1}!")
         
+        # Test with formatted conversation
+        print("\n" + "-" * 40)
+        print("  Testing with chat-formatted conversation:")
+        print("-" * 40)
+        
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is 2+2?"},
+        ]
+        
+        # Format as chat (prompt only, with generation prompt)
+        formatted_prompt = tokenizer.apply_chat_template(
+            messages, 
+            tokenize=False, 
+            add_generation_prompt=True
+        )
+        
+        tokens = tokenizer(formatted_prompt, return_tensors="pt")
+        prompt_length = tokens["input_ids"].shape[1]
+        last_position = prompt_length - 1
+        
+        print(f"\n  Messages: {messages}")
+        print(f"\n  Formatted prompt:\n{formatted_prompt}")
+        print(f"\n  Tokens ({prompt_length} total):")
+        token_strs = tokenizer.convert_ids_to_tokens(tokens['input_ids'][0])
+        # Print tokens with their indices
+        for i, tok in enumerate(token_strs):
+            print(f"    [{i:3d}] {repr(tok)}")
+        
+        print(f"\n  last_position: {last_position}")
+        
+        # Test f1+l1
+        locs_f1l1 = get_intervention_locations(
+            last_position=last_position,
+            positions="f1+l1",
+            num_interventions=2,
+            share_weights=True,
+        )
+        print(f"\n  f1+l1 positions: {locs_f1l1[0]}")
+        print(f"    -> tokens: {[token_strs[i] for i in locs_f1l1[0] if i < len(token_strs)]}")
+        
+        # Test all
+        locs_all = get_intervention_locations(
+            last_position=last_position,
+            position="all",
+            num_interventions=2,
+            share_weights=True,
+        )
+        print(f"\n  'all' positions: {locs_all[0]}")
+        print(f"    -> num positions: {len(locs_all[0])}")
+        print(f"    -> expected: {prompt_length} (all {prompt_length} tokens)")
+        print(f"    -> actual last: {max(locs_all[0])}, expected last: {prompt_length - 1}")
+        
+        if max(locs_all[0]) < prompt_length - 1:
+            print(f"\n  ⚠️  BUG: 'all' is missing position {prompt_length - 1}!")
+            print(f"       Missing token: {repr(token_strs[prompt_length - 1])}")
+        elif len(locs_all[0]) < prompt_length:
+            print(f"\n  ⚠️  BUG: 'all' has {len(locs_all[0])} positions, expected {prompt_length}!")
+        else:
+            print(f"\n  ✓ 'all' correctly covers all {prompt_length} positions")
+        
     except Exception as e:
         print(f"  Skipping tokenizer tests: {e}")
+        import traceback
+        traceback.print_exc()
     
     print("\n" + "=" * 60)
     print("All basic tests passed!")
