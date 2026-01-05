@@ -7,7 +7,7 @@ license = {text = "Apache-2.0"}
 authors = [
     {name = "Zhengxuan Wu", email = "wuzhengx@stanford.edu"},
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -27,7 +27,7 @@ dependencies = [
     "pyvene>=0.1.7",
     "transformers>=4.48.2",
     "protobuf>=3.20.0",
-    "matplotlib>=3.7.4",
+    "matplotlib",
     "ipywidgets>=8.1.1",
     "plotnine>=0.12.4",
     "huggingface-hub",
@@ -75,6 +75,7 @@ dev-dependencies = [
     "black",
     "ruff",
 ]
+no-build-isolation-package = ["flash-attn"]
 
 [tool.ruff]
 line-length = 120
