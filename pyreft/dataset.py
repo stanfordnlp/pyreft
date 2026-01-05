@@ -140,7 +140,7 @@ class ReftDataCollator(object):
         max_seq_length = batch_inputs["input_ids"].shape[-1]
         
         # Pad intervention_locations to same length and convert to tensor
-        # Use -1 as padding value (will be ignored during intervention)
+        # Use 0 as padding value (pyvene doesn't handle -1, so we redundantly intervene on pos 0)
         max_intervention_len = max(len(locs[0]) if isinstance(locs[0], list) else len(locs) for locs in intervention_locations_list)
         padded_locations = []
         for locs in intervention_locations_list:
@@ -148,7 +148,7 @@ class ReftDataCollator(object):
             padded_intervention = []
             for intervention_locs in locs:
                 pad_len = max_intervention_len - len(intervention_locs)
-                padded_intervention.append(intervention_locs + [-1] * pad_len)
+                padded_intervention.append(intervention_locs + [0] * pad_len)
             padded_locations.append(padded_intervention)
         
         batch_inputs["intervention_locations"] = torch.tensor(padded_locations)
