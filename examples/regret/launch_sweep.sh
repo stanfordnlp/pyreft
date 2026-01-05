@@ -13,8 +13,19 @@
 set -e
 
 # --- Sweep configuration ---
+# ReFT ranks
 RANKS=(1 2 4 8 16 32 64)
 LRS=(1e-4 2e-4 5e-4 1e-3 2e-3 5e-3)
+
+# LoRA ranks (matching ReFT for fair comparison)
+LORA_RANKS=(1 2 4 8 16 32 64)
+LORA_LRS=(1e-4 2e-4 5e-4 1e-3 2e-3)
+
+# Target module sets for LoRA (Llama architecture)
+# Format: "name:modules" - will iterate over these
+LORA_MODULE_SETS=(
+    "all:q_proj;k_proj;v_proj;o_proj;gate_proj;up_proj;down_proj"
+)
 
 # Other settings (modify as needed)
 MAX_EXAMPLES=50000
@@ -41,8 +52,17 @@ is_done() {
 # --- Create logs directory ---
 mkdir -p logs
 
+# --- Calculate total jobs ---
+reft_jobs=$((${#RANKS[@]} * ${#LRS[@]} * 2))  # f1+l1 and all positions
+num_module_sets=${#LORA_MODULE_SETS[@]}
+lora_jobs=$((${#LORA_RANKS[@]} * ${#LORA_LRS[@]} * num_module_sets))
+total_jobs=$((reft_jobs + lora_jobs))
+
 # --- Submit jobs ---
-echo "Submitting sweep: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x 2 positions = $((${#RANKS[@]} * ${#LRS[@]} * 2)) jobs"
+echo "Submitting sweep:"
+echo "  ReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x 2 positions = $reft_jobs jobs"
+echo "  LoRA: ${#LORA_RANKS[@]} ranks x ${#LORA_LRS[@]} LRs x $num_module_sets module sets = $lora_jobs jobs"
+echo "  Total: $total_jobs jobs"
 echo ""
 
 job_count=0
@@ -97,6 +117,42 @@ for rank in "${RANKS[@]}"; do
         fi
         
         job_count=$((job_count + 1))
+    done
+done
+
+# --- LoRA-only sweep (attention and MLP modules) ---
+echo ""
+echo "=== LoRA Sweep ==="
+for module_set in "${LORA_MODULE_SETS[@]}"; do
+    # Parse "name:modules" format
+    module_set_name="${module_set%%:*}"
+    modules="${module_set#*:}"
+    
+    for lora_rank in "${LORA_RANKS[@]}"; do
+        for lr in "${LORA_LRS[@]}"; do
+            job_name="lora_r${lora_rank}_${module_set_name}_lr${lr}"
+            # Build run_name to match what sweep.sbatch generates
+            modules_short=$(echo "$modules" | sed 's/;/+/g' | sed 's/_proj//g')
+            run_name="lora_r${lora_rank}___${modules_short}___lr${lr}"
+            
+            # Skip if already done
+            if $SKIP_DONE && is_done "$run_name"; then
+                echo "Skipping (done): $run_name"
+                skipped_count=$((skipped_count + 1))
+                continue
+            fi
+            
+            cmd="sbatch --job-name=$job_name --export=ALL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$modules,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+            
+            if $DRY_RUN; then
+                echo "$cmd"
+            else
+                echo "Submitting: LoRA rank=$lora_rank, modules=$module_set_name, lr=$lr"
+                $cmd
+            fi
+            
+            job_count=$((job_count + 1))
+        done
     done
 done
 

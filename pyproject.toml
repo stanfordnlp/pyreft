@@ -45,6 +45,9 @@ dependencies = [
 flash = [
     "flash-attn>=2.5.6",
 ]
+peft = [
+    "peft>=0.10.0",
+]
 notebook = [
     "jupyter",
     "fsspec>=2024.2.0",

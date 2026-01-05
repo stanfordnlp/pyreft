@@ -23,11 +23,22 @@
 set -e
 
 # --- Configuration (override via --export or environment) ---
+# ReFT config
 RANK=${RANK:-4}
 LR=${LR:-5e-4}
 LAYERS=${LAYERS:-"all"}
 POSITION=${POSITION:-"f1+l1"}
 SHARE_WEIGHTS=${SHARE_WEIGHTS:-false}
+
+# LoRA config
+USE_LORA=${USE_LORA:-false}
+DISABLE_REFT=${DISABLE_REFT:-false}
+LORA_RANK=${LORA_RANK:-8}
+LORA_ALPHA=${LORA_ALPHA:-32}
+LORA_MODULES=${LORA_MODULES:-"q_proj;v_proj"}
+LORA_DROPOUT=${LORA_DROPOUT:-0.05}
+
+# General training config
 EPOCHS=${EPOCHS:-1}
 BATCH_SIZE=${BATCH_SIZE:-2}
 GRAD_ACCUM=${GRAD_ACCUM:-16}
@@ -66,7 +77,17 @@ mkdir -p logs
 # --- Build run name ---
 if [ "$FULL_FINETUNE" = "true" ]; then
     RUN_NAME="fullft_lr${LR}"
+elif [ "$USE_LORA" = "true" ] && [ "$DISABLE_REFT" = "true" ]; then
+    # LoRA-only: include rank and modules in name
+    # Shorten module names for readability
+    MODULES_SHORT=$(echo "$LORA_MODULES" | sed 's/;/+/g' | sed 's/_proj//g')
+    RUN_NAME="lora_r${LORA_RANK}___${MODULES_SHORT}___lr${LR}"
+elif [ "$USE_LORA" = "true" ]; then
+    # LoRA + ReFT combined
+    MODULES_SHORT=$(echo "$LORA_MODULES" | sed 's/;/+/g' | sed 's/_proj//g')
+    RUN_NAME="lora_r${LORA_RANK}_reft_r${RANK}___${MODULES_SHORT}___lr${LR}"
 else
+    # ReFT-only
     RUN_NAME="r${RANK}___${POSITION}___lr${LR}"
 fi
 
@@ -103,6 +124,14 @@ fi
 # Add full finetune flag and gradient checkpointing if needed
 if [ "$FULL_FINETUNE" = "true" ]; then
     CMD="$CMD --full_finetune --gradient_checkpointing"
+fi
+
+# Add LoRA flags if enabled
+if [ "$USE_LORA" = "true" ]; then
+    CMD="$CMD --use_lora --lora_rank $LORA_RANK --lora_alpha $LORA_ALPHA --lora_modules $LORA_MODULES --lora_dropout $LORA_DROPOUT"
+    if [ "$DISABLE_REFT" = "true" ]; then
+        CMD="$CMD --disable_reft"
+    fi
 fi
 
 # --- Run training ---

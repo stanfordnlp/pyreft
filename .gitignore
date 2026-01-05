@@ -36,6 +36,11 @@ tmp/
 *.DS_Store
 examples/reward/reward/
 
+# Regret experiments
+examples/regret/analysis/plots/
+examples/regret/logs/
+examples/regret/outputs/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

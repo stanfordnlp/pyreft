@@ -7,7 +7,7 @@ Aryaman Arora - co-author of the ReFT paper.
 Replicating the ["LoRA Without Regret" blog post](https://thinkingmachines.ai/blog/lora/) but for **LoReFT** instead of LoRA. Analyzing how LoReFT performance scales with rank and learning rate.
 
 ## Key Files
-- `train.py` - Main training script for LoReFT and full fine-tuning baseline
+- `train.py` - Main training script for LoReFT, LoRA, LoRA+LoReFT, and full fine-tuning
 - `trainer.py` - Custom trainers with NLL/perplexity evaluation
 - `sweep.sbatch` - SLURM job template
 - `launch_sweep.sh` - Launches grid search over rank × LR × position
@@ -25,6 +25,10 @@ Replicating the ["LoRA Without Regret" blog post](https://thinkingmachines.ai/bl
 - `--max_eval_samples` - subsample eval set for faster training (default: 500)
 - `--use_flash_attn` - Flash Attention 2 support
 - `--skip-done` flag in launch_sweep.sh to skip completed jobs
+- **LoRA support**: `--use_lora` enables LoRA training (requires `peft` package)
+  - `--use_lora --disable_reft` for LoRA-only baseline
+  - `--use_lora` (without disable_reft) for LoRA + LoReFT combined
+  - Args: `--lora_rank`, `--lora_alpha`, `--lora_modules`, `--lora_layers`, `--lora_dropout`
 
 ## Known Issues / Tech Debt
 1. **position vs positions**: Inconsistent naming in `pyreft/dataset.py`. `get_intervention_locations` checks both keys as a workaround.
@@ -36,6 +40,7 @@ Replicating the ["LoRA Without Regret" blog post](https://thinkingmachines.ai/bl
 # Install with uv
 uv sync
 uv sync --extra flash  # optional, for Flash Attention 2
+uv sync --extra peft   # optional, for LoRA support
 
 # Run sweep (dry run first)
 ./launch_sweep.sh --dry-run
@@ -43,6 +48,18 @@ uv sync --extra flash  # optional, for Flash Attention 2
 
 # Single test run
 uv run train.py --max_n_train_example 100 --position f1+l1 --rank 4
+
+# LoReFT-only (default)
+uv run train.py --max_n_train_example 100 --rank 4
+
+# LoRA-only
+uv run train.py --max_n_train_example 100 --use_lora --disable_reft --lora_rank 8
+
+# LoRA + LoReFT combined
+uv run train.py --max_n_train_example 100 --use_lora --lora_rank 8 --rank 4
+
+# Full fine-tuning baseline
+uv run train.py --max_n_train_example 100 --full_finetune --gradient_checkpointing
 ```
 
 ## Branch
