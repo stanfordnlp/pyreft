@@ -119,6 +119,7 @@ def plot_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity: st
     ax.set_xlabel("Training Step", fontsize=12)
     ax.set_ylabel("Eval NLL", fontsize=12)
     ax.set_title(f"NLL over Training (position={position}, best {group_by}s)", fontsize=14)
+    ax.set_xscale("log")
     ax.legend(title=group_by.capitalize(), loc="best")
     ax.grid(True, alpha=0.3)
     
@@ -173,6 +174,7 @@ def plot_all_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity
     ax.set_xlabel("Training Step", fontsize=12)
     ax.set_ylabel("Eval NLL", fontsize=12)
     ax.set_title(f"All NLL Curves (position={position})", fontsize=14)
+    ax.set_xscale("log")
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
