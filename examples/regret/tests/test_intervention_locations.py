@@ -237,7 +237,7 @@ class TestWithTulu3:
             prompt_length = sample["prompt_length"]
             last_position = prompt_length - 1  # Following dataset convention
             
-            # Test f1+l1
+            # Test f1+l1 (legacy)
             locs_f1l1 = get_intervention_locations(
                 last_position=last_position,
                 positions="f1+l1",
@@ -249,7 +249,7 @@ class TestWithTulu3:
             assert len([p for p in locs_f1l1[0] if p >= 0]) == 2
             assert 0 in locs_f1l1[0]  # first token
             
-            # Test all
+            # Test all (legacy)
             locs_all = get_intervention_locations(
                 last_position=last_position,
                 position="all",
@@ -257,9 +257,63 @@ class TestWithTulu3:
                 share_weights=True,
             )
             
-            # All should cover positions 0 to last_position-1
+            # All should cover positions 0 to last_position-1 (legacy off-by-one)
             assert len(locs_all[0]) == last_position
             assert locs_all[0] == list(range(last_position))
+    
+    def test_strict_mode_on_tulu3(self, tokenizer, tulu_samples):
+        """Test strict mode intervention locations with actual Tulu-3 prompts."""
+        for i, sample in enumerate(tulu_samples):
+            prompt_length = sample["prompt_length"]
+            last_position = prompt_length - 1  # Following dataset convention
+            
+            # Test f1+s1 (strict) - should include actual last token
+            locs_f1s1 = get_intervention_locations(
+                last_position=last_position,
+                positions="f1+s1",
+                num_interventions=2,
+                share_weights=True,
+            )
+            
+            # f1+s1 should have 2 positions: first (0) and actual last (last_position)
+            assert len([p for p in locs_f1s1[0] if p >= 0]) == 2
+            assert 0 in locs_f1s1[0]  # first token
+            assert last_position in locs_f1s1[0]  # actual last token (strict)
+            
+            # Compare with legacy f1+l1
+            locs_f1l1 = get_intervention_locations(
+                last_position=last_position,
+                positions="f1+l1",
+                num_interventions=2,
+                share_weights=True,
+            )
+            # Strict should have last_position, legacy should have last_position - 1
+            assert max(locs_f1s1[0]) == last_position
+            assert max(locs_f1l1[0]) == last_position - 1
+            
+            # Test alls (strict) - should include actual last token
+            locs_alls = get_intervention_locations(
+                last_position=last_position,
+                position="alls",
+                num_interventions=2,
+                share_weights=True,
+            )
+            
+            # alls should cover positions 0 to last_position (inclusive)
+            assert len(locs_alls[0]) == last_position + 1
+            assert locs_alls[0] == list(range(last_position + 1))
+            
+            # Compare with legacy all
+            locs_all = get_intervention_locations(
+                last_position=last_position,
+                position="all",
+                num_interventions=2,
+                share_weights=True,
+            )
+            # Strict should have one more position than legacy
+            assert len(locs_alls[0]) == len(locs_all[0]) + 1
+            assert max(locs_alls[0]) == last_position
+            assert max(locs_all[0]) == last_position - 1
 
 
 def main():

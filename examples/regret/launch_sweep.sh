@@ -53,14 +53,17 @@ is_done() {
 mkdir -p logs
 
 # --- Calculate total jobs ---
-reft_jobs=$((${#RANKS[@]} * ${#LRS[@]} * 2))  # f1+l1 and all positions
+reft_legacy_jobs=$((${#RANKS[@]} * ${#LRS[@]} * 2))  # f1+l1 and all (legacy)
+reft_strict_jobs=$((${#RANKS[@]} * ${#LRS[@]} * 2))  # f1+s1 and alls (strict)
+reft_jobs=$((reft_legacy_jobs + reft_strict_jobs))
 num_module_sets=${#LORA_MODULE_SETS[@]}
 lora_jobs=$((${#LORA_RANKS[@]} * ${#LORA_LRS[@]} * num_module_sets))
 total_jobs=$((reft_jobs + lora_jobs))
 
 # --- Submit jobs ---
 echo "Submitting sweep:"
-echo "  ReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x 2 positions = $reft_jobs jobs"
+echo "  ReFT (legacy): ${#RANKS[@]} ranks x ${#LRS[@]} LRs x 2 positions = $reft_legacy_jobs jobs"
+echo "  ReFT (strict): ${#RANKS[@]} ranks x ${#LRS[@]} LRs x 2 positions = $reft_strict_jobs jobs"
 echo "  LoRA: ${#LORA_RANKS[@]} ranks x ${#LORA_LRS[@]} LRs x $num_module_sets module sets = $lora_jobs jobs"
 echo "  Total: $total_jobs jobs"
 echo ""
@@ -94,7 +97,7 @@ for rank in "${RANKS[@]}"; do
     done
 done
 
-# --- All positions sweep (with share_weights) ---
+# --- All positions sweep (legacy, with share_weights) ---
 for rank in "${RANKS[@]}"; do
     for lr in "${LRS[@]}"; do
         job_name="loreft_r${rank}_all_lr${lr}"
@@ -113,6 +116,60 @@ for rank in "${RANKS[@]}"; do
             echo "$cmd"
         else
             echo "Submitting: rank=$rank, position=all, lr=$lr"
+            $cmd
+        fi
+        
+        job_count=$((job_count + 1))
+    done
+done
+
+# --- Strict f1+s1 position sweep (includes actual last token) ---
+echo ""
+echo "=== ReFT Strict Mode Sweep ==="
+for rank in "${RANKS[@]}"; do
+    for lr in "${LRS[@]}"; do
+        job_name="loreft_r${rank}_f1s1_lr${lr}"
+        run_name="r${rank}___f1+s1___lr${lr}"
+        
+        # Skip if already done
+        if $SKIP_DONE && is_done "$run_name"; then
+            echo "Skipping (done): $run_name"
+            skipped_count=$((skipped_count + 1))
+            continue
+        fi
+        
+        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=f1+s1,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+        
+        if $DRY_RUN; then
+            echo "$cmd"
+        else
+            echo "Submitting: rank=$rank, position=f1+s1 (strict), lr=$lr"
+            $cmd
+        fi
+        
+        job_count=$((job_count + 1))
+    done
+done
+
+# --- Strict alls positions sweep (includes actual last token, with share_weights) ---
+for rank in "${RANKS[@]}"; do
+    for lr in "${LRS[@]}"; do
+        job_name="loreft_r${rank}_alls_lr${lr}"
+        run_name="r${rank}___alls___lr${lr}"
+        
+        # Skip if already done
+        if $SKIP_DONE && is_done "$run_name"; then
+            echo "Skipping (done): $run_name"
+            skipped_count=$((skipped_count + 1))
+            continue
+        fi
+        
+        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=alls,SHARE_WEIGHTS=true,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+        
+        if $DRY_RUN; then
+            echo "$cmd"
+        else
+            echo "Submitting: rank=$rank, position=alls (strict), lr=$lr"
             $cmd
         fi
         
