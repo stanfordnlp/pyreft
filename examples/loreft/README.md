@@ -62,7 +62,7 @@ python train.py -task commonsense \
 -data_dir dataset \
 -model yahma/llama-7b-hf \
 -seed 42 \
--l all -r 8 -p f7+l7 -e 6 -lr 9e-4 \
+-l all -r 8 -p f7+s7 -e 6 -lr 9e-4 \
 -type LoreftIntervention \
 -gradient_accumulation_steps 2 \
 -batch_size 16 \

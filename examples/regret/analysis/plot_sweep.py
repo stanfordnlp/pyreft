@@ -37,14 +37,37 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
         config = run.config
         summary = run.summary._json_dict
         
+        # Determine method type
+        use_lora = config.get("use_lora", False)
+        disable_reft = config.get("disable_reft", False)
+        full_finetune = config.get("full_finetune", False)
+        
+        if full_finetune:
+            method = "full_finetune"
+        elif use_lora and disable_reft:
+            method = "lora"
+        elif use_lora:
+            method = "lora+reft"
+        else:
+            method = "reft"
+        
         record = {
             "run_name": run.name,
             "run_id": run.id,
+            # ReFT config
             "rank": config.get("rank"),
             "lr": config.get("lr"),
             "position": config.get("position"),
             "share_weights": config.get("share_weights", False),
-            "full_finetune": config.get("full_finetune", False),
+            # LoRA config
+            "use_lora": use_lora,
+            "disable_reft": disable_reft,
+            "lora_rank": config.get("lora_rank"),
+            "lora_modules": config.get("lora_modules"),
+            # Method type
+            "method": method,
+            "full_finetune": full_finetune,
+            # Params
             "trainable_params": config.get("trainable_params") or summary.get("trainable_params"),
             # Handle both key formats: eval/nll and eval_nll
             "eval_loss": summary.get("eval/loss") or summary.get("eval_loss"),
@@ -74,9 +97,9 @@ def plot_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity: st
     """Plot NLL over training steps for different configurations."""
     import wandb
     
-    subset = df[(df["position"] == position) & (~df["full_finetune"])].copy()
+    subset = df[(df["position"] == position) & (df["method"] == "reft")].copy()
     if subset.empty:
-        print(f"No data for position={position}")
+        print(f"No ReFT data for position={position}")
         return
     
     api = wandb.Api()
@@ -135,9 +158,9 @@ def plot_all_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity
     """Plot all NLL curves on one plot, colored by rank."""
     import wandb
     
-    subset = df[(df["position"] == position) & (~df["full_finetune"])].copy()
+    subset = df[(df["position"] == position) & (df["method"] == "reft")].copy()
     if subset.empty:
-        print(f"No data for position={position}")
+        print(f"No ReFT data for position={position}")
         return
     
     api = wandb.Api()
@@ -186,9 +209,9 @@ def plot_all_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity
 
 def plot_nll_vs_rank(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
     """Plot NLL vs rank for different learning rates."""
-    subset = df[(df["position"] == position) & (~df["full_finetune"])]
+    subset = df[(df["position"] == position) & (df["method"] == "reft")]
     if subset.empty:
-        print(f"No data for position={position}")
+        print(f"No ReFT data for position={position}")
         return
     
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -216,9 +239,9 @@ def plot_nll_vs_rank(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"
 
 def plot_nll_vs_lr(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
     """Plot NLL vs learning rate for different ranks."""
-    subset = df[(df["position"] == position) & (~df["full_finetune"])]
+    subset = df[(df["position"] == position) & (df["method"] == "reft")]
     if subset.empty:
-        print(f"No data for position={position}")
+        print(f"No ReFT data for position={position}")
         return
     
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -246,28 +269,53 @@ def plot_nll_vs_lr(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
 
 def plot_best_nll_vs_params(df: pd.DataFrame, output_dir: Path):
     """Plot best NLL vs trainable params (like the LoRA Without Regret plot)."""
-    # Get best NLL for each (rank, position) combo across all LRs
-    loreft_df = df[~df["full_finetune"]].copy()
+    fig, ax = plt.subplots(figsize=(12, 7))
     
-    if loreft_df.empty:
-        print("No LoReFT data")
-        return
+    # Plot ReFT runs (grouped by position)
+    reft_df = df[df["method"] == "reft"].copy()
+    if not reft_df.empty:
+        best_per_config = reft_df.groupby(["rank", "position"]).agg({
+            "eval_nll": "min",
+            "trainable_params": "first",
+        }).reset_index()
+        
+        positions = best_per_config["position"].unique()
+        reft_markers = ['o', 's', '^', 'D', 'v', '<']
+        reft_colors = plt.cm.Blues(np.linspace(0.4, 0.9, len(positions)))
+        
+        for i, pos in enumerate(positions):
+            pos_data = best_per_config[best_per_config["position"] == pos].sort_values("trainable_params")
+            ax.plot(pos_data["trainable_params"], pos_data["eval_nll"],
+                    marker=reft_markers[i % len(reft_markers)], 
+                    label=f"ReFT ({pos})",
+                    color=reft_colors[i],
+                    linewidth=2, markersize=10)
     
-    best_per_config = loreft_df.groupby(["rank", "position"]).agg({
-        "eval_nll": "min",
-        "trainable_params": "first",
-    }).reset_index()
+    # Plot LoRA runs
+    lora_df = df[df["method"] == "lora"].copy()
+    if not lora_df.empty:
+        best_per_rank = lora_df.groupby("lora_rank").agg({
+            "eval_nll": "min",
+            "trainable_params": "first",
+        }).reset_index()
+        best_per_rank = best_per_rank.sort_values("trainable_params")
+        
+        ax.plot(best_per_rank["trainable_params"], best_per_rank["eval_nll"],
+                marker='p', label="LoRA",
+                color='orange', linewidth=2, markersize=10)
     
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    positions = best_per_config["position"].unique()
-    markers = ['o', 's', '^', 'D']
-    
-    for i, pos in enumerate(positions):
-        pos_data = best_per_config[best_per_config["position"] == pos].sort_values("trainable_params")
-        ax.plot(pos_data["trainable_params"], pos_data["eval_nll"],
-                marker=markers[i % len(markers)], label=f"position={pos}",
-                linewidth=2, markersize=10)
+    # Plot LoRA+ReFT runs if any
+    lora_reft_df = df[df["method"] == "lora+reft"].copy()
+    if not lora_reft_df.empty:
+        best_per_config = lora_reft_df.groupby(["lora_rank", "rank"]).agg({
+            "eval_nll": "min",
+            "trainable_params": "first",
+        }).reset_index()
+        best_per_config = best_per_config.sort_values("trainable_params")
+        
+        ax.plot(best_per_config["trainable_params"], best_per_config["eval_nll"],
+                marker='h', label="LoRA+ReFT",
+                color='purple', linewidth=2, markersize=10)
     
     # Add full finetune baseline if available
     full_ft = df[df["full_finetune"]]
@@ -280,9 +328,9 @@ def plot_best_nll_vs_params(df: pd.DataFrame, output_dir: Path):
     
     ax.set_xlabel("Trainable Parameters", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
-    ax.set_title("LoReFT: Best NLL vs Trainable Parameters", fontsize=14)
+    ax.set_title("Best NLL vs Trainable Parameters", fontsize=14)
     ax.set_xscale("log")
-    ax.legend(loc="best")
+    ax.legend(loc="best", fontsize=9)
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -293,57 +341,86 @@ def plot_best_nll_vs_params(df: pd.DataFrame, output_dir: Path):
 
 
 def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
-    """Compare f1+l1 vs all positions."""
-    loreft_df = df[~df["full_finetune"]].copy()
+    """Compare different positions and methods."""
+    reft_df = df[df["method"] == "reft"].copy()
+    lora_df = df[df["method"] == "lora"].copy()
     
-    positions = loreft_df["position"].unique()
-    if len(positions) < 2:
-        print("Need multiple positions to compare")
+    positions = reft_df["position"].dropna().unique()
+    if len(positions) < 1:
+        print("No ReFT positions to compare")
         return
     
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
-    # Plot 1: NLL vs Rank for each position
+    # Plot 1: NLL vs Rank for each position (ReFT only)
     ax = axes[0]
-    for pos in positions:
+    markers = ['o', 's', '^', 'D', 'v', '<']
+    colors = plt.cm.tab10(np.linspace(0, 1, len(positions) + 1))
+    
+    for i, pos in enumerate(sorted(positions)):
         # Get best LR for each rank
-        pos_data = loreft_df[loreft_df["position"] == pos]
+        pos_data = reft_df[reft_df["position"] == pos]
+        if pos_data.empty:
+            continue
         best_per_rank = pos_data.groupby("rank")["eval_nll"].min().reset_index()
         best_per_rank = best_per_rank.sort_values("rank")
         ax.plot(best_per_rank["rank"], best_per_rank["eval_nll"],
-                marker='o', label=f"position={pos}", linewidth=2, markersize=8)
+                marker=markers[i % len(markers)], label=f"ReFT ({pos})", 
+                color=colors[i], linewidth=2, markersize=8)
+    
+    # Add LoRA if available
+    if not lora_df.empty:
+        best_per_rank = lora_df.groupby("lora_rank")["eval_nll"].min().reset_index()
+        best_per_rank = best_per_rank.sort_values("lora_rank")
+        ax.plot(best_per_rank["lora_rank"], best_per_rank["eval_nll"],
+                marker='p', label="LoRA", color='orange', linewidth=2, markersize=8)
     
     ax.set_xlabel("Rank", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
     ax.set_title("Best NLL vs Rank (optimized over LR)", fontsize=14)
     ax.set_xscale("log", base=2)
-    ax.legend()
+    ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
     
-    # Plot 2: Scatter of f1+l1 vs all (if both exist)
+    # Plot 2: Legacy vs Strict comparison
     ax = axes[1]
-    if "f1+l1" in positions and "all" in positions:
-        merged = loreft_df.pivot_table(
-            index=["rank", "lr"], 
-            columns="position", 
-            values="eval_nll"
-        ).reset_index()
+    legacy_strict_pairs = [("f1+l1", "f1+s1"), ("all", "alls")]
+    
+    has_comparison = False
+    for legacy, strict in legacy_strict_pairs:
+        if legacy in positions and strict in positions:
+            legacy_data = reft_df[reft_df["position"] == legacy]
+            strict_data = reft_df[reft_df["position"] == strict]
+            
+            # Merge on rank and lr
+            merged = pd.merge(
+                legacy_data[["rank", "lr", "eval_nll"]],
+                strict_data[["rank", "lr", "eval_nll"]],
+                on=["rank", "lr"],
+                suffixes=("_legacy", "_strict")
+            )
+            
+            if not merged.empty:
+                has_comparison = True
+                ax.scatter(merged["eval_nll_legacy"], merged["eval_nll_strict"], 
+                          alpha=0.7, s=60, label=f"{legacy} vs {strict}")
+    
+    if has_comparison:
+        # Add diagonal line
+        all_vals = ax.get_xlim() + ax.get_ylim()
+        lims = [min(all_vals), max(all_vals)]
+        ax.plot(lims, lims, 'k--', alpha=0.5, label="y=x")
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
         
-        if "f1+l1" in merged.columns and "all" in merged.columns:
-            ax.scatter(merged["f1+l1"], merged["all"], alpha=0.7, s=60)
-            
-            # Add diagonal line
-            lims = [
-                min(merged["f1+l1"].min(), merged["all"].min()),
-                max(merged["f1+l1"].max(), merged["all"].max()),
-            ]
-            ax.plot(lims, lims, 'k--', alpha=0.5, label="y=x")
-            
-            ax.set_xlabel("NLL (f1+l1)", fontsize=12)
-            ax.set_ylabel("NLL (all)", fontsize=12)
-            ax.set_title("Position Comparison: f1+l1 vs all", fontsize=14)
-            ax.legend()
-            ax.grid(True, alpha=0.3)
+        ax.set_xlabel("NLL (legacy)", fontsize=12)
+        ax.set_ylabel("NLL (strict)", fontsize=12)
+        ax.set_title("Legacy vs Strict Position Comparison", fontsize=14)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+    else:
+        ax.text(0.5, 0.5, "No legacy/strict pairs to compare", 
+                ha='center', va='center', transform=ax.transAxes)
     
     plt.tight_layout()
     plt.savefig(output_dir / "position_comparison.png", dpi=150)
@@ -352,11 +429,102 @@ def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
     print("Saved: position_comparison.png")
 
 
+def plot_lora_results(df: pd.DataFrame, output_dir: Path):
+    """Plot LoRA-specific results."""
+    lora_df = df[df["method"] == "lora"].copy()
+    
+    if lora_df.empty:
+        print("No LoRA data")
+        return
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Plot 1: NLL vs LoRA rank
+    ax = axes[0]
+    lrs = sorted(lora_df["lr"].dropna().unique())
+    for i, lr in enumerate(lrs):
+        lr_data = lora_df[lora_df["lr"] == lr].sort_values("lora_rank")
+        ax.plot(lr_data["lora_rank"], lr_data["eval_nll"], 
+                marker='o', label=f"LR={lr:.0e}", color=COLORS[i % len(COLORS)],
+                linewidth=2, markersize=8)
+    
+    ax.set_xlabel("LoRA Rank", fontsize=12)
+    ax.set_ylabel("Eval NLL", fontsize=12)
+    ax.set_title("LoRA: NLL vs Rank", fontsize=14)
+    ax.set_xscale("log", base=2)
+    ax.legend(title="Learning Rate", loc="best", fontsize=9)
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 2: NLL vs LR for different ranks
+    ax = axes[1]
+    ranks = sorted(lora_df["lora_rank"].dropna().unique())
+    for i, rank in enumerate(ranks):
+        rank_data = lora_df[lora_df["lora_rank"] == rank].sort_values("lr")
+        ax.plot(rank_data["lr"], rank_data["eval_nll"],
+                marker='s', label=f"Rank={int(rank)}", color=COLORS[i % len(COLORS)],
+                linewidth=2, markersize=8)
+    
+    ax.set_xlabel("Learning Rate", fontsize=12)
+    ax.set_ylabel("Eval NLL", fontsize=12)
+    ax.set_title("LoRA: NLL vs Learning Rate", fontsize=14)
+    ax.set_xscale("log")
+    ax.legend(title="Rank", loc="best", fontsize=9)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "lora_results.png", dpi=150)
+    plt.savefig(output_dir / "lora_results.pdf")
+    plt.close()
+    print("Saved: lora_results.png")
+
+
+def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
+    """Compare ReFT vs LoRA head-to-head."""
+    reft_df = df[df["method"] == "reft"].copy()
+    lora_df = df[df["method"] == "lora"].copy()
+    
+    if reft_df.empty or lora_df.empty:
+        print("Need both ReFT and LoRA data for comparison")
+        return
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Get best NLL for each trainable params level
+    reft_best = reft_df.groupby("trainable_params").agg({
+        "eval_nll": "min",
+        "rank": "first",
+        "position": "first",
+    }).reset_index().sort_values("trainable_params")
+    
+    lora_best = lora_df.groupby("trainable_params").agg({
+        "eval_nll": "min",
+        "lora_rank": "first",
+    }).reset_index().sort_values("trainable_params")
+    
+    ax.plot(reft_best["trainable_params"], reft_best["eval_nll"],
+            marker='o', label="ReFT (best)", color='blue', linewidth=2, markersize=8)
+    ax.plot(lora_best["trainable_params"], lora_best["eval_nll"],
+            marker='s', label="LoRA", color='orange', linewidth=2, markersize=8)
+    
+    ax.set_xlabel("Trainable Parameters", fontsize=12)
+    ax.set_ylabel("Best Eval NLL", fontsize=12)
+    ax.set_title("ReFT vs LoRA: Efficiency Comparison", fontsize=14)
+    ax.set_xscale("log")
+    ax.legend(loc="best")
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "method_comparison.png", dpi=150)
+    plt.savefig(output_dir / "method_comparison.pdf")
+    plt.close()
+    print("Saved: method_comparison.png")
+
+
 def plot_heatmap(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
     """Create heatmap of NLL for rank x LR grid."""
-    subset = df[(df["position"] == position) & (~df["full_finetune"])]
+    subset = df[(df["position"] == position) & (df["method"] == "reft")]
     if subset.empty:
-        print(f"No data for position={position}")
+        print(f"No ReFT data for position={position}")
         return
     
     pivot = subset.pivot_table(index="rank", columns="lr", values="eval_nll")
@@ -428,13 +596,16 @@ def main():
             print(f"Saved data to {csv_path}")
     
     print(f"Loaded {len(df)} runs")
-    print(f"Positions: {df['position'].unique()}")
-    print(f"Ranks: {sorted(df['rank'].dropna().unique())}")
+    print(f"Methods: {df['method'].unique()}")
+    print(f"Positions: {df['position'].dropna().unique()}")
+    print(f"ReFT Ranks: {sorted(df['rank'].dropna().unique())}")
+    print(f"LoRA Ranks: {sorted(df['lora_rank'].dropna().unique())}")
     print(f"LRs: {sorted(df['lr'].dropna().unique())}")
     
-    # Generate plots
-    for position in df["position"].dropna().unique():
-        if position and not df[df["position"] == position]["full_finetune"].all():
+    # Generate ReFT plots for each position
+    reft_df = df[df["method"] == "reft"]
+    for position in reft_df["position"].dropna().unique():
+        if position:
             plot_nll_vs_rank(df, output_dir, position)
             plot_nll_vs_lr(df, output_dir, position)
             plot_heatmap(df, output_dir, position)
@@ -445,8 +616,13 @@ def main():
                 plot_nll_curves(df, output_dir, args.project, args.entity, position, group_by="lr")
                 plot_all_nll_curves(df, output_dir, args.project, args.entity, position)
     
+    # Generate LoRA plots
+    plot_lora_results(df, output_dir)
+    
+    # Generate comparison plots
     plot_best_nll_vs_params(df, output_dir)
     plot_position_comparison(df, output_dir)
+    plot_method_comparison(df, output_dir)
     
     print(f"\nAll plots saved to {output_dir}")
 
