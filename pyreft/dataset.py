@@ -51,21 +51,53 @@ from transformers import DataCollator
 
 
 def parse_positions(positions: str):
-    # parse position
+    """
+    Parse position string into (first_n, last_n, strict) tuple.
+    
+    Position formats:
+    - "f1+l1" - first 1 and last 1 tokens (legacy, off-by-one on last)
+    - "f1+s1" - first 1 and strict-last 1 tokens (includes actual last token)
+    - "all" - all prompt tokens (legacy, off-by-one)
+    - "alls" - all prompt tokens strict (includes actual last token)
+    - "f5", "l3", "s3" - only first/last/strict-last tokens
+    
+    The 's' suffix/prefix indicates "strict" mode which fixes the off-by-one
+    error where the actual last token was being excluded.
+    """
     first_n, last_n = 0, 0
+    strict = False
+    
+    # Handle "all" variants
     if positions == "all":
-        # Special case: intervene on all prompt tokens
-        # Return sentinel (-1, -1) to signal "all" mode
-        return -1, -1
+        # Legacy: intervene on all prompt tokens (off-by-one)
+        return -1, -1, False
+    if positions == "alls":
+        # Strict: intervene on all prompt tokens including actual last
+        return -1, -1, True
+    
+    # Handle combined positions like "f1+l1" or "f1+s1"
     if "+" in positions:
-        first_n = int(positions.split("+")[0].strip("f"))
-        last_n = int(positions.split("+")[1].strip("l"))
+        left, right = positions.split("+")
+        first_n = int(left.strip("f"))
+        if "s" in right:
+            # Strict mode: "f1+s1" means include actual last token
+            last_n = int(right.strip("s"))
+            strict = True
+        else:
+            # Legacy mode: "f1+l1"
+            last_n = int(right.strip("l"))
     else:
+        # Single position: "f5", "l3", or "s3"
         if "f" in positions:
             first_n = int(positions.strip("f"))
+        elif "s" in positions:
+            # Strict last
+            last_n = int(positions.strip("s"))
+            strict = True
         elif "l" in positions:
             last_n = int(positions.strip("l"))
-    return first_n, last_n
+    
+    return first_n, last_n, strict
 
 
 def get_intervention_locations(**kwargs):
@@ -73,6 +105,12 @@ def get_intervention_locations(**kwargs):
     This function generates the intervention locations.
 
     For your customized dataset, you want to create your own function.
+    
+    Note on "strict" mode:
+    - Legacy behavior has an off-by-one error where last_position is treated as
+      exclusive, so the actual last token is not included.
+    - Strict mode (positions ending in 's', e.g., "f1+s1", "alls") fixes this
+      by using last_position + 1 as the end of the range.
     """
     # parse kwargs
     share_weights = kwargs["share_weights"] if "share_weights" in kwargs else False
@@ -80,20 +118,27 @@ def get_intervention_locations(**kwargs):
     num_interventions = kwargs["num_interventions"]
     pad_mode = kwargs["pad_mode"] if "pad_mode" in kwargs else "first"
     
-    # Handle "all" position: intervene on all prompt tokens
+    # Handle "all" and "alls" positions: intervene on all prompt tokens
     # Note: support both "position" (singular, used by datasets) and "positions" (plural)
     pos_value = kwargs.get("positions") or kwargs.get("position")
-    if pos_value == "all":
-        assert share_weights, "position='all' requires share_weights=True"
-        position_list = list(range(last_position))
+    if pos_value in ("all", "alls"):
+        assert share_weights, f"position='{pos_value}' requires share_weights=True"
+        # Strict mode ("alls") includes the actual last token
+        end_position = last_position + 1 if pos_value == "alls" else last_position
+        position_list = list(range(end_position))
         return [position_list] * num_interventions
     
+    # Parse position string
     if "positions" in kwargs:
-        _first_n, _last_n = parse_positions(kwargs["positions"])
+        _first_n, _last_n, strict = parse_positions(kwargs["positions"])
     elif "position" in kwargs:
-        _first_n, _last_n = parse_positions(kwargs["position"])
+        _first_n, _last_n, strict = parse_positions(kwargs["position"])
     else:
         _first_n, _last_n = kwargs["first_n"], kwargs["last_n"]
+        strict = kwargs.get("strict", False)
+    
+    # In strict mode, adjust the effective last_position to include actual last token
+    effective_last_position = last_position + 1 if strict else last_position
 
     first_n = min(last_position // 2, _first_n)
     last_n = min(last_position // 2, _last_n)
@@ -102,14 +147,14 @@ def get_intervention_locations(**kwargs):
     pad_position = -1 if pad_mode == "first" else last_position
     if share_weights or (first_n == 0 or last_n == 0):
         position_list = [i for i in range(first_n)] + \
-            [i for i in range(last_position - last_n, last_position)] + \
+            [i for i in range(effective_last_position - last_n, effective_last_position)] + \
             [pad_position for _ in range(pad_amount)]
         intervention_locations = [position_list]*num_interventions
     else:
         left_pad_amount = (_first_n - first_n)
         right_pad_amount = (_last_n - last_n)
         left_intervention_locations = [i for i in range(first_n)] + [pad_position for _ in range(left_pad_amount)]
-        right_intervention_locations = [i for i in range(last_position - last_n, last_position)] + \
+        right_intervention_locations = [i for i in range(effective_last_position - last_n, effective_last_position)] + \
             [pad_position for _ in range(right_pad_amount)]
         # after padding, there could be still length diff, we need to do another check
         left_len = len(left_intervention_locations)
