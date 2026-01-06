@@ -216,7 +216,7 @@ class ReftDataset(Dataset):
 
         # setup
         self.tokenizer = tokenizer
-        self.first_n, self.last_n = parse_positions(kwargs["position"])
+        self.first_n, self.last_n, self.strict = parse_positions(kwargs["position"])
         self.task = task
         self.data_path = data_path
         self.data_split = data_split
@@ -290,7 +290,7 @@ class ReftDataset(Dataset):
     def compute_intervention_and_subspaces(self, id: int, data_item, result: dict, last_position: int, **kwargs):
         # compute intervention locs
         intervention_locations = self.get_intervention_locations(last_position=last_position, first_n=self.first_n, 
-            last_n=self.last_n, pad_mode=self.pad_mode, **kwargs)
+            last_n=self.last_n, strict=self.strict, pad_mode=self.pad_mode, **kwargs)
         result["intervention_locations"] = intervention_locations
         result["id"] = id
             
@@ -358,7 +358,7 @@ class ReftRawDataset(Dataset):
 
         # save raw_dataset pointer for access raw strings
         self.raw_dataset = task_dataset if data_split != "train" else None
-        first_n, last_n = parse_positions(kwargs["position"])
+        first_n, last_n, strict = parse_positions(kwargs["position"])
         
         # tokenize and intervene
         for i, data_item in enumerate(tqdm(task_dataset)):
@@ -387,6 +387,7 @@ class ReftRawDataset(Dataset):
                 last_position=last_position, 
                 first_n=first_n, 
                 last_n=last_n,
+                strict=strict,
                 pad_mode="first",
                 **kwargs
             )
@@ -664,7 +665,7 @@ def make_multiple_position_supervised_data_module(
     positions="f1+l1", num_interventions=1, nonstop=False, share_weights=False
 ) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    first_n, last_n = parse_positions(positions)
+    first_n, last_n, strict = parse_positions(positions)
     
     all_base_input_ids, all_intervention_locations, all_output_ids = [], [], []
     for i in range(len(inputs)):
@@ -689,6 +690,7 @@ def make_multiple_position_supervised_data_module(
             last_position=base_prompt_length, 
             first_n=first_n, 
             last_n=last_n,
+            strict=strict,
             pad_mode="last",
             num_interventions=num_interventions,
             share_weights=share_weights,
