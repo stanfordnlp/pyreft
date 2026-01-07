@@ -39,14 +39,12 @@ dependencies = [
     "wandb",
     "scikit-learn",
     "tqdm",
+    "peft>=0.10.0",
 ]
 
 [project.optional-dependencies]
 flash = [
     "flash-attn>=2.5.6",
-]
-peft = [
-    "peft>=0.10.0",
 ]
 notebook = [
     "jupyter",
