@@ -37,6 +37,7 @@ from pyreft import (
     get_reft_model,
     ReftConfig,
     LoreftIntervention,
+    LoreftIntervention_IdentityInit,
     ReftDataCollator,
     ReftGenerationDataset,
 )
@@ -163,14 +164,15 @@ def train(args):
     else:
         model_str = args.model_name_or_path.split("/")[-1]
         now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        init_str = "_idinit" if args.identity_init else ""
         if args.full_finetune:
             run_name = f"{model_str}.tulu3.fullft.{now}"
         elif args.use_lora and args.disable_reft:
             run_name = f"{model_str}.tulu3.lora_r{args.lora_rank}.{now}"
         elif args.use_lora:
-            run_name = f"{model_str}.tulu3.lora_r{args.lora_rank}_reft_r{args.rank}.{now}"
+            run_name = f"{model_str}.tulu3.lora_r{args.lora_rank}_reft_r{args.rank}{init_str}.{now}"
         else:
-            run_name = f"{model_str}.tulu3.reft_r{args.rank}.{now}"
+            run_name = f"{model_str}.tulu3.reft_r{args.rank}{init_str}.{now}"
     
     # Determine training mode
     use_reft = not args.full_finetune and not args.disable_reft
@@ -182,9 +184,9 @@ def train(args):
     elif args.use_lora and args.disable_reft:
         print(f"Mode: LoRA-only (rank={args.lora_rank}, alpha={args.lora_alpha}, modules={args.lora_modules})")
     elif args.use_lora:
-        print(f"Mode: LoRA + LoReFT (LoRA rank={args.lora_rank}, ReFT rank={args.rank})")
+        print(f"Mode: LoRA + LoReFT (LoRA rank={args.lora_rank}, ReFT rank={args.rank}, identity_init={args.identity_init})")
     else:
-        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position})")
+        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position}, identity_init={args.identity_init})")
     print(f"LR: {args.lr}, Epochs: {args.epochs}, Batch size: {args.batch_size}")
     
     # Parse ReFT layers (only needed when using ReFT)
@@ -286,7 +288,9 @@ def train(args):
         train_model = model
     elif use_reft:
         # Create LoReFT interventions
-        print(f"Creating LoReFT interventions with rank={args.rank}")
+        intervention_cls = LoreftIntervention_IdentityInit if args.identity_init else LoreftIntervention
+        init_type = "identity" if args.identity_init else "default"
+        print(f"Creating LoReFT interventions with rank={args.rank}, init={init_type}")
         
         # Component path depends on whether we're wrapping a PEFT model
         if args.use_lora:
@@ -299,7 +303,7 @@ def train(args):
             "layer": l,
             "component": component.format(layer=l) if args.use_lora else component,
             "low_rank_dimension": args.rank,
-            "intervention": LoreftIntervention(
+            "intervention": intervention_cls(
                 embed_dim=model.config.hidden_size,
                 low_rank_dimension=args.rank,
                 dropout=args.dropout,
@@ -625,6 +629,11 @@ def main():
         type=str,
         default=None,
         help="Activation function for LoReFT (default: None/linear)"
+    )
+    parser.add_argument(
+        "--identity_init",
+        action="store_true",
+        help="Use identity initialization for LoReFT (W=R, b=0 at init)"
     )
     
     # Training arguments

@@ -29,6 +29,7 @@ LR=${LR:-5e-4}
 LAYERS=${LAYERS:-"all"}
 POSITION=${POSITION:-"f1+l1"}
 SHARE_WEIGHTS=${SHARE_WEIGHTS:-false}
+IDENTITY_INIT=${IDENTITY_INIT:-false}
 
 # LoRA config
 USE_LORA=${USE_LORA:-false}
@@ -75,6 +76,12 @@ cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs
 
 # --- Build run name ---
+# Add identity init suffix if enabled
+INIT_SUFFIX=""
+if [ "$IDENTITY_INIT" = "true" ]; then
+    INIT_SUFFIX="_idinit"
+fi
+
 if [ "$FULL_FINETUNE" = "true" ]; then
     RUN_NAME="fullft_lr${LR}"
 elif [ "$USE_LORA" = "true" ] && [ "$DISABLE_REFT" = "true" ]; then
@@ -85,10 +92,10 @@ elif [ "$USE_LORA" = "true" ] && [ "$DISABLE_REFT" = "true" ]; then
 elif [ "$USE_LORA" = "true" ]; then
     # LoRA + ReFT combined
     MODULES_SHORT=$(echo "$LORA_MODULES" | sed 's/;/+/g' | sed 's/_proj//g')
-    RUN_NAME="lora_r${LORA_RANK}_reft_r${RANK}___${MODULES_SHORT}___lr${LR}"
+    RUN_NAME="lora_r${LORA_RANK}_reft_r${RANK}${INIT_SUFFIX}___${MODULES_SHORT}___lr${LR}"
 else
     # ReFT-only
-    RUN_NAME="r${RANK}___${POSITION}___lr${LR}"
+    RUN_NAME="r${RANK}${INIT_SUFFIX}___${POSITION}___lr${LR}"
 fi
 
 # --- Build command ---
@@ -114,6 +121,11 @@ CMD="uv run train.py \
 # Add share_weights flag if needed
 if [ "$SHARE_WEIGHTS" = "true" ]; then
     CMD="$CMD --share_weights"
+fi
+
+# Add identity init flag if needed
+if [ "$IDENTITY_INIT" = "true" ]; then
+    CMD="$CMD --identity_init"
 fi
 
 # Add flash attention if enabled
