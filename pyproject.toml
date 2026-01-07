@@ -25,7 +25,7 @@ dependencies = [
     "torch>=2.0.0",
     "torchvision>=0.21.0",
     "pyvene>=0.1.7",
-    "transformers>=4.48.2",
+    "transformers>=4.49.0",
     "protobuf>=3.20.0",
     "matplotlib",
     "ipywidgets>=8.1.1",
@@ -39,7 +39,7 @@ dependencies = [
     "wandb",
     "scikit-learn",
     "tqdm",
-    "peft>=0.10.0",
+    "peft>=0.14.0",
 ]
 
 [project.optional-dependencies]
