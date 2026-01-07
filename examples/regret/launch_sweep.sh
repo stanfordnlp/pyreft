@@ -8,6 +8,7 @@
 #   ./launch_sweep.sh              # Full grid
 #   ./launch_sweep.sh --dry-run    # Print commands without submitting
 #   ./launch_sweep.sh --skip-done  # Skip completed jobs
+#   ./launch_sweep.sh --skip-lora  # Skip LoRA sweep (ReFT only)
 # ============================================================
 
 set -e
@@ -36,10 +37,12 @@ OUTPUT_DIR="./outputs"
 # --- Parse args ---
 DRY_RUN=false
 SKIP_DONE=false
+SKIP_LORA=false
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN=true; echo "=== DRY RUN MODE ===" ;;
         --skip-done) SKIP_DONE=true; echo "=== SKIPPING COMPLETED JOBS ===" ;;
+        --skip-lora) SKIP_LORA=true; echo "=== SKIPPING LORA SWEEP ===" ;;
     esac
 done
 
@@ -234,40 +237,45 @@ for rank in "${RANKS[@]}"; do
 done
 
 # --- LoRA-only sweep (attention and MLP modules) ---
-echo ""
-echo "=== LoRA Sweep ==="
-for module_set in "${LORA_MODULE_SETS[@]}"; do
-    # Parse "name:modules" format
-    module_set_name="${module_set%%:*}"
-    modules="${module_set#*:}"
-    
-    for lora_rank in "${LORA_RANKS[@]}"; do
-        for lr in "${LORA_LRS[@]}"; do
-            job_name="lora_r${lora_rank}_${module_set_name}_lr${lr}"
-            # Build run_name to match what sweep.sbatch generates
-            modules_short=$(echo "$modules" | sed 's/;/+/g' | sed 's/_proj//g')
-            run_name="lora_r${lora_rank}___${modules_short}___lr${lr}"
-            
-            # Skip if already done
-            if $SKIP_DONE && is_done "$run_name"; then
-                echo "Skipping (done): $run_name"
-                skipped_count=$((skipped_count + 1))
-                continue
-            fi
-            
-            cmd="sbatch --job-name=$job_name --export=ALL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$modules,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
-            
-            if $DRY_RUN; then
-                echo "$cmd"
-            else
-                echo "Submitting: LoRA rank=$lora_rank, modules=$module_set_name, lr=$lr"
-                $cmd
-            fi
-            
-            job_count=$((job_count + 1))
+if ! $SKIP_LORA; then
+    echo ""
+    echo "=== LoRA Sweep ==="
+    for module_set in "${LORA_MODULE_SETS[@]}"; do
+        # Parse "name:modules" format
+        module_set_name="${module_set%%:*}"
+        modules="${module_set#*:}"
+        
+        for lora_rank in "${LORA_RANKS[@]}"; do
+            for lr in "${LORA_LRS[@]}"; do
+                job_name="lora_r${lora_rank}_${module_set_name}_lr${lr}"
+                # Build run_name to match what sweep.sbatch generates
+                modules_short=$(echo "$modules" | sed 's/;/+/g' | sed 's/_proj//g')
+                run_name="lora_r${lora_rank}___${modules_short}___lr${lr}"
+                
+                # Skip if already done
+                if $SKIP_DONE && is_done "$run_name"; then
+                    echo "Skipping (done): $run_name"
+                    skipped_count=$((skipped_count + 1))
+                    continue
+                fi
+                
+                cmd="sbatch --job-name=$job_name --export=ALL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$modules,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+                
+                if $DRY_RUN; then
+                    echo "$cmd"
+                else
+                    echo "Submitting: LoRA rank=$lora_rank, modules=$module_set_name, lr=$lr"
+                    $cmd
+                fi
+                
+                job_count=$((job_count + 1))
+            done
         done
     done
-done
+else
+    echo ""
+    echo "=== Skipping LoRA Sweep ==="
+fi
 
 echo ""
 echo "Submitted $job_count jobs"
