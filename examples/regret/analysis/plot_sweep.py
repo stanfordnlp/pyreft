@@ -9,12 +9,12 @@ Usage:
 """
 
 import argparse
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 # Style settings
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -51,6 +51,9 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
         else:
             method = "reft"
         
+        # Check for identity init
+        identity_init = config.get("identity_init", False)
+        
         record = {
             "run_name": run.name,
             "run_id": run.id,
@@ -59,6 +62,7 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
             "lr": config.get("lr"),
             "position": config.get("position"),
             "share_weights": config.get("share_weights", False),
+            "identity_init": identity_init,
             # LoRA config
             "use_lora": use_lora,
             "disable_reft": disable_reft,
@@ -66,6 +70,8 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
             "lora_modules": config.get("lora_modules"),
             # Method type
             "method": method,
+            # Refine method for identity init
+            "method_variant": f"{method}_idinit" if identity_init and method == "reft" else method,
             "full_finetune": full_finetune,
             # Params
             "trainable_params": config.get("trainable_params") or summary.get("trainable_params"),
@@ -78,266 +84,6 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
         records.append(record)
     
     return pd.DataFrame(records)
-
-
-def fetch_run_history(project: str, run_id: str, entity: str = None) -> pd.DataFrame:
-    """Fetch training history for a single run."""
-    import wandb
-    
-    api = wandb.Api()
-    project_path = f"{entity}/{project}" if entity else project
-    run = api.run(f"{project_path}/{run_id}")
-    
-    history = run.history(keys=["_step", "eval/nll", "eval/loss", "train/loss"])
-    return history
-
-
-def plot_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity: str = None,
-                    position: str = "f1+l1", group_by: str = "rank"):
-    """Plot NLL over training steps for different configurations."""
-    import wandb
-    
-    subset = df[(df["position"] == position) & (df["method"] == "reft")].copy()
-    if subset.empty:
-        print(f"No ReFT data for position={position}")
-        return
-    
-    api = wandb.Api()
-    project_path = f"{entity}/{project}" if entity else project
-    
-    fig, ax = plt.subplots(figsize=(12, 7))
-    
-    if group_by == "rank":
-        # Plot curves grouped by rank (best LR for each rank)
-        best_runs = subset.loc[subset.groupby("rank")["eval_nll"].idxmin()]
-        groups = sorted(best_runs["rank"].unique())
-        label_fmt = "rank={:.0f}"
-    else:
-        # Plot curves grouped by LR (best rank for each LR)
-        best_runs = subset.loc[subset.groupby("lr")["eval_nll"].idxmin()]
-        groups = sorted(best_runs["lr"].unique())
-        label_fmt = "LR={:.0e}"
-    
-    for i, group_val in enumerate(groups):
-        if group_by == "rank":
-            run_row = best_runs[best_runs["rank"] == group_val].iloc[0]
-        else:
-            run_row = best_runs[best_runs["lr"] == group_val].iloc[0]
-        
-        run_id = run_row["run_id"]
-        
-        try:
-            run = api.run(f"{project_path}/{run_id}")
-            history = run.history(keys=["_step", "eval/nll"])
-            history = history.dropna(subset=["eval/nll"])
-            
-            if not history.empty:
-                ax.plot(history["_step"], history["eval/nll"],
-                        label=label_fmt.format(group_val),
-                        color=COLORS[i % len(COLORS)],
-                        linewidth=2, alpha=0.8)
-        except Exception as e:
-            print(f"Error fetching history for run {run_id}: {e}")
-    
-    ax.set_xlabel("Training Step", fontsize=12)
-    ax.set_ylabel("Eval NLL", fontsize=12)
-    ax.set_title(f"NLL over Training (position={position}, best {group_by}s)", fontsize=14)
-    ax.set_xscale("log")
-    ax.legend(title=group_by.capitalize(), loc="best")
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / f"nll_curves_by_{group_by}_{position.replace('+', '_')}.png", dpi=150)
-    plt.savefig(output_dir / f"nll_curves_by_{group_by}_{position.replace('+', '_')}.pdf")
-    plt.close()
-    print(f"Saved: nll_curves_by_{group_by}_{position.replace('+', '_')}.png")
-
-
-def plot_all_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity: str = None,
-                        position: str = "f1+l1"):
-    """Plot all NLL curves on one plot, colored by rank."""
-    import wandb
-    
-    subset = df[(df["position"] == position) & (df["method"] == "reft")].copy()
-    if subset.empty:
-        print(f"No ReFT data for position={position}")
-        return
-    
-    api = wandb.Api()
-    project_path = f"{entity}/{project}" if entity else project
-    
-    fig, ax = plt.subplots(figsize=(14, 8))
-    
-    ranks = sorted(subset["rank"].unique())
-    rank_colors = {r: COLORS[i % len(COLORS)] for i, r in enumerate(ranks)}
-    
-    for _, run_row in subset.iterrows():
-        run_id = run_row["run_id"]
-        rank = run_row["rank"]
-        lr = run_row["lr"]
-        
-        try:
-            run = api.run(f"{project_path}/{run_id}")
-            history = run.history(keys=["_step", "eval/nll"])
-            history = history.dropna(subset=["eval/nll"])
-            
-            if not history.empty:
-                ax.plot(history["_step"], history["eval/nll"],
-                        color=rank_colors[rank],
-                        linewidth=1.5, alpha=0.6)
-        except Exception as e:
-            print(f"Error fetching history for run {run_id}: {e}")
-    
-    # Add legend for ranks
-    from matplotlib.lines import Line2D
-    legend_elements = [Line2D([0], [0], color=rank_colors[r], linewidth=2, label=f"rank={int(r)}") 
-                       for r in ranks]
-    ax.legend(handles=legend_elements, title="Rank", loc="best")
-    
-    ax.set_xlabel("Training Step", fontsize=12)
-    ax.set_ylabel("Eval NLL", fontsize=12)
-    ax.set_title(f"All NLL Curves (position={position})", fontsize=14)
-    ax.set_xscale("log")
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / f"all_nll_curves_{position.replace('+', '_')}.png", dpi=150)
-    plt.savefig(output_dir / f"all_nll_curves_{position.replace('+', '_')}.pdf")
-    plt.close()
-    print(f"Saved: all_nll_curves_{position.replace('+', '_')}.png")
-
-
-def plot_nll_vs_rank(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
-    """Plot NLL vs rank for different learning rates."""
-    subset = df[(df["position"] == position) & (df["method"] == "reft")]
-    if subset.empty:
-        print(f"No ReFT data for position={position}")
-        return
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    lrs = sorted(subset["lr"].unique())
-    for i, lr in enumerate(lrs):
-        lr_data = subset[subset["lr"] == lr].sort_values("rank")
-        ax.plot(lr_data["rank"], lr_data["eval_nll"], 
-                marker='o', label=f"LR={lr:.0e}", color=COLORS[i % len(COLORS)],
-                linewidth=2, markersize=8)
-    
-    ax.set_xlabel("Rank", fontsize=12)
-    ax.set_ylabel("Eval NLL", fontsize=12)
-    ax.set_title(f"LoReFT NLL vs Rank (position={position})", fontsize=14)
-    ax.set_xscale("log", base=2)
-    ax.legend(title="Learning Rate", loc="best")
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / f"nll_vs_rank_{position.replace('+', '_')}.png", dpi=150)
-    plt.savefig(output_dir / f"nll_vs_rank_{position.replace('+', '_')}.pdf")
-    plt.close()
-    print(f"Saved: nll_vs_rank_{position.replace('+', '_')}.png")
-
-
-def plot_nll_vs_lr(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
-    """Plot NLL vs learning rate for different ranks."""
-    subset = df[(df["position"] == position) & (df["method"] == "reft")]
-    if subset.empty:
-        print(f"No ReFT data for position={position}")
-        return
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    ranks = sorted(subset["rank"].unique())
-    for i, rank in enumerate(ranks):
-        rank_data = subset[subset["rank"] == rank].sort_values("lr")
-        ax.plot(rank_data["lr"], rank_data["eval_nll"],
-                marker='s', label=f"Rank={int(rank)}", color=COLORS[i % len(COLORS)],
-                linewidth=2, markersize=8)
-    
-    ax.set_xlabel("Learning Rate", fontsize=12)
-    ax.set_ylabel("Eval NLL", fontsize=12)
-    ax.set_title(f"LoReFT NLL vs Learning Rate (position={position})", fontsize=14)
-    ax.set_xscale("log")
-    ax.legend(title="Rank", loc="best")
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / f"nll_vs_lr_{position.replace('+', '_')}.png", dpi=150)
-    plt.savefig(output_dir / f"nll_vs_lr_{position.replace('+', '_')}.pdf")
-    plt.close()
-    print(f"Saved: nll_vs_lr_{position.replace('+', '_')}.png")
-
-
-def plot_best_nll_vs_params(df: pd.DataFrame, output_dir: Path):
-    """Plot best NLL vs trainable params (like the LoRA Without Regret plot)."""
-    fig, ax = plt.subplots(figsize=(12, 7))
-    
-    # Plot ReFT runs (grouped by position)
-    reft_df = df[df["method"] == "reft"].copy()
-    if not reft_df.empty:
-        best_per_config = reft_df.groupby(["rank", "position"]).agg({
-            "eval_nll": "min",
-            "trainable_params": "first",
-        }).reset_index()
-        
-        positions = best_per_config["position"].unique()
-        reft_markers = ['o', 's', '^', 'D', 'v', '<']
-        reft_colors = plt.cm.Blues(np.linspace(0.4, 0.9, len(positions)))
-        
-        for i, pos in enumerate(positions):
-            pos_data = best_per_config[best_per_config["position"] == pos].sort_values("trainable_params")
-            ax.plot(pos_data["trainable_params"], pos_data["eval_nll"],
-                    marker=reft_markers[i % len(reft_markers)], 
-                    label=f"ReFT ({pos})",
-                    color=reft_colors[i],
-                    linewidth=2, markersize=10)
-    
-    # Plot LoRA runs
-    lora_df = df[df["method"] == "lora"].copy()
-    if not lora_df.empty:
-        best_per_rank = lora_df.groupby("lora_rank").agg({
-            "eval_nll": "min",
-            "trainable_params": "first",
-        }).reset_index()
-        best_per_rank = best_per_rank.sort_values("trainable_params")
-        
-        ax.plot(best_per_rank["trainable_params"], best_per_rank["eval_nll"],
-                marker='p', label="LoRA",
-                color='orange', linewidth=2, markersize=10)
-    
-    # Plot LoRA+ReFT runs if any
-    lora_reft_df = df[df["method"] == "lora+reft"].copy()
-    if not lora_reft_df.empty:
-        best_per_config = lora_reft_df.groupby(["lora_rank", "rank"]).agg({
-            "eval_nll": "min",
-            "trainable_params": "first",
-        }).reset_index()
-        best_per_config = best_per_config.sort_values("trainable_params")
-        
-        ax.plot(best_per_config["trainable_params"], best_per_config["eval_nll"],
-                marker='h', label="LoRA+ReFT",
-                color='purple', linewidth=2, markersize=10)
-    
-    # Add full finetune baseline if available
-    full_ft = df[df["full_finetune"]]
-    if not full_ft.empty:
-        best_ft = full_ft.loc[full_ft["eval_nll"].idxmin()]
-        ax.axhline(y=best_ft["eval_nll"], color='red', linestyle='--', 
-                   label=f"Full FT (best)", linewidth=2)
-        ax.scatter([best_ft["trainable_params"]], [best_ft["eval_nll"]], 
-                   color='red', s=150, zorder=5, marker='*')
-    
-    ax.set_xlabel("Trainable Parameters", fontsize=12)
-    ax.set_ylabel("Best Eval NLL", fontsize=12)
-    ax.set_title("Best NLL vs Trainable Parameters", fontsize=14)
-    ax.set_xscale("log")
-    ax.legend(loc="best", fontsize=9)
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / "best_nll_vs_params.png", dpi=150)
-    plt.savefig(output_dir / "best_nll_vs_params.pdf")
-    plt.close()
-    print("Saved: best_nll_vs_params.png")
 
 
 def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
@@ -520,47 +266,291 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
     print("Saved: method_comparison.png")
 
 
-def plot_heatmap(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
-    """Create heatmap of NLL for rank x LR grid."""
-    subset = df[(df["position"] == position) & (df["method"] == "reft")]
-    if subset.empty:
-        print(f"No ReFT data for position={position}")
+def get_best_runs(df: pd.DataFrame):
+    """Get best LR run for each (method, rank, position, identity_init)."""
+    best_runs = []
+    
+    # ReFT runs (split by identity_init)
+    reft_df = df[df["method"] == "reft"].copy()
+    
+    # Handle missing identity_init column
+    if "identity_init" not in reft_df.columns:
+        reft_df["identity_init"] = False
+    
+    for identity_init in [False, True]:
+        init_data = reft_df[reft_df["identity_init"] == identity_init]
+        init_suffix = " (id init)" if identity_init else ""
+        
+        for position in init_data["position"].dropna().unique():
+            pos_data = init_data[init_data["position"] == position]
+            for rank in pos_data["rank"].dropna().unique():
+                rank_data = pos_data[pos_data["rank"] == rank]
+                if not rank_data.empty:
+                    best_idx = rank_data["eval_nll"].idxmin()
+                    best_row = rank_data.loc[best_idx].to_dict()
+                    best_row["facet"] = f"ReFT ({position}){init_suffix}"
+                    best_row["rank_val"] = rank
+                    best_row["method_type"] = "reft_idinit" if identity_init else "reft"
+                    best_row["position_val"] = position
+                    best_runs.append(best_row)
+    
+    # LoRA runs
+    lora_df = df[df["method"] == "lora"].copy()
+    for lora_rank in lora_df["lora_rank"].dropna().unique():
+        rank_data = lora_df[lora_df["lora_rank"] == lora_rank]
+        if not rank_data.empty:
+            best_idx = rank_data["eval_nll"].idxmin()
+            best_row = rank_data.loc[best_idx].to_dict()
+            best_row["facet"] = "LoRA"
+            best_row["rank_val"] = lora_rank
+            best_row["method_type"] = "lora"
+            best_row["position_val"] = None
+            best_runs.append(best_row)
+    
+    return best_runs
+
+
+def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None):
+    """Fetch history and compute linear fit coefficients for each run."""
+    import wandb
+    
+    api = wandb.Api()
+    project_path = f"{entity}/{project}" if entity else project
+    
+    coefficients = []
+    
+    for run in best_runs:
+        run_id = run["run_id"]
+        
+        try:
+            wandb_run = api.run(f"{project_path}/{run_id}")
+            history = wandb_run.history(keys=["_step", "eval/nll"])
+            history = history.dropna(subset=["eval/nll"])
+            
+            if history.empty or len(history) < 2:
+                continue
+            
+            steps = history["_step"].values
+            nll = history["eval/nll"].values
+            
+            # Filter to positive steps for log
+            mask = steps > 0
+            steps = steps[mask]
+            nll = nll[mask]
+            
+            if len(steps) < 2:
+                continue
+            
+            # Linear fit in log-space: NLL = slope * log10(step) + intercept
+            log_steps = np.log10(steps)
+            slope, intercept, r_value, p_value, std_err = stats.linregress(log_steps, nll)
+            
+            coefficients.append({
+                "run_id": run_id,
+                "facet": run["facet"],
+                "method_type": run["method_type"],
+                "position_val": run.get("position_val"),
+                "rank": run["rank_val"],
+                "slope": slope,
+                "intercept": intercept,
+                "r_squared": r_value**2,
+                "steps": steps,
+                "nll": nll,
+            })
+            
+        except Exception as e:
+            print(f"Error fetching history for {run_id}: {e}")
+    
+    return coefficients
+
+
+def plot_scaling_curves(coefficients: list, output_dir: Path):
+    """
+    Plot NLL curves for best LR per (method, rank, position), faceted by method+position.
+    Each curve gets a linear fit in log-space with equation inscribed.
+    """
+    if not coefficients:
+        print("No coefficients for scaling curves")
         return
     
-    pivot = subset.pivot_table(index="rank", columns="lr", values="eval_nll")
+    # Group by facet
+    facets = sorted(set(c["facet"] for c in coefficients))
+    n_facets = len(facets)
     
-    fig, ax = plt.subplots(figsize=(10, 8))
+    if n_facets == 0:
+        print("No facets found")
+        return
     
-    im = ax.imshow(pivot.values, cmap="viridis_r", aspect="auto")
+    # Create figure with subplots
+    n_cols = min(3, n_facets)
+    n_rows = (n_facets + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows), squeeze=False)
+    axes = axes.flatten()
     
-    # Set ticks
-    ax.set_xticks(range(len(pivot.columns)))
-    ax.set_xticklabels([f"{lr:.0e}" for lr in pivot.columns], rotation=45, ha="right")
-    ax.set_yticks(range(len(pivot.index)))
-    ax.set_yticklabels([int(r) for r in pivot.index])
+    # Hide unused axes
+    for i in range(n_facets, len(axes)):
+        axes[i].set_visible(False)
     
-    ax.set_xlabel("Learning Rate", fontsize=12)
-    ax.set_ylabel("Rank", fontsize=12)
-    ax.set_title(f"Eval NLL Heatmap (position={position})", fontsize=14)
-    
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label("Eval NLL", fontsize=12)
-    
-    # Add text annotations
-    for i in range(len(pivot.index)):
-        for j in range(len(pivot.columns)):
-            val = pivot.values[i, j]
-            if not np.isnan(val):
-                text_color = "white" if val > pivot.values.mean() else "black"
-                ax.text(j, i, f"{val:.3f}", ha="center", va="center", 
-                        color=text_color, fontsize=8)
+    # Plot each facet
+    for facet_idx, facet in enumerate(facets):
+        ax = axes[facet_idx]
+        facet_data = [c for c in coefficients if c["facet"] == facet]
+        
+        # Sort by rank for consistent coloring
+        facet_data = sorted(facet_data, key=lambda x: x["rank"])
+        ranks = [c["rank"] for c in facet_data]
+        colors = plt.cm.viridis(np.linspace(0.1, 0.9, len(ranks)))
+        
+        for i, coef in enumerate(facet_data):
+            steps = coef["steps"]
+            nll = coef["nll"]
+            slope = coef["slope"]
+            intercept = coef["intercept"]
+            rank = coef["rank"]
+            
+            # Plot the curve (low opacity - background)
+            ax.plot(steps, nll, color=colors[i], linewidth=1.5, alpha=0.2)
+            
+            # Plot fit line (high opacity - foreground)
+            fit_steps = np.logspace(np.log10(steps.min()), np.log10(steps.max()), 100)
+            fit_nll = slope * np.log10(fit_steps) + intercept
+            ax.plot(fit_steps, fit_nll, color=colors[i], linewidth=2.5, 
+                    linestyle='-', alpha=0.9, label=f"r={int(rank)}")
+            
+            # Add equation text along the line
+            text_idx = int(len(fit_steps) * 0.6)
+            text_x = fit_steps[text_idx]
+            text_y = fit_nll[text_idx]
+            
+            # Calculate angle for text rotation
+            angle = np.degrees(np.arctan(slope / (text_x * np.log(10))))
+            
+            eq_text = f"{slope:.3f}·log(x)+{intercept:.2f}"
+            ax.annotate(eq_text, (text_x, text_y), fontsize=7, 
+                       color=colors[i], alpha=0.9,
+                       rotation=angle, rotation_mode='anchor',
+                       ha='center', va='bottom')
+        
+        ax.set_xscale("log")
+        ax.set_xlabel("Training Step", fontsize=11)
+        ax.set_ylabel("Eval NLL", fontsize=11)
+        ax.set_title(facet, fontsize=12, fontweight='bold')
+        ax.legend(fontsize=8, loc='best', ncol=2)
+        ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(output_dir / f"heatmap_{position.replace('+', '_')}.png", dpi=150)
-    plt.savefig(output_dir / f"heatmap_{position.replace('+', '_')}.pdf")
+    plt.savefig(output_dir / "scaling_curves.png", dpi=150)
+    plt.savefig(output_dir / "scaling_curves.pdf")
     plt.close()
-    print(f"Saved: heatmap_{position.replace('+', '_')}.png")
+    print("Saved: scaling_curves.png")
+
+
+def plot_scaling_coefficients(coefficients: list, output_dir: Path):
+    """
+    Plot slope and intercept vs rank for each method/position.
+    """
+    if not coefficients:
+        print("No coefficients for scaling coefficient plots")
+        return
+    
+    # Convert to DataFrame for easier plotting
+    coef_df = pd.DataFrame([{
+        "facet": c["facet"],
+        "method_type": c["method_type"],
+        "position": c["position_val"],
+        "rank": c["rank"],
+        "slope": c["slope"],
+        "intercept": c["intercept"],
+        "r_squared": c["r_squared"],
+    } for c in coefficients])
+    
+    facets = sorted(coef_df["facet"].unique())
+    markers = ['o', 's', '^', 'D', 'v', '<', 'p', 'h']
+    colors = plt.cm.tab10(np.linspace(0, 1, len(facets)))
+    
+    # Plot 1: Slope vs Rank
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    ax = axes[0]
+    for i, facet in enumerate(facets):
+        facet_data = coef_df[coef_df["facet"] == facet].sort_values("rank")
+        ax.plot(facet_data["rank"], facet_data["slope"],
+                marker=markers[i % len(markers)], color=colors[i],
+                linewidth=2, markersize=10, label=facet)
+    
+    ax.set_xlabel("Rank", fontsize=12)
+    ax.set_ylabel("Slope (rate of NLL decrease)", fontsize=12)
+    ax.set_title("Scaling Slope vs Rank", fontsize=14)
+    ax.set_xscale("log", base=2)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+    
+    # Plot 2: Intercept vs Rank
+    ax = axes[1]
+    for i, facet in enumerate(facets):
+        facet_data = coef_df[coef_df["facet"] == facet].sort_values("rank")
+        ax.plot(facet_data["rank"], facet_data["intercept"],
+                marker=markers[i % len(markers)], color=colors[i],
+                linewidth=2, markersize=10, label=facet)
+    
+    ax.set_xlabel("Rank", fontsize=12)
+    ax.set_ylabel("Intercept (initial NLL at step=1)", fontsize=12)
+    ax.set_title("Scaling Intercept vs Rank", fontsize=14)
+    ax.set_xscale("log", base=2)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "scaling_coefficients.png", dpi=150)
+    plt.savefig(output_dir / "scaling_coefficients.pdf")
+    plt.close()
+    print("Saved: scaling_coefficients.png")
+    
+    # Plot 3: Coefficient table/summary
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.axis('off')
+    
+    # Create table data
+    table_data = []
+    for _, row in coef_df.sort_values(["facet", "rank"]).iterrows():
+        table_data.append([
+            row["facet"],
+            f"{int(row['rank'])}",
+            f"{row['slope']:.4f}",
+            f"{row['intercept']:.3f}",
+            f"{row['r_squared']:.4f}",
+        ])
+    
+    table = ax.table(
+        cellText=table_data,
+        colLabels=["Method/Position", "Rank", "Slope", "Intercept", "R²"],
+        loc='center',
+        cellLoc='center',
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.5)
+    
+    # Style header
+    for i in range(5):
+        table[(0, i)].set_facecolor('#4472C4')
+        table[(0, i)].set_text_props(color='white', fontweight='bold')
+    
+    # Alternate row colors
+    for i in range(1, len(table_data) + 1):
+        for j in range(5):
+            if i % 2 == 0:
+                table[(i, j)].set_facecolor('#D9E2F3')
+    
+    plt.title("Scaling Law Coefficients: NLL = slope·log₁₀(step) + intercept", 
+              fontsize=14, fontweight='bold', pad=20)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "scaling_coefficients_table.png", dpi=150)
+    plt.savefig(output_dir / "scaling_coefficients_table.pdf")
+    plt.close()
+    print("Saved: scaling_coefficients_table.png")
 
 
 def main():
@@ -576,7 +566,7 @@ def main():
     parser.add_argument("--save-csv", action="store_true",
                         help="Save fetched data to CSV")
     parser.add_argument("--curves", action="store_true",
-                        help="Plot NLL curves over training steps (slow, fetches history)")
+                        help="Plot scaling curves with linear fits (slow, fetches history)")
     args = parser.parse_args()
     
     output_dir = Path(args.output)
@@ -602,31 +592,22 @@ def main():
     print(f"LoRA Ranks: {sorted(df['lora_rank'].dropna().unique())}")
     print(f"LRs: {sorted(df['lr'].dropna().unique())}")
     
-    # Generate ReFT plots for each position
-    reft_df = df[df["method"] == "reft"]
-    for position in reft_df["position"].dropna().unique():
-        if position:
-            plot_nll_vs_rank(df, output_dir, position)
-            plot_nll_vs_lr(df, output_dir, position)
-            plot_heatmap(df, output_dir, position)
-            
-            # NLL curves over steps (slow - requires fetching history)
-            if args.curves and not args.csv:
-                plot_nll_curves(df, output_dir, args.project, args.entity, position, group_by="rank")
-                plot_nll_curves(df, output_dir, args.project, args.entity, position, group_by="lr")
-                plot_all_nll_curves(df, output_dir, args.project, args.entity, position)
-    
-    # Generate LoRA plots
+    # Generate plots (only the useful ones)
     plot_lora_results(df, output_dir)
-    
-    # Generate comparison plots
-    plot_best_nll_vs_params(df, output_dir)
-    plot_position_comparison(df, output_dir)
     plot_method_comparison(df, output_dir)
+    plot_position_comparison(df, output_dir)
+    
+    # Scaling curves with linear fits (requires fetching history)
+    if args.curves and not args.csv:
+        print("\nFetching run histories for scaling analysis...")
+        best_runs = get_best_runs(df)
+        coefficients = fetch_scaling_coefficients(best_runs, args.project, args.entity)
+        
+        plot_scaling_curves(coefficients, output_dir)
+        plot_scaling_coefficients(coefficients, output_dir)
     
     print(f"\nAll plots saved to {output_dir}")
 
 
 if __name__ == "__main__":
     main()
-
