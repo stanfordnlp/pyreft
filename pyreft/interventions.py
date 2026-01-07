@@ -107,9 +107,12 @@ class LoreftIntervention_IdentityInit(
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
         self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
         
-        # Identity initialization: W = R, b = 0
+        # Identity initialization: W = R^T, b = 0
+        # learned_source.weight is (low_rank_dim, embed_dim)
+        # rotate_layer.weight is (embed_dim, low_rank_dim)
+        # For Wh = Rh, we need W = R^T since nn.Linear computes x @ W^T + b
         with torch.no_grad():
-            self.learned_source.weight.copy_(self.rotate_layer.weight)
+            self.learned_source.weight.copy_(self.rotate_layer.weight.T)
             self.learned_source.bias.zero_()
         
     def forward(
