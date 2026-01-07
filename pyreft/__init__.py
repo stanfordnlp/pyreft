@@ -19,6 +19,7 @@ from .reft_trainer import (
 from .interventions import (
     NoreftIntervention,
     LoreftIntervention,
+    LoreftIntervention_IdentityInit,
     ConsreftIntervention,
     LobireftIntervention,
     DireftIntervention,
