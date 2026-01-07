@@ -21,6 +21,40 @@ plt.style.use('seaborn-v0_8-whitegrid')
 COLORS = plt.cm.viridis(np.linspace(0, 0.9, 7))
 
 
+def has_complete_hparams(row, method="reft"):
+    """Check if a row has all required hyperparameters."""
+    if method == "reft":
+        return pd.notna(row.get("rank")) and pd.notna(row.get("lr")) and pd.notna(row.get("position"))
+    elif method == "lora":
+        return pd.notna(row.get("lora_rank")) and pd.notna(row.get("lr"))
+    elif method == "full_finetune":
+        return pd.notna(row.get("lr"))
+    return True
+
+
+def plot_with_completeness(ax, x, y, complete_mask, marker='o', color=None, label=None, 
+                           linewidth=2, markersize=8, **kwargs):
+    """Plot with filled markers for complete data, hollow for incomplete."""
+    x = np.array(x)
+    y = np.array(y)
+    complete_mask = np.array(complete_mask)
+    
+    # Plot the line through all points
+    sort_idx = np.argsort(x)
+    ax.plot(x[sort_idx], y[sort_idx], color=color, linewidth=linewidth, label=label, **kwargs)
+    
+    # Plot filled markers for complete data
+    if complete_mask.any():
+        ax.scatter(x[complete_mask], y[complete_mask], marker=marker, c=color, 
+                   s=markersize**2, zorder=5)
+    
+    # Plot hollow markers for incomplete data
+    if (~complete_mask).any():
+        ax.scatter(x[~complete_mask], y[~complete_mask], marker=marker, 
+                   facecolors='none', edgecolors=color, s=markersize**2, 
+                   linewidths=1.5, zorder=5)
+
+
 def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
     """Fetch runs from wandb and return as DataFrame."""
     import wandb
@@ -209,19 +243,24 @@ def plot_all_nll_curves(df: pd.DataFrame, output_dir: Path, project: str, entity
 
 def plot_nll_vs_rank(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
     """Plot NLL vs rank for different learning rates."""
-    subset = df[(df["position"] == position) & (df["method"] == "reft")]
+    subset = df[(df["position"] == position) & (df["method"] == "reft")].copy()
     if subset.empty:
         print(f"No ReFT data for position={position}")
         return
     
+    # Add completeness check
+    subset["complete"] = subset.apply(lambda r: has_complete_hparams(r, "reft"), axis=1)
+    
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    lrs = sorted(subset["lr"].unique())
+    lrs = sorted(subset["lr"].dropna().unique())
     for i, lr in enumerate(lrs):
         lr_data = subset[subset["lr"] == lr].sort_values("rank")
-        ax.plot(lr_data["rank"], lr_data["eval_nll"], 
-                marker='o', label=f"LR={lr:.0e}", color=COLORS[i % len(COLORS)],
-                linewidth=2, markersize=8)
+        plot_with_completeness(
+            ax, lr_data["rank"], lr_data["eval_nll"], lr_data["complete"],
+            marker='o', color=COLORS[i % len(COLORS)], label=f"LR={lr:.0e}",
+            linewidth=2, markersize=8
+        )
     
     ax.set_xlabel("Rank", fontsize=12)
     ax.set_ylabel("Eval NLL", fontsize=12)
@@ -239,19 +278,24 @@ def plot_nll_vs_rank(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"
 
 def plot_nll_vs_lr(df: pd.DataFrame, output_dir: Path, position: str = "f1+l1"):
     """Plot NLL vs learning rate for different ranks."""
-    subset = df[(df["position"] == position) & (df["method"] == "reft")]
+    subset = df[(df["position"] == position) & (df["method"] == "reft")].copy()
     if subset.empty:
         print(f"No ReFT data for position={position}")
         return
     
+    # Add completeness check
+    subset["complete"] = subset.apply(lambda r: has_complete_hparams(r, "reft"), axis=1)
+    
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    ranks = sorted(subset["rank"].unique())
+    ranks = sorted(subset["rank"].dropna().unique())
     for i, rank in enumerate(ranks):
         rank_data = subset[subset["rank"] == rank].sort_values("lr")
-        ax.plot(rank_data["lr"], rank_data["eval_nll"],
-                marker='s', label=f"Rank={int(rank)}", color=COLORS[i % len(COLORS)],
-                linewidth=2, markersize=8)
+        plot_with_completeness(
+            ax, rank_data["lr"], rank_data["eval_nll"], rank_data["complete"],
+            marker='s', color=COLORS[i % len(COLORS)], label=f"Rank={int(rank)}",
+            linewidth=2, markersize=8
+        )
     
     ax.set_xlabel("Learning Rate", fontsize=12)
     ax.set_ylabel("Eval NLL", fontsize=12)
@@ -274,9 +318,11 @@ def plot_best_nll_vs_params(df: pd.DataFrame, output_dir: Path):
     # Plot ReFT runs (grouped by position)
     reft_df = df[df["method"] == "reft"].copy()
     if not reft_df.empty:
+        reft_df["complete"] = reft_df.apply(lambda r: has_complete_hparams(r, "reft"), axis=1)
         best_per_config = reft_df.groupby(["rank", "position"]).agg({
             "eval_nll": "min",
             "trainable_params": "first",
+            "complete": "all",
         }).reset_index()
         
         positions = best_per_config["position"].unique()
@@ -285,37 +331,45 @@ def plot_best_nll_vs_params(df: pd.DataFrame, output_dir: Path):
         
         for i, pos in enumerate(positions):
             pos_data = best_per_config[best_per_config["position"] == pos].sort_values("trainable_params")
-            ax.plot(pos_data["trainable_params"], pos_data["eval_nll"],
-                    marker=reft_markers[i % len(reft_markers)], 
-                    label=f"ReFT ({pos})",
-                    color=reft_colors[i],
-                    linewidth=2, markersize=10)
+            plot_with_completeness(
+                ax, pos_data["trainable_params"], pos_data["eval_nll"], pos_data["complete"],
+                marker=reft_markers[i % len(reft_markers)], color=reft_colors[i],
+                label=f"ReFT ({pos})", linewidth=2, markersize=10
+            )
     
     # Plot LoRA runs
     lora_df = df[df["method"] == "lora"].copy()
     if not lora_df.empty:
+        lora_df["complete"] = lora_df.apply(lambda r: has_complete_hparams(r, "lora"), axis=1)
         best_per_rank = lora_df.groupby("lora_rank").agg({
             "eval_nll": "min",
             "trainable_params": "first",
+            "complete": "all",
         }).reset_index()
         best_per_rank = best_per_rank.sort_values("trainable_params")
         
-        ax.plot(best_per_rank["trainable_params"], best_per_rank["eval_nll"],
-                marker='p', label="LoRA",
-                color='orange', linewidth=2, markersize=10)
+        plot_with_completeness(
+            ax, best_per_rank["trainable_params"], best_per_rank["eval_nll"], best_per_rank["complete"],
+            marker='p', color='orange', label="LoRA", linewidth=2, markersize=10
+        )
     
     # Plot LoRA+ReFT runs if any
     lora_reft_df = df[df["method"] == "lora+reft"].copy()
     if not lora_reft_df.empty:
+        lora_reft_df["complete"] = lora_reft_df.apply(
+            lambda r: has_complete_hparams(r, "reft") and has_complete_hparams(r, "lora"), axis=1
+        )
         best_per_config = lora_reft_df.groupby(["lora_rank", "rank"]).agg({
             "eval_nll": "min",
             "trainable_params": "first",
+            "complete": "all",
         }).reset_index()
         best_per_config = best_per_config.sort_values("trainable_params")
         
-        ax.plot(best_per_config["trainable_params"], best_per_config["eval_nll"],
-                marker='h', label="LoRA+ReFT",
-                color='purple', linewidth=2, markersize=10)
+        plot_with_completeness(
+            ax, best_per_config["trainable_params"], best_per_config["eval_nll"], best_per_config["complete"],
+            marker='h', color='purple', label="LoRA+ReFT", linewidth=2, markersize=10
+        )
     
     # Add full finetune baseline if available
     full_ft = df[df["full_finetune"]]
@@ -350,6 +404,11 @@ def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
         print("No ReFT positions to compare")
         return
     
+    # Add completeness checks
+    reft_df["complete"] = reft_df.apply(lambda r: has_complete_hparams(r, "reft"), axis=1)
+    if not lora_df.empty:
+        lora_df["complete"] = lora_df.apply(lambda r: has_complete_hparams(r, "lora"), axis=1)
+    
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     # Plot 1: NLL vs Rank for each position (ReFT only)
@@ -362,18 +421,33 @@ def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
         pos_data = reft_df[reft_df["position"] == pos]
         if pos_data.empty:
             continue
-        best_per_rank = pos_data.groupby("rank")["eval_nll"].min().reset_index()
+        
+        # Group by rank and get best NLL, track if all runs for that rank are complete
+        best_per_rank = pos_data.groupby("rank").agg({
+            "eval_nll": "min",
+            "complete": "all"  # True only if all runs at this rank are complete
+        }).reset_index()
         best_per_rank = best_per_rank.sort_values("rank")
-        ax.plot(best_per_rank["rank"], best_per_rank["eval_nll"],
-                marker=markers[i % len(markers)], label=f"ReFT ({pos})", 
-                color=colors[i], linewidth=2, markersize=8)
+        
+        plot_with_completeness(
+            ax, best_per_rank["rank"], best_per_rank["eval_nll"], best_per_rank["complete"],
+            marker=markers[i % len(markers)], color=colors[i], label=f"ReFT ({pos})",
+            linewidth=2, markersize=8
+        )
     
     # Add LoRA if available
     if not lora_df.empty:
-        best_per_rank = lora_df.groupby("lora_rank")["eval_nll"].min().reset_index()
+        best_per_rank = lora_df.groupby("lora_rank").agg({
+            "eval_nll": "min",
+            "complete": "all"
+        }).reset_index()
         best_per_rank = best_per_rank.sort_values("lora_rank")
-        ax.plot(best_per_rank["lora_rank"], best_per_rank["eval_nll"],
-                marker='p', label="LoRA", color='orange', linewidth=2, markersize=8)
+        
+        plot_with_completeness(
+            ax, best_per_rank["lora_rank"], best_per_rank["eval_nll"], best_per_rank["complete"],
+            marker='p', color='orange', label="LoRA",
+            linewidth=2, markersize=8
+        )
     
     ax.set_xlabel("Rank", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
@@ -394,16 +468,29 @@ def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
             
             # Merge on rank and lr
             merged = pd.merge(
-                legacy_data[["rank", "lr", "eval_nll"]],
-                strict_data[["rank", "lr", "eval_nll"]],
+                legacy_data[["rank", "lr", "eval_nll", "complete"]],
+                strict_data[["rank", "lr", "eval_nll", "complete"]],
                 on=["rank", "lr"],
                 suffixes=("_legacy", "_strict")
             )
             
             if not merged.empty:
                 has_comparison = True
-                ax.scatter(merged["eval_nll_legacy"], merged["eval_nll_strict"], 
-                          alpha=0.7, s=60, label=f"{legacy} vs {strict}")
+                # Both must be complete for filled marker
+                complete_mask = merged["complete_legacy"] & merged["complete_strict"]
+                
+                # Plot filled for complete
+                if complete_mask.any():
+                    ax.scatter(merged.loc[complete_mask, "eval_nll_legacy"], 
+                              merged.loc[complete_mask, "eval_nll_strict"], 
+                              alpha=0.7, s=60, label=f"{legacy} vs {strict}")
+                # Plot hollow for incomplete
+                if (~complete_mask).any():
+                    ax.scatter(merged.loc[~complete_mask, "eval_nll_legacy"], 
+                              merged.loc[~complete_mask, "eval_nll_strict"], 
+                              facecolors='none', edgecolors=plt.cm.tab10(0), 
+                              alpha=0.7, s=60, linewidths=1.5,
+                              label=f"{legacy} vs {strict} (incomplete)" if complete_mask.any() else f"{legacy} vs {strict}")
     
     if has_comparison:
         # Add diagonal line
@@ -437,6 +524,9 @@ def plot_lora_results(df: pd.DataFrame, output_dir: Path):
         print("No LoRA data")
         return
     
+    # Add completeness check
+    lora_df["complete"] = lora_df.apply(lambda r: has_complete_hparams(r, "lora"), axis=1)
+    
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     # Plot 1: NLL vs LoRA rank
@@ -444,9 +534,11 @@ def plot_lora_results(df: pd.DataFrame, output_dir: Path):
     lrs = sorted(lora_df["lr"].dropna().unique())
     for i, lr in enumerate(lrs):
         lr_data = lora_df[lora_df["lr"] == lr].sort_values("lora_rank")
-        ax.plot(lr_data["lora_rank"], lr_data["eval_nll"], 
-                marker='o', label=f"LR={lr:.0e}", color=COLORS[i % len(COLORS)],
-                linewidth=2, markersize=8)
+        plot_with_completeness(
+            ax, lr_data["lora_rank"], lr_data["eval_nll"], lr_data["complete"],
+            marker='o', color=COLORS[i % len(COLORS)], label=f"LR={lr:.0e}",
+            linewidth=2, markersize=8
+        )
     
     ax.set_xlabel("LoRA Rank", fontsize=12)
     ax.set_ylabel("Eval NLL", fontsize=12)
@@ -460,9 +552,11 @@ def plot_lora_results(df: pd.DataFrame, output_dir: Path):
     ranks = sorted(lora_df["lora_rank"].dropna().unique())
     for i, rank in enumerate(ranks):
         rank_data = lora_df[lora_df["lora_rank"] == rank].sort_values("lr")
-        ax.plot(rank_data["lr"], rank_data["eval_nll"],
-                marker='s', label=f"Rank={int(rank)}", color=COLORS[i % len(COLORS)],
-                linewidth=2, markersize=8)
+        plot_with_completeness(
+            ax, rank_data["lr"], rank_data["eval_nll"], rank_data["complete"],
+            marker='s', color=COLORS[i % len(COLORS)], label=f"Rank={int(rank)}",
+            linewidth=2, markersize=8
+        )
     
     ax.set_xlabel("Learning Rate", fontsize=12)
     ax.set_ylabel("Eval NLL", fontsize=12)
@@ -487,6 +581,10 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
         print("Need both ReFT and LoRA data for comparison")
         return
     
+    # Add completeness checks
+    reft_df["complete"] = reft_df.apply(lambda r: has_complete_hparams(r, "reft"), axis=1)
+    lora_df["complete"] = lora_df.apply(lambda r: has_complete_hparams(r, "lora"), axis=1)
+    
     fig, ax = plt.subplots(figsize=(10, 6))
     
     # Get best NLL for each trainable params level
@@ -494,17 +592,23 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
         "eval_nll": "min",
         "rank": "first",
         "position": "first",
+        "complete": "all",
     }).reset_index().sort_values("trainable_params")
     
     lora_best = lora_df.groupby("trainable_params").agg({
         "eval_nll": "min",
         "lora_rank": "first",
+        "complete": "all",
     }).reset_index().sort_values("trainable_params")
     
-    ax.plot(reft_best["trainable_params"], reft_best["eval_nll"],
-            marker='o', label="ReFT (best)", color='blue', linewidth=2, markersize=8)
-    ax.plot(lora_best["trainable_params"], lora_best["eval_nll"],
-            marker='s', label="LoRA", color='orange', linewidth=2, markersize=8)
+    plot_with_completeness(
+        ax, reft_best["trainable_params"], reft_best["eval_nll"], reft_best["complete"],
+        marker='o', color='blue', label="ReFT (best)", linewidth=2, markersize=8
+    )
+    plot_with_completeness(
+        ax, lora_best["trainable_params"], lora_best["eval_nll"], lora_best["complete"],
+        marker='s', color='orange', label="LoRA", linewidth=2, markersize=8
+    )
     
     ax.set_xlabel("Trainable Parameters", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
