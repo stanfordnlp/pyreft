@@ -206,29 +206,46 @@ fi  # end if ! $SCALE_ONLY
 # --- Scale Type Sweep (testing different gating mechanisms) ---
 echo ""
 echo "=== ReFT Scale Type Sweep ==="
+
+# Determine positions based on --strict-only flag
+if $STRICT_ONLY; then
+    SCALE_POSITIONS=("f1+s1" "alls")
+else
+    SCALE_POSITIONS=("f1+l1")
+fi
+
 for scale_type in "${SCALE_TYPES[@]}"; do
-    for rank in "${RANKS[@]}"; do
-        for lr in "${LRS[@]}"; do
-            job_name="loreft_r${rank}_${scale_type}_lr${lr}"
-            run_name="r${rank}_${scale_type}___f1+l1___lr${lr}"
-            
-            # Skip if already done
-            if $SKIP_DONE && is_done "$run_name"; then
-                echo "Skipping (done): $run_name"
-                skipped_count=$((skipped_count + 1))
-                continue
-            fi
-            
-            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=f1+l1,SCALE_TYPE=$scale_type,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
-            
-            if $DRY_RUN; then
-                echo "$cmd"
-            else
-                echo "Submitting: rank=$rank, scale=$scale_type, position=f1+l1, lr=$lr"
-                $cmd
-            fi
-            
-            job_count=$((job_count + 1))
+    for position in "${SCALE_POSITIONS[@]}"; do
+        # Determine if share_weights is needed (for "all" or "alls" positions)
+        SHARE_FLAG=""
+        if [[ "$position" == "all" || "$position" == "alls" ]]; then
+            SHARE_FLAG=",SHARE_WEIGHTS=true"
+        fi
+        
+        for rank in "${RANKS[@]}"; do
+            for lr in "${LRS[@]}"; do
+                pos_short=$(echo "$position" | sed 's/+//')
+                job_name="loreft_r${rank}_${scale_type}_${pos_short}_lr${lr}"
+                run_name="r${rank}_${scale_type}___${position}___lr${lr}"
+                
+                # Skip if already done
+                if $SKIP_DONE && is_done "$run_name"; then
+                    echo "Skipping (done): $run_name"
+                    skipped_count=$((skipped_count + 1))
+                    continue
+                fi
+                
+                cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=$position,SCALE_TYPE=$scale_type${SHARE_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+                
+                if $DRY_RUN; then
+                    echo "$cmd"
+                else
+                    echo "Submitting: rank=$rank, scale=$scale_type, position=$position, lr=$lr"
+                    $cmd
+                fi
+                
+                job_count=$((job_count + 1))
+            done
         done
     done
 done
