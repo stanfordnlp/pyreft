@@ -182,60 +182,6 @@ for rank in "${RANKS[@]}"; do
     done
 done
 
-# --- Identity Init f1+s1 position sweep ---
-echo ""
-echo "=== ReFT Identity Init Sweep ==="
-for rank in "${RANKS[@]}"; do
-    for lr in "${LRS[@]}"; do
-        job_name="loreft_r${rank}_f1s1_idinit_lr${lr}"
-        run_name="r${rank}_idinit___f1+s1___lr${lr}"
-        
-        # Skip if already done
-        if $SKIP_DONE && is_done "$run_name"; then
-            echo "Skipping (done): $run_name"
-            skipped_count=$((skipped_count + 1))
-            continue
-        fi
-        
-        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=f1+s1,IDENTITY_INIT=true,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
-        
-        if $DRY_RUN; then
-            echo "$cmd"
-        else
-            echo "Submitting: rank=$rank, position=f1+s1, identity_init=true, lr=$lr"
-            $cmd
-        fi
-        
-        job_count=$((job_count + 1))
-    done
-done
-
-# --- Identity Init alls positions sweep (with share_weights) ---
-for rank in "${RANKS[@]}"; do
-    for lr in "${LRS[@]}"; do
-        job_name="loreft_r${rank}_alls_idinit_lr${lr}"
-        run_name="r${rank}_idinit___alls___lr${lr}"
-        
-        # Skip if already done
-        if $SKIP_DONE && is_done "$run_name"; then
-            echo "Skipping (done): $run_name"
-            skipped_count=$((skipped_count + 1))
-            continue
-        fi
-        
-        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=alls,SHARE_WEIGHTS=true,IDENTITY_INIT=true,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
-        
-        if $DRY_RUN; then
-            echo "$cmd"
-        else
-            echo "Submitting: rank=$rank, position=alls, identity_init=true, lr=$lr"
-            $cmd
-        fi
-        
-        job_count=$((job_count + 1))
-    done
-done
-
 # --- LoRA-only sweep (attention and MLP modules) ---
 if ! $SKIP_LORA; then
     echo ""

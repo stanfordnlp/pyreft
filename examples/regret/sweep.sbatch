@@ -123,11 +123,6 @@ if [ "$SHARE_WEIGHTS" = "true" ]; then
     CMD="$CMD --share_weights"
 fi
 
-# Add identity init flag if needed
-if [ "$IDENTITY_INIT" = "true" ]; then
-    CMD="$CMD --identity_init"
-fi
-
 # Add flash attention if enabled
 if [ "$USE_FLASH_ATTN" = "true" ]; then
     CMD="$CMD --use_flash_attn"

@@ -83,27 +83,6 @@ class LoreftIntervention(
         return
 
 
-class LoreftIntervention_IdentityInit(LoreftIntervention):
-    """
-    LoReFT with identity initialization.
-    
-    LoReFT(h) = h + R^T(Wh + b − Rh)
-    
-    At init: W = R^T, b = 0, so Wh + b - Rh = 0 and output = h (identity).
-    This matches LoRA's initialization strategy where the adapter starts as identity.
-    """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        
-        # Identity initialization: W = R^T, b = 0
-        # learned_source.weight is (low_rank_dim, embed_dim)
-        # rotate_layer.weight is (embed_dim, low_rank_dim)
-        # For Wh = Rh, we need W = R^T since nn.Linear computes x @ W^T + b
-        with torch.no_grad():
-            self.learned_source.weight.copy_(self.rotate_layer.weight.T)
-            self.learned_source.bias.zero_()
-
-
 class NoreftIntervention(
     SourcelessIntervention,
     TrainableIntervention, 

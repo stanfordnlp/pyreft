@@ -51,9 +51,6 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
         else:
             method = "reft"
         
-        # Check for identity init
-        identity_init = config.get("identity_init", False)
-        
         record = {
             "run_name": run.name,
             "run_id": run.id,
@@ -62,7 +59,6 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
             "lr": config.get("lr"),
             "position": config.get("position"),
             "share_weights": config.get("share_weights", False),
-            "identity_init": identity_init,
             # LoRA config
             "use_lora": use_lora,
             "disable_reft": disable_reft,
@@ -70,8 +66,6 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
             "lora_modules": config.get("lora_modules"),
             # Method type
             "method": method,
-            # Refine method for identity init
-            "method_variant": f"{method}_idinit" if identity_init and method == "reft" else method,
             "full_finetune": full_finetune,
             # Params
             "trainable_params": config.get("trainable_params") or summary.get("trainable_params"),
@@ -267,32 +261,24 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
 
 
 def get_best_runs(df: pd.DataFrame):
-    """Get best LR run for each (method, rank, position, identity_init)."""
+    """Get best LR run for each (method, rank, position)."""
     best_runs = []
     
-    # ReFT runs (split by identity_init)
+    # ReFT runs
     reft_df = df[df["method"] == "reft"].copy()
     
-    # Handle missing identity_init column
-    if "identity_init" not in reft_df.columns:
-        reft_df["identity_init"] = False
-    
-    for identity_init in [False, True]:
-        init_data = reft_df[reft_df["identity_init"] == identity_init]
-        init_suffix = " (id init)" if identity_init else ""
-        
-        for position in init_data["position"].dropna().unique():
-            pos_data = init_data[init_data["position"] == position]
-            for rank in pos_data["rank"].dropna().unique():
-                rank_data = pos_data[pos_data["rank"] == rank]
-                if not rank_data.empty:
-                    best_idx = rank_data["eval_nll"].idxmin()
-                    best_row = rank_data.loc[best_idx].to_dict()
-                    best_row["facet"] = f"ReFT ({position}){init_suffix}"
-                    best_row["rank_val"] = rank
-                    best_row["method_type"] = "reft_idinit" if identity_init else "reft"
-                    best_row["position_val"] = position
-                    best_runs.append(best_row)
+    for position in reft_df["position"].dropna().unique():
+        pos_data = reft_df[reft_df["position"] == position]
+        for rank in pos_data["rank"].dropna().unique():
+            rank_data = pos_data[pos_data["rank"] == rank]
+            if not rank_data.empty:
+                best_idx = rank_data["eval_nll"].idxmin()
+                best_row = rank_data.loc[best_idx].to_dict()
+                best_row["facet"] = f"ReFT ({position})"
+                best_row["rank_val"] = rank
+                best_row["method_type"] = "reft"
+                best_row["position_val"] = position
+                best_runs.append(best_row)
     
     # LoRA runs
     lora_df = df[df["method"] == "lora"].copy()
