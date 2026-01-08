@@ -19,6 +19,10 @@ from .reft_trainer import (
 from .interventions import (
     NoreftIntervention,
     LoreftIntervention,
+    LoreftIntervention_Scale,
+    LoreftIntervention_SigmoidScale,
+    LoreftIntervention_DataDepScale,
+    LoreftIntervention_TokenScale,
     ConsreftIntervention,
     LobireftIntervention,
     DireftIntervention,

@@ -83,6 +83,112 @@ class LoreftIntervention(
         return
 
 
+class LoreftIntervention_Scale(LoreftIntervention):
+    """
+    LoReFT with learned scalar gating (starts at 0 for identity).
+    
+    LoReFT(h) = h + scale * R^T(Wh + b − Rh)
+    
+    At init: scale = 0, so output = h (identity).
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.scale = torch.nn.Parameter(torch.zeros(1))
+    
+    def forward(self, base, source=None, subspaces=None):
+        rotated_base = self.rotate_layer(base)
+        delta = torch.matmul(
+            (self.act_fn(self.learned_source(base)) - rotated_base), 
+            self.rotate_layer.weight.T
+        )
+        output = base + self.scale * delta
+        return self.dropout(output.to(base.dtype))
+
+
+class LoreftIntervention_SigmoidScale(LoreftIntervention):
+    """
+    LoReFT with sigmoid-bounded scalar gating [0, 2].
+    
+    LoReFT(h) = h + scale * R^T(Wh + b − Rh)
+    where scale = 2 * sigmoid(scale_logit - 5)
+    
+    At init: scale ≈ 0.013 (near identity).
+    Range [0, 2] allows identity (0), full (1), and reflection (2).
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.scale_logit = torch.nn.Parameter(torch.zeros(1))
+    
+    def forward(self, base, source=None, subspaces=None):
+        rotated_base = self.rotate_layer(base)
+        delta = torch.matmul(
+            (self.act_fn(self.learned_source(base)) - rotated_base), 
+            self.rotate_layer.weight.T
+        )
+        scale = 2.0 * torch.sigmoid(self.scale_logit - 5.0)
+        output = base + scale * delta
+        return self.dropout(output.to(base.dtype))
+
+
+class LoreftIntervention_DataDepScale(LoreftIntervention):
+    """
+    LoReFT with data-dependent gating (per-sequence).
+    
+    LoReFT(h) = h + scale(h) * R^T(Wh + b − Rh)
+    where scale(h) = 2 * sigmoid(gate_proj(pool(h)))
+    
+    Similar to Deep Delta Learning's gating mechanism.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        dtype = kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
+        self.gate_proj = torch.nn.Linear(self.embed_dim, 1, bias=True).to(dtype)
+        # Initialize to output near 0 at start
+        torch.nn.init.zeros_(self.gate_proj.weight)
+        torch.nn.init.constant_(self.gate_proj.bias, -5.0)
+    
+    def forward(self, base, source=None, subspaces=None):
+        rotated_base = self.rotate_layer(base)
+        delta = torch.matmul(
+            (self.act_fn(self.learned_source(base)) - rotated_base), 
+            self.rotate_layer.weight.T
+        )
+        # Pool over sequence dimension, compute gate
+        pooled = base.mean(dim=1, keepdim=True)  # (B, 1, D)
+        scale = 2.0 * torch.sigmoid(self.gate_proj(pooled))  # (B, 1, 1)
+        output = base + scale * delta
+        return self.dropout(output.to(base.dtype))
+
+
+class LoreftIntervention_TokenScale(LoreftIntervention):
+    """
+    LoReFT with token-wise gating (most expressive).
+    
+    LoReFT(h) = h + scale(h) * R^T(Wh + b − Rh)
+    where scale(h) = 2 * sigmoid(gate_proj(h)) per token
+    
+    Each token gets its own gating scalar.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        dtype = kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
+        self.gate_proj = torch.nn.Linear(self.embed_dim, 1, bias=True).to(dtype)
+        # Initialize to output near 0 at start
+        torch.nn.init.zeros_(self.gate_proj.weight)
+        torch.nn.init.constant_(self.gate_proj.bias, -5.0)
+    
+    def forward(self, base, source=None, subspaces=None):
+        rotated_base = self.rotate_layer(base)
+        delta = torch.matmul(
+            (self.act_fn(self.learned_source(base)) - rotated_base), 
+            self.rotate_layer.weight.T
+        )
+        # Per-token gate
+        scale = 2.0 * torch.sigmoid(self.gate_proj(base))  # (B, T, 1)
+        output = base + scale * delta
+        return self.dropout(output.to(base.dtype))
+
+
 class NoreftIntervention(
     SourcelessIntervention,
     TrainableIntervention, 

@@ -37,6 +37,10 @@ from pyreft import (
     get_reft_model,
     ReftConfig,
     LoreftIntervention,
+    LoreftIntervention_Scale,
+    LoreftIntervention_SigmoidScale,
+    LoreftIntervention_DataDepScale,
+    LoreftIntervention_TokenScale,
     ReftDataCollator,
     ReftGenerationDataset,
 )
@@ -182,9 +186,11 @@ def train(args):
     elif args.use_lora and args.disable_reft:
         print(f"Mode: LoRA-only (rank={args.lora_rank}, alpha={args.lora_alpha}, modules={args.lora_modules})")
     elif args.use_lora:
-        print(f"Mode: LoRA + LoReFT (LoRA rank={args.lora_rank}, ReFT rank={args.rank})")
+        scale_info = f", scale={args.scale_type}" if args.scale_type else ""
+        print(f"Mode: LoRA + LoReFT (LoRA rank={args.lora_rank}, ReFT rank={args.rank}{scale_info})")
     else:
-        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position})")
+        scale_info = f", scale={args.scale_type}" if args.scale_type else ""
+        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position}{scale_info})")
     print(f"LR: {args.lr}, Epochs: {args.epochs}, Batch size: {args.batch_size}")
     
     # Parse ReFT layers (only needed when using ReFT)
@@ -285,8 +291,20 @@ def train(args):
         reft_model = None
         train_model = model
     elif use_reft:
+        # Select intervention class based on scale_type
+        scale_type = args.scale_type or "none"
+        intervention_classes = {
+            "none": LoreftIntervention,
+            "scalar": LoreftIntervention_Scale,
+            "sigmoid": LoreftIntervention_SigmoidScale,
+            "datadep": LoreftIntervention_DataDepScale,
+            "token": LoreftIntervention_TokenScale,
+        }
+        intervention_cls = intervention_classes[scale_type]
+        
         # Create LoReFT interventions
-        print(f"Creating LoReFT interventions with rank={args.rank}")
+        scale_str = f", scale={scale_type}" if scale_type != "none" else ""
+        print(f"Creating LoReFT interventions with rank={args.rank}{scale_str}")
         
         # Component path depends on whether we're wrapping a PEFT model
         if args.use_lora:
@@ -299,7 +317,7 @@ def train(args):
             "layer": l,
             "component": component.format(layer=l) if args.use_lora else component,
             "low_rank_dimension": args.rank,
-            "intervention": LoreftIntervention(
+            "intervention": intervention_cls(
                 embed_dim=model.config.hidden_size,
                 low_rank_dimension=args.rank,
                 dropout=args.dropout,
@@ -625,6 +643,13 @@ def main():
         type=str,
         default=None,
         help="Activation function for LoReFT (default: None/linear)"
+    )
+    parser.add_argument(
+        "--scale_type",
+        type=str,
+        default=None,
+        choices=[None, "none", "scalar", "sigmoid", "datadep", "token"],
+        help="Gating type for LoReFT: none (default), scalar (learned), sigmoid (bounded [0,2]), datadep (per-sequence), token (per-token)"
     )
     
     # Training arguments
