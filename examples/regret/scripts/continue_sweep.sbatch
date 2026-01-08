@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=loreft-10x
-#SBATCH --output=../logs/%x_%j.out
-#SBATCH --error=../logs/%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 #SBATCH --time=14-0
 #SBATCH --partition=sphinx
 #SBATCH --account=nlp
@@ -43,8 +43,8 @@ echo "  Output project: $OUTPUT_PROJECT"
 echo "  Epochs multiplier: $EPOCHS_MULTIPLIER"
 echo "============================================"
 
-# Change to parent directory (regret/) since this script is in scripts/
-cd "$SLURM_SUBMIT_DIR/.."
+# Change to submit directory (where sbatch was called from)
+cd "$SLURM_SUBMIT_DIR"
 
 # Create directories
 mkdir -p logs

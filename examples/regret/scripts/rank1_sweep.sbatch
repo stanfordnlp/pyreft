@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=reft-rank1
-#SBATCH --output=../logs/%x_%j.out
-#SBATCH --error=../logs/%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 #SBATCH --time=4:00:00
 #SBATCH --partition=sphinx
 #SBATCH --account=nlp
@@ -42,7 +42,7 @@ echo "Scale type: ${SCALE_TYPE:-none}"
 echo "LR: $LR"
 echo "============================================"
 
-cd "$SLURM_SUBMIT_DIR/.."
+cd "$SLURM_SUBMIT_DIR"
 
 # Build command
 CMD="uv run train.py \
