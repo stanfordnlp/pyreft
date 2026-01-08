@@ -17,7 +17,8 @@ for arg in "$@"; do
 done
 
 # Scale types to test (empty string = baseline)
-SCALE_TYPES=("" "scalar" "sigmoid" "datadep" "token")
+# SCALE_TYPES=("" "scalar" "sigmoid" "datadep" "token")
+SCALE_TYPES=("")
 LRS=(5e-4 1e-3 2e-3)
 POSITIONS=("f1+s1")
 
