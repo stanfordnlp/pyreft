@@ -42,14 +42,28 @@ class LoreftIntervention(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
         self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
+        self._debug_logged = False
         
     def forward(
         self, base, source=None, subspaces=None
     ):
         rotated_base = self.rotate_layer(base)
-        output = base + torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base), self.rotate_layer.weight.T
-        )
+        learned = self.act_fn(self.learned_source(base))
+        diff = learned - rotated_base
+        delta = torch.matmul(diff, self.rotate_layer.weight.T)
+        
+        # Debug: log on first forward
+        if not self._debug_logged:
+            print(f"[DEBUG LoreftIntervention] First forward:")
+            print(f"  base norm: {base.norm().item():.4f}")
+            print(f"  rotated_base norm: {rotated_base.norm().item():.4f}")
+            print(f"  learned norm: {learned.norm().item():.4f}")
+            print(f"  diff (Wh+b - Rh) norm: {diff.norm().item():.4f}")
+            print(f"  delta norm: {delta.norm().item():.4f}")
+            print(f"  delta/base ratio: {(delta.norm() / base.norm()).item():.4f}")
+            self._debug_logged = True
+        
+        output = base + delta
         return self.dropout(output.to(base.dtype))
 
     def state_dict(self, *args, **kwargs):

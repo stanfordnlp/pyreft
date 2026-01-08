@@ -461,6 +461,7 @@ def train(args):
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         logging_steps=args.logging_steps,
+        logging_first_step=True,  # Log step 0 to see initial loss
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=args.eval_steps if eval_dataset is not None else None,
         eval_delay=0,  # Evaluate at step 0
