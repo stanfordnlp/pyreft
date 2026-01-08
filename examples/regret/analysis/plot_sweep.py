@@ -381,10 +381,10 @@ def plot_scaling_curves(coefficients: list, output_dir: Path):
         print("No facets found")
         return
     
-    # Create figure with subplots
+    # Create figure with subplots (shared y-axis for comparison)
     n_cols = min(3, n_facets)
     n_rows = (n_facets + n_cols - 1) // n_cols
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows), squeeze=False)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows), squeeze=False, sharey=True)
     axes = axes.flatten()
     
     # Hide unused axes
