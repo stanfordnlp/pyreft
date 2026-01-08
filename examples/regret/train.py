@@ -544,8 +544,8 @@ def main():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="meta-llama/Llama-3.2-1B",
-        help="Path to the base model (default: meta-llama/Llama-3.2-1B)"
+        default="meta-llama/Llama-3.2-1B-Instruct",
+        help="Path to the base model (default: meta-llama/Llama-3.2-1B-Instruct)"
     )
     parser.add_argument(
         "--dtype",
