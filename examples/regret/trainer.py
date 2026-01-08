@@ -82,7 +82,52 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
     """
     Extends ReftTrainerForCausalLM with evaluation support.
     Logs NLL (negative log-likelihood) and perplexity on held-out eval set.
+    Also logs intervention metrics (delta norms, etc.) to wandb.
     """
+
+    def _get_intervention_metrics(self, clear_after=True):
+        """Collect metrics from all interventions and aggregate them."""
+        if not hasattr(self.model, 'interventions'):
+            return {}
+        
+        all_delta_norms = []
+        all_diff_norms = []
+        all_delta_base_ratios = []
+        
+        for key, v in self.model.interventions.items():
+            intervention = v[0] if isinstance(v, (list, tuple)) else v
+            if hasattr(intervention, 'metrics') and intervention.metrics:
+                metrics = intervention.metrics
+                if 'delta_norm' in metrics:
+                    all_delta_norms.append(metrics['delta_norm'])
+                if 'diff_norm' in metrics:
+                    all_diff_norms.append(metrics['diff_norm'])
+                if 'delta_base_ratio' in metrics:
+                    all_delta_base_ratios.append(metrics['delta_base_ratio'])
+                # Clear metrics after collecting
+                if clear_after:
+                    intervention.metrics = {}
+        
+        result = {}
+        if all_delta_norms:
+            result['intervention/delta_norm_mean'] = np.mean(all_delta_norms)
+            result['intervention/delta_norm_max'] = np.max(all_delta_norms)
+        if all_diff_norms:
+            result['intervention/diff_norm_mean'] = np.mean(all_diff_norms)
+            result['intervention/diff_norm_max'] = np.max(all_diff_norms)
+        if all_delta_base_ratios:
+            result['intervention/delta_base_ratio_mean'] = np.mean(all_delta_base_ratios)
+            result['intervention/delta_base_ratio_max'] = np.max(all_delta_base_ratios)
+        
+        return result
+
+    def log(self, logs):
+        """Override log to include intervention metrics."""
+        # Add intervention metrics if this is a training log (has 'loss' key)
+        if 'loss' in logs:
+            intervention_metrics = self._get_intervention_metrics()
+            logs.update(intervention_metrics)
+        super().log(logs)
 
     def get_eval_dataloader(self, eval_dataset=None):
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
