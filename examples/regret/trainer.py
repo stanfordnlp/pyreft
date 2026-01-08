@@ -121,13 +121,17 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         
         return result
 
-    def log(self, logs):
+    def log(self, logs, start_time=None):
         """Override log to include intervention metrics."""
         # Add intervention metrics if this is a training log (has 'loss' key)
         if 'loss' in logs:
             intervention_metrics = self._get_intervention_metrics()
             logs.update(intervention_metrics)
-        super().log(logs)
+        # Call parent with all arguments
+        if start_time is not None:
+            super().log(logs, start_time)
+        else:
+            super().log(logs)
 
     def get_eval_dataloader(self, eval_dataset=None):
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
