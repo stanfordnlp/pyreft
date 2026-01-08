@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=loreft-regret
-#SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
+#SBATCH --output=../logs/%x_%j.out
+#SBATCH --error=../logs/%x_%j.err
 #SBATCH --time=14-0
 #SBATCH --partition=sphinx
 #SBATCH --account=nlp
@@ -69,8 +69,8 @@ echo "  Position: $POSITION"
 echo "  Max examples: $MAX_EXAMPLES"
 echo "============================================"
 
-# Change to submit directory (where sbatch was called from)
-cd "$SLURM_SUBMIT_DIR"
+# Change to parent directory (regret/) since this script is in scripts/
+cd "$SLURM_SUBMIT_DIR/.."
 
 # Create logs directory if needed
 mkdir -p logs

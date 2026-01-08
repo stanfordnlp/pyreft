@@ -5,10 +5,10 @@
 # This script continues training from the best LR for each
 # (rank, position) configuration, running for 10x longer.
 #
-# Usage:
-#   ./launch_continue_sweep.sh              # Launch all
-#   ./launch_continue_sweep.sh --dry-run    # Print commands
-#   ./launch_continue_sweep.sh --skip-done  # Skip completed
+# Usage (run from examples/regret/):
+#   ./scripts/launch_continue_sweep.sh              # Launch all
+#   ./scripts/launch_continue_sweep.sh --dry-run    # Print commands
+#   ./scripts/launch_continue_sweep.sh --skip-done  # Skip completed
 # ============================================================
 
 set -e
@@ -75,7 +75,7 @@ for rank in "${RANKS[@]}"; do
         
         job_name="loreft_10x_r${rank}_${position//+/_}"
         
-        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,POSITION=$position,SOURCE_PROJECT=$SOURCE_PROJECT,OUTPUT_PROJECT=$OUTPUT_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,EPOCHS_MULTIPLIER=$EPOCHS_MULTIPLIER continue_sweep.sbatch"
+        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,POSITION=$position,SOURCE_PROJECT=$SOURCE_PROJECT,OUTPUT_PROJECT=$OUTPUT_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,EPOCHS_MULTIPLIER=$EPOCHS_MULTIPLIER scripts/continue_sweep.sbatch"
         
         if $DRY_RUN; then
             echo "$cmd"

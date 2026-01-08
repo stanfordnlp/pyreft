@@ -4,14 +4,14 @@
 # ============================================================
 # This script submits a grid of jobs varying rank and LR
 # 
-# Usage:
-#   ./launch_sweep.sh              # Full grid
-#   ./launch_sweep.sh --dry-run    # Print commands without submitting
-#   ./launch_sweep.sh --skip-done  # Skip completed jobs
-#   ./launch_sweep.sh --skip-lora  # Skip LoRA sweep (ReFT only)
-#   ./launch_sweep.sh --rank1-only  # Only run rank=1 experiments (quick test)
-#   ./launch_sweep.sh --scale-only  # Only run scale type experiments
-#   ./launch_sweep.sh --strict-only # Only run strict mode positions (f1+s1, alls)
+# Usage (run from examples/regret/):
+#   ./scripts/launch_sweep.sh              # Full grid
+#   ./scripts/launch_sweep.sh --dry-run    # Print commands without submitting
+#   ./scripts/launch_sweep.sh --skip-done  # Skip completed jobs
+#   ./scripts/launch_sweep.sh --skip-lora  # Skip LoRA sweep (ReFT only)
+#   ./scripts/launch_sweep.sh --rank1-only  # Only run rank=1 experiments (quick test)
+#   ./scripts/launch_sweep.sh --scale-only  # Only run scale type experiments
+#   ./scripts/launch_sweep.sh --strict-only # Only run strict mode positions (f1+s1, alls)
 # ============================================================
 
 set -e
@@ -107,7 +107,7 @@ if ! $SCALE_ONLY && ! $STRICT_ONLY; then
                 continue
             fi
             
-            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=f1+l1,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=f1+l1,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
             
             if $DRY_RUN; then
                 echo "$cmd"
@@ -133,7 +133,7 @@ if ! $SCALE_ONLY && ! $STRICT_ONLY; then
                 continue
             fi
             
-            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=all,SHARE_WEIGHTS=true,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=all,SHARE_WEIGHTS=true,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
             
             if $DRY_RUN; then
                 echo "$cmd"
@@ -163,7 +163,7 @@ if ! $SCALE_ONLY; then
                 continue
             fi
             
-            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=f1+s1,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=f1+s1,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
             
             if $DRY_RUN; then
                 echo "$cmd"
@@ -189,7 +189,7 @@ if ! $SCALE_ONLY; then
                 continue
             fi
             
-            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=alls,SHARE_WEIGHTS=true,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=alls,SHARE_WEIGHTS=true,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
             
             if $DRY_RUN; then
                 echo "$cmd"
@@ -235,7 +235,7 @@ for scale_type in "${SCALE_TYPES[@]}"; do
                     continue
                 fi
                 
-                cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=$position,SCALE_TYPE=$scale_type${SHARE_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+                cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=$position,SCALE_TYPE=$scale_type${SHARE_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
                 
                 if $DRY_RUN; then
                     echo "$cmd"
@@ -262,7 +262,7 @@ if ! $SKIP_LORA && ! $SCALE_ONLY; then
         for lora_rank in "${LORA_RANKS[@]}"; do
             for lr in "${LORA_LRS[@]}"; do
                 job_name="lora_r${lora_rank}_${module_set_name}_lr${lr}"
-                # Build run_name to match what sweep.sbatch generates
+                # Build run_name to match what scripts/sweep.sbatch generates
                 modules_short=$(echo "$modules" | sed 's/;/+/g' | sed 's/_proj//g')
                 run_name="lora_r${lora_rank}___${modules_short}___lr${lr}"
                 
@@ -273,7 +273,7 @@ if ! $SKIP_LORA && ! $SCALE_ONLY; then
                     continue
                 fi
                 
-                cmd="sbatch --job-name=$job_name --export=ALL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$modules,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR sweep.sbatch"
+                cmd="sbatch --job-name=$job_name --export=ALL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$modules,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
                 
                 if $DRY_RUN; then
                     echo "$cmd"
