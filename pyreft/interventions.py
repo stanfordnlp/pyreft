@@ -94,6 +94,7 @@ class LoreftIntervention_Scale(LoreftIntervention):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.scale = torch.nn.Parameter(torch.zeros(1))
+        self._debug_logged = False
     
     def forward(self, base, source=None, subspaces=None):
         rotated_base = self.rotate_layer(base)
@@ -101,6 +102,10 @@ class LoreftIntervention_Scale(LoreftIntervention):
             (self.act_fn(self.learned_source(base)) - rotated_base), 
             self.rotate_layer.weight.T
         )
+        # Debug: log scale value on first forward pass
+        if not self._debug_logged:
+            print(f"[DEBUG LoreftIntervention_Scale] First forward: scale={self.scale.item():.6f}, delta_norm={delta.norm().item():.4f}")
+            self._debug_logged = True
         output = base + self.scale * delta
         return self.dropout(output.to(base.dtype))
 
