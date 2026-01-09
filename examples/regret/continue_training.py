@@ -245,8 +245,15 @@ def continue_training(
     dtype = dtype_mapping.get(original_args.get("dtype", "bfloat16"), torch.bfloat16)
     print(f"Loading ReFT model from {checkpoint_dir}...")
     
-    # Use ReftModel.load to load both model and interventions
-    reft_model = ReftModel.load(checkpoint_dir, model=None)
+    # First load the base model
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=dtype,
+        device_map=device,
+    )
+    
+    # Then load ReFT interventions on top
+    reft_model = ReftModel.load(checkpoint_dir, model=base_model)
     reft_model.set_device(device)
     
     # Count interventions
