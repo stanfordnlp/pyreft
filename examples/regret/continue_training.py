@@ -195,8 +195,8 @@ def continue_training(
     run_name = original_run["run_name"]
     
     # Find checkpoint directories
-    output_dir = config.get("output_dir", "./outputs")
-    run_dir = os.path.join(output_dir, run_name)
+    # output_dir in wandb config already includes the run name
+    run_dir = config.get("output_dir", "./outputs")
     reft_dir, trainer_checkpoint_dir = find_checkpoint_dirs(run_dir)
     
     if reft_dir is None:
