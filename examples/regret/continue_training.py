@@ -248,8 +248,12 @@ def continue_training(
     if tokenizer.pad_token is None:
         if tokenizer.unk_token is not None:
             tokenizer.pad_token = tokenizer.unk_token
+            need_resize = False
         else:
             tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+            need_resize = True
+    else:
+        need_resize = False
     
     # Load model and ReFT checkpoint
     dtype = dtype_mapping.get(original_args.get("dtype", "bfloat16"), torch.bfloat16)
@@ -261,6 +265,10 @@ def continue_training(
         torch_dtype=dtype,
         device_map=device,
     )
+    
+    # Resize embeddings if we added a new pad token (to match original training)
+    if need_resize:
+        base_model.resize_token_embeddings(len(tokenizer))
     
     # Then load ReFT interventions on top
     reft_model = ReftModel.load(reft_dir, model=base_model)
