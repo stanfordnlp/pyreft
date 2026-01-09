@@ -136,22 +136,25 @@ def find_checkpoint_dirs(run_dir: str):
     
     Returns:
         (reft_dir, trainer_checkpoint_dir)
-        - reft_dir: where ReFT intervention weights are saved (usually run_dir itself)
+        - reft_dir: where ReFT intervention weights are saved
         - trainer_checkpoint_dir: where HF Trainer state (optimizer, etc) is saved
     """
     if not os.path.exists(run_dir):
         return None, None
     
-    # ReFT interventions are saved directly in run_dir
-    has_reft_files = (
-        os.path.exists(os.path.join(run_dir, "config.json")) or
-        len(glob.glob(os.path.join(run_dir, "intkey_*.bin"))) > 0
-    )
-    reft_dir = run_dir if has_reft_files else None
-    
     # Look for HF Trainer checkpoints (checkpoint-XXXX)
     checkpoints = sorted(glob.glob(os.path.join(run_dir, "checkpoint-*")))
     trainer_dir = checkpoints[-1] if checkpoints else None
+    
+    # ReFT interventions: prefer checkpoint's intervenable_model/ if it exists
+    # (this is what the trainer saved, and what resume_from_checkpoint will load)
+    if trainer_dir and os.path.exists(os.path.join(trainer_dir, "intervenable_model")):
+        reft_dir = os.path.join(trainer_dir, "intervenable_model")
+    elif os.path.exists(os.path.join(run_dir, "config.json")) or len(glob.glob(os.path.join(run_dir, "intkey_*.bin"))) > 0:
+        # Fallback to run_dir (final save)
+        reft_dir = run_dir
+    else:
+        reft_dir = None
     
     return reft_dir, trainer_dir
 
