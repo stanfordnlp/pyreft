@@ -192,7 +192,7 @@ def continue_training(
     run_dir, checkpoint_dir = find_checkpoint_dir(original_output_dir, run_name)
     
     if checkpoint_dir is None:
-        print(f"  ERROR: No checkpoint found for {run_name}")
+        print(f"  ERROR: No checkpoint found in {original_output_dir}: {run_name}")
         return None
     
     # Load original training args
