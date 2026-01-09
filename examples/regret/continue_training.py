@@ -131,21 +131,29 @@ def load_original_args(checkpoint_dir: str):
     return None
 
 
-def find_checkpoint_dir(run_dir: str):
-    """Find the checkpoint directory for a run."""
+def find_checkpoint_dirs(run_dir: str):
+    """Find checkpoint directories for a run.
+    
+    Returns:
+        (reft_dir, trainer_checkpoint_dir)
+        - reft_dir: where ReFT intervention weights are saved (usually run_dir itself)
+        - trainer_checkpoint_dir: where HF Trainer state (optimizer, etc) is saved
+    """
     if not os.path.exists(run_dir):
-        return None
+        return None, None
     
-    # Look for epoch checkpoints (HuggingFace saves checkpoint-XXXX)
+    # ReFT interventions are saved directly in run_dir
+    has_reft_files = (
+        os.path.exists(os.path.join(run_dir, "config.json")) or
+        len(glob.glob(os.path.join(run_dir, "intkey_*.bin"))) > 0
+    )
+    reft_dir = run_dir if has_reft_files else None
+    
+    # Look for HF Trainer checkpoints (checkpoint-XXXX)
     checkpoints = sorted(glob.glob(os.path.join(run_dir, "checkpoint-*")))
-    if checkpoints:
-        return checkpoints[-1]  # Latest checkpoint
+    trainer_dir = checkpoints[-1] if checkpoints else None
     
-    # Check if final model was saved directly
-    if os.path.exists(os.path.join(run_dir, "intkey_comp.json")):
-        return run_dir
-    
-    return None
+    return reft_dir, trainer_dir
 
 
 def preprocess_tulu3_to_prompt_completion(dataset, tokenizer):
@@ -186,12 +194,13 @@ def continue_training(
     config = original_run["config"]
     run_name = original_run["run_name"]
     
-    # Find checkpoint
-    run_dir = config.get("output_dir", "./outputs")
-    checkpoint_dir = find_checkpoint_dir(run_dir)
+    # Find checkpoint directories
+    output_dir = config.get("output_dir", "./outputs")
+    run_dir = os.path.join(output_dir, run_name)
+    reft_dir, trainer_checkpoint_dir = find_checkpoint_dirs(run_dir)
     
-    if checkpoint_dir is None:
-        print(f"  ERROR: No checkpoint found in {run_dir}: {run_name}")
+    if reft_dir is None:
+        print(f"  ERROR: No ReFT checkpoint found in {run_dir}")
         return None
     
     # Load original training args
@@ -206,7 +215,8 @@ def continue_training(
     
     print(f"\n{'='*60}")
     print(f"Continuing: {run_name}")
-    print(f"  Checkpoint: {checkpoint_dir}")
+    print(f"  ReFT checkpoint: {reft_dir}")
+    print(f"  Trainer checkpoint: {trainer_checkpoint_dir}")
     print(f"  Original epochs: {original_args.get('epochs', 1)}")
     print(f"  New epochs: {original_args.get('epochs', 1) * epochs_multiplier}")
     print(f"  Output: {new_output_dir}")
@@ -243,7 +253,7 @@ def continue_training(
     
     # Load model and ReFT checkpoint
     dtype = dtype_mapping.get(original_args.get("dtype", "bfloat16"), torch.bfloat16)
-    print(f"Loading ReFT model from {checkpoint_dir}...")
+    print(f"Loading ReFT model from {reft_dir}...")
     
     # First load the base model
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -253,7 +263,7 @@ def continue_training(
     )
     
     # Then load ReFT interventions on top
-    reft_model = ReftModel.load(checkpoint_dir, model=base_model)
+    reft_model = ReftModel.load(reft_dir, model=base_model)
     reft_model.set_device(device)
     
     # Count interventions
@@ -393,8 +403,12 @@ def continue_training(
     )
     
     # Resume training from checkpoint
-    print(f"Resuming training from {checkpoint_dir}...")
-    trainer.train(resume_from_checkpoint=checkpoint_dir)
+    if trainer_checkpoint_dir:
+        print(f"Resuming training from {trainer_checkpoint_dir}...")
+        trainer.train(resume_from_checkpoint=trainer_checkpoint_dir)
+    else:
+        print("No trainer checkpoint found, starting fresh training...")
+        trainer.train()
     
     # Save final model
     print(f"Saving model to {new_output_dir}")
@@ -407,7 +421,8 @@ def continue_training(
         "original_epochs": original_epochs,
         "new_epochs": new_epochs,
         "epochs_multiplier": epochs_multiplier,
-        "checkpoint_dir": checkpoint_dir,
+        "reft_checkpoint_dir": reft_dir,
+        "trainer_checkpoint_dir": trainer_checkpoint_dir,
     }
     with open(os.path.join(new_output_dir, "training_args.json"), "w") as f:
         json.dump(args_dict, f, indent=2)
