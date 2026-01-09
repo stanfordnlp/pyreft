@@ -131,22 +131,21 @@ def load_original_args(checkpoint_dir: str):
     return None
 
 
-def find_checkpoint_dir(output_dir: str, run_name: str):
+def find_checkpoint_dir(run_dir: str):
     """Find the checkpoint directory for a run."""
-    run_dir = os.path.join(output_dir, run_name)
     if not os.path.exists(run_dir):
-        return None, None
+        return None
     
     # Look for epoch checkpoints (HuggingFace saves checkpoint-XXXX)
     checkpoints = sorted(glob.glob(os.path.join(run_dir, "checkpoint-*")))
     if checkpoints:
-        return run_dir, checkpoints[-1]  # Latest checkpoint
+        return checkpoints[-1]  # Latest checkpoint
     
     # Check if final model was saved directly
     if os.path.exists(os.path.join(run_dir, "intkey_comp.json")):
-        return run_dir, run_dir
+        return run_dir
     
-    return run_dir, None
+    return None
 
 
 def preprocess_tulu3_to_prompt_completion(dataset, tokenizer):
@@ -188,11 +187,11 @@ def continue_training(
     run_name = original_run["run_name"]
     
     # Find checkpoint
-    original_output_dir = config.get("output_dir", "./outputs")
-    run_dir, checkpoint_dir = find_checkpoint_dir(original_output_dir, run_name)
+    run_dir = config.get("output_dir", "./outputs")
+    checkpoint_dir = find_checkpoint_dir(run_dir)
     
     if checkpoint_dir is None:
-        print(f"  ERROR: No checkpoint found in {original_output_dir}: {run_name}")
+        print(f"  ERROR: No checkpoint found in {run_dir}: {run_name}")
         return None
     
     # Load original training args
