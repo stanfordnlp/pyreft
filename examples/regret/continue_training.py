@@ -262,11 +262,17 @@ def continue_training(
     dtype = dtype_mapping.get(original_args.get("dtype", "bfloat16"), torch.bfloat16)
     print(f"Loading ReFT model from {reft_dir}...")
     
+    # Match original training's model loading settings
+    use_flash_attn = original_args.get("use_flash_attn", False)
+    attn_implementation = "flash_attention_2" if use_flash_attn else None
+    
     # First load the base model
     base_model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=dtype,
         device_map=device,
+        trust_remote_code=True,
+        attn_implementation=attn_implementation,
     )
     
     # Resize embeddings if we added a new pad token (to match original training)
