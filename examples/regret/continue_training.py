@@ -135,28 +135,31 @@ def find_checkpoint_dirs(run_dir: str):
     """Find checkpoint directories for a run.
     
     Returns:
-        (reft_dir, trainer_checkpoint_dir)
-        - reft_dir: where ReFT intervention weights are saved
+        (reft_config_dir, reft_weights_dir, trainer_checkpoint_dir)
+        - reft_config_dir: where config.json is (usually run_dir)
+        - reft_weights_dir: where intervention .bin files are (checkpoint or run_dir)
         - trainer_checkpoint_dir: where HF Trainer state (optimizer, etc) is saved
     """
     if not os.path.exists(run_dir):
-        return None, None
+        return None, None, None
     
     # Look for HF Trainer checkpoints (checkpoint-XXXX)
     checkpoints = sorted(glob.glob(os.path.join(run_dir, "checkpoint-*")))
     trainer_dir = checkpoints[-1] if checkpoints else None
     
-    # ReFT interventions: prefer checkpoint's intervenable_model/ if it exists
-    # (this is what the trainer saved, and what resume_from_checkpoint will load)
-    if trainer_dir and os.path.exists(os.path.join(trainer_dir, "intervenable_model")):
-        reft_dir = os.path.join(trainer_dir, "intervenable_model")
-    elif os.path.exists(os.path.join(run_dir, "config.json")) or len(glob.glob(os.path.join(run_dir, "intkey_*.bin"))) > 0:
-        # Fallback to run_dir (final save)
-        reft_dir = run_dir
-    else:
-        reft_dir = None
+    # Config is always in run_dir (pyvene saves it there)
+    has_config = os.path.exists(os.path.join(run_dir, "config.json"))
+    reft_config_dir = run_dir if has_config else None
     
-    return reft_dir, trainer_dir
+    # Weights: prefer checkpoint's intervenable_model/ for continuation
+    if trainer_dir and os.path.exists(os.path.join(trainer_dir, "intervenable_model")):
+        reft_weights_dir = os.path.join(trainer_dir, "intervenable_model")
+    elif len(glob.glob(os.path.join(run_dir, "intkey_*.bin"))) > 0:
+        reft_weights_dir = run_dir
+    else:
+        reft_weights_dir = None
+    
+    return reft_config_dir, reft_weights_dir, trainer_dir
 
 
 def preprocess_tulu3_to_prompt_completion(dataset, tokenizer):
@@ -200,10 +203,13 @@ def continue_training(
     # Find checkpoint directories
     # output_dir in wandb config already includes the run name
     run_dir = config.get("output_dir", "./outputs")
-    reft_dir, trainer_checkpoint_dir = find_checkpoint_dirs(run_dir)
+    reft_config_dir, reft_weights_dir, trainer_checkpoint_dir = find_checkpoint_dirs(run_dir)
     
-    if reft_dir is None:
-        print(f"  ERROR: No ReFT checkpoint found in {run_dir}")
+    if reft_config_dir is None:
+        print(f"  ERROR: No ReFT config found in {run_dir}")
+        return None
+    if reft_weights_dir is None:
+        print(f"  ERROR: No ReFT weights found in {run_dir}")
         return None
     
     # Load original training args
@@ -218,7 +224,8 @@ def continue_training(
     
     print(f"\n{'='*60}")
     print(f"Continuing: {run_name}")
-    print(f"  ReFT checkpoint: {reft_dir}")
+    print(f"  ReFT config: {reft_config_dir}")
+    print(f"  ReFT weights: {reft_weights_dir}")
     print(f"  Trainer checkpoint: {trainer_checkpoint_dir}")
     print(f"  Original epochs: {original_args.get('epochs', 1)}")
     print(f"  New epochs: {original_args.get('epochs', 1) * epochs_multiplier}")
@@ -260,7 +267,9 @@ def continue_training(
     
     # Load model and ReFT checkpoint
     dtype = dtype_mapping.get(original_args.get("dtype", "bfloat16"), torch.bfloat16)
-    print(f"Loading ReFT model from {reft_dir}...")
+    print(f"Loading ReFT model...")
+    print(f"  Config from: {reft_config_dir}")
+    print(f"  Weights from: {reft_weights_dir}")
     
     # Match original training's model loading settings
     use_flash_attn = original_args.get("use_flash_attn", False)
@@ -279,8 +288,21 @@ def continue_training(
     if need_resize:
         base_model.resize_token_embeddings(len(tokenizer))
     
-    # Then load ReFT interventions on top
-    reft_model = ReftModel.load(reft_dir, model=base_model)
+    # Load ReFT model structure from config dir
+    reft_model = ReftModel.load(reft_config_dir, model=base_model)
+    
+    # If weights are in a different location (checkpoint), load them
+    if reft_weights_dir != reft_config_dir:
+        print(f"  Loading checkpoint weights from {reft_weights_dir}...")
+        # Manually load intervention weights from checkpoint
+        for key, intervention in reft_model.interventions.items():
+            weight_file = os.path.join(reft_weights_dir, f"{key}.bin")
+            if os.path.exists(weight_file):
+                state_dict = torch.load(weight_file, map_location=device)
+                intervention.load_state_dict(state_dict)
+            else:
+                print(f"  WARNING: Weight file not found: {weight_file}")
+    
     reft_model.set_device(device)
     
     # Count interventions
