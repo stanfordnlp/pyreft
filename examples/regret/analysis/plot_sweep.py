@@ -330,14 +330,14 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
     for position in sorted(reft_df["position"].dropna().unique()):
         pos_df = reft_df[reft_df["position"] == position]
         
-        # Get best NLL for each rank (use rank as proxy for params since params varies by position)
+        # Get best NLL for each rank, keeping trainable_params
         pos_best = pos_df.groupby("rank").agg({
             "eval_nll": "min",
             "trainable_params": "first",
-        }).reset_index().sort_values("rank")
+        }).reset_index().sort_values("trainable_params")
         
         style = position_styles.get(position, {'color': 'gray', 'marker': 'x'})
-        ax.plot(pos_best["rank"], pos_best["eval_nll"],
+        ax.plot(pos_best["trainable_params"], pos_best["eval_nll"],
                 marker=style['marker'], label=f"ReFT ({position})", 
                 color=style['color'], linewidth=2, markersize=8)
     
@@ -345,15 +345,16 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
     if not lora_df.empty:
         lora_best = lora_df.groupby("lora_rank").agg({
             "eval_nll": "min",
-        }).reset_index().sort_values("lora_rank")
+            "trainable_params": "first",
+        }).reset_index().sort_values("trainable_params")
         
-        ax.plot(lora_best["lora_rank"], lora_best["eval_nll"],
+        ax.plot(lora_best["trainable_params"], lora_best["eval_nll"],
                 marker='p', label="LoRA", color='orange', linewidth=2, markersize=8)
     
-    ax.set_xlabel("Rank", fontsize=12)
+    ax.set_xlabel("Trainable Parameters", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
-    ax.set_title("ReFT vs LoRA: Best NLL by Rank", fontsize=14)
-    ax.set_xscale("log", base=2)
+    ax.set_title("ReFT vs LoRA: Efficiency Comparison", fontsize=14)
+    ax.set_xscale("log")
     ax.legend(loc="best")
     ax.grid(True, alpha=0.3)
     
