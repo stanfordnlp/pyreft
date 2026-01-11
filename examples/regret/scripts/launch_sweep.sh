@@ -126,7 +126,7 @@ if $WITH_LORA; then
     for lora_rank in "${LORA_RANKS[@]}"; do
         for lr in "${LORA_LRS[@]}"; do
             job_name="lora_r${lora_rank}_lr${lr}"
-            run_name="lora_r${lora_rank}___all___lr${lr}"
+            run_name="lora_r${lora_rank}___q+k+v+o+gate+up+down___lr${lr}"
             
             # Skip if already done
             if $SKIP_DONE && is_done "$run_name"; then
