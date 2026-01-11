@@ -22,6 +22,117 @@ from scipy import stats
 plt.style.use('seaborn-v0_8-whitegrid')
 COLORS = plt.cm.viridis(np.linspace(0, 0.9, 7))
 
+# Model config for Llama 3.2 1B (default)
+DEFAULT_MODEL_CONFIG = {
+    "hidden_dim": 2048,
+    "intermediate_dim": 8192,
+    "num_layers": 16,
+    "num_heads": 32,
+    "head_dim": 64,
+}
+
+
+def compute_lora_flops(
+    lora_rank: int,
+    num_tokens: int,
+    modules: str = "q_proj;k_proj;v_proj;o_proj;gate_proj;up_proj;down_proj",
+    model_config: dict = None,
+) -> int:
+    """
+    Compute additional FLOPs for LoRA per forward pass.
+    
+    LoRA adds low-rank adapters: W' = W + BA where B is (d, r) and A is (r, d).
+    FLOPs per adapter per token: 2 * d * r (for x @ B @ A).
+    
+    Args:
+        lora_rank: LoRA rank
+        num_tokens: Number of tokens in sequence
+        modules: Semicolon-separated list of modules with LoRA
+        model_config: Model architecture config
+    
+    Returns:
+        Total additional FLOPs for one forward pass
+    """
+    if model_config is None:
+        model_config = DEFAULT_MODEL_CONFIG
+    
+    d = model_config["hidden_dim"]
+    intermediate = model_config["intermediate_dim"]
+    num_layers = model_config["num_layers"]
+    
+    module_list = modules.split(";") if isinstance(modules, str) else modules
+    
+    flops_per_layer = 0
+    for module in module_list:
+        module = module.strip()
+        if module in ["q_proj", "k_proj", "v_proj", "o_proj"]:
+            # Attention projections: d -> d
+            flops_per_layer += 2 * d * lora_rank * num_tokens
+        elif module in ["gate_proj", "up_proj"]:
+            # MLP up projections: d -> intermediate
+            flops_per_layer += 2 * d * lora_rank * num_tokens
+        elif module == "down_proj":
+            # MLP down projection: intermediate -> d
+            flops_per_layer += 2 * intermediate * lora_rank * num_tokens
+    
+    return flops_per_layer * num_layers
+
+
+def compute_reft_flops(
+    reft_rank: int,
+    num_tokens: int,
+    position: str = "f1+s1",
+    num_layers: int = None,
+    model_config: dict = None,
+) -> int:
+    """
+    Compute additional FLOPs for ReFT per forward pass.
+    
+    ReFT intervention: h' = h + R(Wh_proj + b - h_proj) where h_proj = R^T h
+    FLOPs per intervention per position:
+        - R^T @ h: d * r
+        - W @ h_proj: r * r  
+        - R @ delta: r * d
+        - Total: ~2*d*r + r*r per intervened position
+    
+    Args:
+        reft_rank: ReFT rank (low_rank_dimension)
+        num_tokens: Number of tokens in sequence
+        position: Position string (f1+s1, all, etc.)
+        num_layers: Override number of layers with interventions
+        model_config: Model architecture config
+    
+    Returns:
+        Total additional FLOPs for one forward pass
+    """
+    if model_config is None:
+        model_config = DEFAULT_MODEL_CONFIG
+    
+    d = model_config["hidden_dim"]
+    if num_layers is None:
+        num_layers = model_config["num_layers"]
+    
+    r = reft_rank
+    
+    # Determine number of positions intervened
+    if position in ["all", "alls"]:
+        n_positions = num_tokens  # All tokens
+    elif position in ["f1+l1", "f1+s1"]:
+        n_positions = 2  # First and last token
+    else:
+        n_positions = 2  # Default assumption
+    
+    # FLOPs per intervention: project, transform, unproject
+    # R^T @ h (d*r) + W @ Rh (r*r) + R @ result (r*d) ≈ 2*d*r + r*r
+    flops_per_position = 2 * d * r + r * r
+    
+    # Total: per position * positions * layers
+    # Note: ReFT typically has 2 interventions per layer (for f1+l1 style)
+    # but with share_weights, same params are used
+    interventions_per_layer = 1 if position in ["all", "alls"] else 2
+    
+    return flops_per_position * n_positions * num_layers * interventions_per_layer
+
 
 def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
     """Fetch runs from wandb and return as DataFrame."""
@@ -363,6 +474,74 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
     plt.savefig(output_dir / "method_comparison.pdf")
     plt.close()
     print("Saved: method_comparison.png")
+
+
+def plot_flops_comparison(df: pd.DataFrame, output_dir: Path, seq_len: int = 512):
+    """Compare ReFT (by position) vs LoRA with FLOPs on x-axis."""
+    reft_df = df[df["method"] == "reft"].copy()
+    lora_df = df[df["method"] == "lora"].copy()
+    
+    if reft_df.empty:
+        print("No ReFT data for FLOPs comparison")
+        return
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Colors and markers for each position
+    position_styles = {
+        'f1+l1': {'color': 'blue', 'marker': 'o'},
+        'all': {'color': 'green', 'marker': 's'},
+        'f1+s1': {'color': 'red', 'marker': '^'},
+        'alls': {'color': 'purple', 'marker': 'D'},
+    }
+    
+    # Plot ReFT by position
+    for position in sorted(reft_df["position"].dropna().unique()):
+        pos_df = reft_df[reft_df["position"] == position]
+        
+        # Get best NLL for each rank
+        pos_best = pos_df.groupby("rank").agg({
+            "eval_nll": "min",
+        }).reset_index()
+        
+        # Compute FLOPs for each rank
+        pos_best["flops"] = pos_best["rank"].apply(
+            lambda r: compute_reft_flops(int(r), seq_len, position)
+        )
+        pos_best = pos_best.sort_values("flops")
+        
+        style = position_styles.get(position, {'color': 'gray', 'marker': 'x'})
+        ax.plot(pos_best["flops"], pos_best["eval_nll"],
+                marker=style['marker'], label=f"ReFT ({position})", 
+                color=style['color'], linewidth=2, markersize=8)
+    
+    # Plot LoRA if available
+    if not lora_df.empty:
+        lora_best = lora_df.groupby("lora_rank").agg({
+            "eval_nll": "min",
+        }).reset_index()
+        
+        # Compute FLOPs for each LoRA rank
+        lora_best["flops"] = lora_best["lora_rank"].apply(
+            lambda r: compute_lora_flops(int(r), seq_len)
+        )
+        lora_best = lora_best.sort_values("flops")
+        
+        ax.plot(lora_best["flops"], lora_best["eval_nll"],
+                marker='p', label="LoRA", color='orange', linewidth=2, markersize=8)
+    
+    ax.set_xlabel("Additional FLOPs per Forward Pass", fontsize=12)
+    ax.set_ylabel("Best Eval NLL", fontsize=12)
+    ax.set_title(f"ReFT vs LoRA: FLOPs Efficiency (seq_len={seq_len})", fontsize=14)
+    ax.set_xscale("log")
+    ax.legend(loc="best")
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "flops_comparison.png", dpi=150)
+    plt.savefig(output_dir / "flops_comparison.pdf")
+    plt.close()
+    print("Saved: flops_comparison.png")
 
 
 def get_best_runs(df: pd.DataFrame):
@@ -908,6 +1087,7 @@ def main():
     # Generate plots (only the useful ones)
     plot_lora_results(df, output_dir)
     plot_method_comparison(df, output_dir)
+    plot_flops_comparison(df, output_dir)
     plot_position_comparison(df, output_dir)
     
     # Scaling curves with linear fits (requires fetching history)
