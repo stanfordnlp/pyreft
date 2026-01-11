@@ -560,7 +560,7 @@ def plot_scaling_by_rank(coefficients: list, output_dir: Path, include_10x: bool
     # Create figure with subplots
     n_cols = min(4, n_ranks)
     n_rows = (n_ranks + n_cols - 1) // n_cols
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows), squeeze=False, sharey=True)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3.5*n_cols, 3*n_rows), squeeze=False, sharey=True)
     axes = axes.flatten()
     
     # Hide unused axes
