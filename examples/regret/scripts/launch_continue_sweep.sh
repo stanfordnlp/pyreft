@@ -15,7 +15,7 @@ set -e
 
 # --- Configuration ---
 RANKS=(1 2 4 8 16 32 64)
-POSITIONS=("f1+l1" "all" "f1+s1" "alls")
+POSITIONS=("f1+s1")
 
 # Output settings
 SOURCE_PROJECT="loreft-regret"
