@@ -308,37 +308,52 @@ def plot_lora_results(df: pd.DataFrame, output_dir: Path):
 
 
 def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
-    """Compare ReFT vs LoRA head-to-head."""
+    """Compare ReFT (by position) vs LoRA head-to-head."""
     reft_df = df[df["method"] == "reft"].copy()
     lora_df = df[df["method"] == "lora"].copy()
     
-    if reft_df.empty or lora_df.empty:
-        print("Need both ReFT and LoRA data for comparison")
+    if reft_df.empty:
+        print("No ReFT data for comparison")
         return
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Get best NLL for each trainable params level
-    reft_best = reft_df.groupby("trainable_params").agg({
-        "eval_nll": "min",
-        "rank": "first",
-        "position": "first",
-    }).reset_index().sort_values("trainable_params")
+    # Colors and markers for each position
+    position_styles = {
+        'f1+l1': {'color': 'blue', 'marker': 'o'},
+        'all': {'color': 'green', 'marker': 's'},
+        'f1+s1': {'color': 'red', 'marker': '^'},
+        'alls': {'color': 'purple', 'marker': 'D'},
+    }
     
-    lora_best = lora_df.groupby("trainable_params").agg({
-        "eval_nll": "min",
-        "lora_rank": "first",
-    }).reset_index().sort_values("trainable_params")
+    # Plot ReFT by position
+    for position in sorted(reft_df["position"].dropna().unique()):
+        pos_df = reft_df[reft_df["position"] == position]
+        
+        # Get best NLL for each rank (use rank as proxy for params since params varies by position)
+        pos_best = pos_df.groupby("rank").agg({
+            "eval_nll": "min",
+            "trainable_params": "first",
+        }).reset_index().sort_values("rank")
+        
+        style = position_styles.get(position, {'color': 'gray', 'marker': 'x'})
+        ax.plot(pos_best["rank"], pos_best["eval_nll"],
+                marker=style['marker'], label=f"ReFT ({position})", 
+                color=style['color'], linewidth=2, markersize=8)
     
-    ax.plot(reft_best["trainable_params"], reft_best["eval_nll"],
-            marker='o', label="ReFT (best)", color='blue', linewidth=2, markersize=8)
-    ax.plot(lora_best["trainable_params"], lora_best["eval_nll"],
-            marker='s', label="LoRA", color='orange', linewidth=2, markersize=8)
+    # Plot LoRA if available
+    if not lora_df.empty:
+        lora_best = lora_df.groupby("lora_rank").agg({
+            "eval_nll": "min",
+        }).reset_index().sort_values("lora_rank")
+        
+        ax.plot(lora_best["lora_rank"], lora_best["eval_nll"],
+                marker='p', label="LoRA", color='orange', linewidth=2, markersize=8)
     
-    ax.set_xlabel("Trainable Parameters", fontsize=12)
+    ax.set_xlabel("Rank", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
-    ax.set_title("ReFT vs LoRA: Efficiency Comparison", fontsize=14)
-    ax.set_xscale("log")
+    ax.set_title("ReFT vs LoRA: Best NLL by Rank", fontsize=14)
+    ax.set_xscale("log", base=2)
     ax.legend(loc="best")
     ax.grid(True, alpha=0.3)
     
