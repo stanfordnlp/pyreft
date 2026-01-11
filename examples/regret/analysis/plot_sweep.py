@@ -80,7 +80,7 @@ def compute_lora_flops(
 
 def compute_reft_flops(
     reft_rank: int,
-    num_tokens: int,
+    prompt_length: int,
     position: str = "f1+s1",
     num_layers: int = None,
     model_config: dict = None,
@@ -95,9 +95,11 @@ def compute_reft_flops(
         - R @ delta: r * d
         - Total: ~2*d*r + r*r per intervened position
     
+    Note: ReFT only intervenes on PROMPT tokens, not response tokens.
+    
     Args:
         reft_rank: ReFT rank (low_rank_dimension)
-        num_tokens: Number of tokens in sequence
+        prompt_length: Number of prompt tokens (not full sequence)
         position: Position string (f1+s1, all, etc.)
         num_layers: Override number of layers with interventions
         model_config: Model architecture config
@@ -114,11 +116,11 @@ def compute_reft_flops(
     
     r = reft_rank
     
-    # Determine number of positions intervened
+    # Determine number of positions intervened (always on prompt only)
     if position in ["all", "alls"]:
-        n_positions = num_tokens  # All tokens
+        n_positions = prompt_length  # All prompt tokens
     elif position in ["f1+l1", "f1+s1"]:
-        n_positions = 2  # First and last token
+        n_positions = 2  # First and last prompt token
     else:
         n_positions = 2  # Default assumption
     
@@ -476,8 +478,18 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
     print("Saved: method_comparison.png")
 
 
-def plot_flops_comparison(df: pd.DataFrame, output_dir: Path, seq_len: int = 512):
-    """Compare ReFT (by position) vs LoRA with FLOPs on x-axis."""
+def plot_flops_comparison(
+    df: pd.DataFrame, 
+    output_dir: Path, 
+    prompt_length: int = 128,
+    total_seq_len: int = 512
+):
+    """
+    Compare ReFT (by position) vs LoRA with FLOPs on x-axis.
+    
+    Note: ReFT only intervenes on PROMPT tokens, while LoRA is applied to
+    all tokens (prompt + response) during the forward pass.
+    """
     reft_df = df[df["method"] == "reft"].copy()
     lora_df = df[df["method"] == "lora"].copy()
     
@@ -495,7 +507,7 @@ def plot_flops_comparison(df: pd.DataFrame, output_dir: Path, seq_len: int = 512
         'alls': {'color': 'purple', 'marker': 'D'},
     }
     
-    # Plot ReFT by position
+    # Plot ReFT by position (uses prompt_length since ReFT only intervenes on prompt)
     for position in sorted(reft_df["position"].dropna().unique()):
         pos_df = reft_df[reft_df["position"] == position]
         
@@ -504,9 +516,9 @@ def plot_flops_comparison(df: pd.DataFrame, output_dir: Path, seq_len: int = 512
             "eval_nll": "min",
         }).reset_index()
         
-        # Compute FLOPs for each rank
+        # Compute FLOPs for each rank (ReFT uses prompt_length)
         pos_best["flops"] = pos_best["rank"].apply(
-            lambda r: compute_reft_flops(int(r), seq_len, position)
+            lambda r: compute_reft_flops(int(r), prompt_length, position)
         )
         pos_best = pos_best.sort_values("flops")
         
@@ -515,15 +527,15 @@ def plot_flops_comparison(df: pd.DataFrame, output_dir: Path, seq_len: int = 512
                 marker=style['marker'], label=f"ReFT ({position})", 
                 color=style['color'], linewidth=2, markersize=8)
     
-    # Plot LoRA if available
+    # Plot LoRA if available (uses total_seq_len since LoRA applies to all tokens)
     if not lora_df.empty:
         lora_best = lora_df.groupby("lora_rank").agg({
             "eval_nll": "min",
         }).reset_index()
         
-        # Compute FLOPs for each LoRA rank
+        # Compute FLOPs for each LoRA rank (LoRA uses full sequence)
         lora_best["flops"] = lora_best["lora_rank"].apply(
-            lambda r: compute_lora_flops(int(r), seq_len)
+            lambda r: compute_lora_flops(int(r), total_seq_len)
         )
         lora_best = lora_best.sort_values("flops")
         
@@ -532,7 +544,7 @@ def plot_flops_comparison(df: pd.DataFrame, output_dir: Path, seq_len: int = 512
     
     ax.set_xlabel("Additional FLOPs per Forward Pass", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
-    ax.set_title(f"ReFT vs LoRA: FLOPs Efficiency (seq_len={seq_len})", fontsize=14)
+    ax.set_title(f"ReFT vs LoRA: FLOPs Efficiency\n(ReFT: prompt_len={prompt_length}, LoRA: seq_len={total_seq_len})", fontsize=14)
     ax.set_xscale("log")
     ax.legend(loc="best")
     ax.grid(True, alpha=0.3)
