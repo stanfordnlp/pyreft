@@ -138,8 +138,8 @@ def fetch_combined_history(run_id: str, run_id_10x: str, project: str, project_1
     """
     Fetch and combine history from original run and its 10x continuation.
     
-    The 10x run continues from where the original left off, so we need to 
-    offset its steps appropriately.
+    The 10x run continues from where the original left off. We use train/global_step
+    instead of wandb's _step because wandb resets _step for new runs.
     """
     import wandb
     
@@ -150,14 +150,26 @@ def fetch_combined_history(run_id: str, run_id_10x: str, project: str, project_1
     # Fetch original run history
     try:
         wandb_run = api.run(f"{project_path}/{run_id}")
-        history = wandb_run.history(keys=["_step", "eval/nll"])
-        history = history.dropna(subset=["eval/nll"])
+        # Use scan_history for more reliable access
+        history = list(wandb_run.scan_history(keys=["_step", "train/global_step", "eval/nll"]))
         
-        if history.empty:
+        if not history:
             return None, None
         
-        steps = history["_step"].values
-        nll = history["eval/nll"].values
+        # Extract eval points (only rows with eval/nll)
+        eval_points = []
+        for h in history:
+            nll = h.get("eval/nll")
+            if nll is not None:
+                # Prefer global_step, fall back to _step
+                step = h.get("train/global_step") or h.get("_step", 0)
+                eval_points.append((step, nll))
+        
+        if not eval_points:
+            return None, None
+        
+        steps = np.array([p[0] for p in eval_points])
+        nll = np.array([p[1] for p in eval_points])
         
         # Get max step from original
         max_original_step = steps.max() if len(steps) > 0 else 0
@@ -170,23 +182,26 @@ def fetch_combined_history(run_id: str, run_id_10x: str, project: str, project_1
     if run_id_10x:
         try:
             wandb_run_10x = api.run(f"{project_path_10x}/{run_id_10x}")
-            history_10x = wandb_run_10x.history(keys=["_step", "eval/nll"])
-            history_10x = history_10x.dropna(subset=["eval/nll"])
+            history_10x = list(wandb_run_10x.scan_history(keys=["_step", "train/global_step", "eval/nll"]))
             
-            if not history_10x.empty:
-                steps_10x = history_10x["_step"].values
-                nll_10x = history_10x["eval/nll"].values
+            if history_10x:
+                eval_points_10x = []
+                for h in history_10x:
+                    nll_val = h.get("eval/nll")
+                    if nll_val is not None:
+                        # Use global_step - this has the true step count from resumed training
+                        step = h.get("train/global_step") or h.get("_step", 0)
+                        eval_points_10x.append((step, nll_val))
                 
-                # The 10x run's steps should be offset from where original ended
-                # But check if wandb already has the offset applied
-                if steps_10x.min() <= max_original_step:
-                    # Steps are relative to the 10x run, need to offset
-                    steps_10x = steps_10x + max_original_step
-                
-                # Combine, avoiding duplicate steps
-                mask_10x = steps_10x > max_original_step
-                steps = np.concatenate([steps, steps_10x[mask_10x]])
-                nll = np.concatenate([nll, nll_10x[mask_10x]])
+                if eval_points_10x:
+                    steps_10x = np.array([p[0] for p in eval_points_10x])
+                    nll_10x = np.array([p[1] for p in eval_points_10x])
+                    
+                    # Combine, avoiding duplicate steps
+                    mask_10x = steps_10x > max_original_step
+                    if mask_10x.any():
+                        steps = np.concatenate([steps, steps_10x[mask_10x]])
+                        nll = np.concatenate([nll, nll_10x[mask_10x]])
                 
         except Exception as e:
             print(f"Warning: Could not fetch 10x continuation {run_id_10x}: {e}")
@@ -448,16 +463,22 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
                 if steps is None:
                     continue
             else:
-                # Fetch original only
+                # Fetch original only - use scan_history for consistency
                 wandb_run = api.run(f"{project_path}/{run_id}")
-                history = wandb_run.history(keys=["_step", "eval/nll"])
-                history = history.dropna(subset=["eval/nll"])
+                history = list(wandb_run.scan_history(keys=["_step", "train/global_step", "eval/nll"]))
                 
-                if history.empty or len(history) < 2:
+                eval_points = []
+                for h in history:
+                    nll_val = h.get("eval/nll")
+                    if nll_val is not None:
+                        step = h.get("train/global_step") or h.get("_step", 0)
+                        eval_points.append((step, nll_val))
+                
+                if len(eval_points) < 2:
                     continue
                 
-                steps = history["_step"].values
-                nll = history["eval/nll"].values
+                steps = np.array([p[0] for p in eval_points])
+                nll = np.array([p[1] for p in eval_points])
                 
                 # Filter to positive steps for log
                 mask = steps > 0

@@ -228,7 +228,7 @@ def continue_training(
     print(f"  ReFT weights: {reft_weights_dir}")
     print(f"  Trainer checkpoint: {trainer_checkpoint_dir}")
     print(f"  Original epochs: {original_args.get('epochs', 1)}")
-    print(f"  New epochs: {original_args.get('epochs', 1) * epochs_multiplier}")
+    print(f"  Target epochs: {original_args.get('epochs', 1) * epochs_multiplier}")
     print(f"  Output: {new_output_dir}")
     print(f"{'='*60}")
     
@@ -383,18 +383,31 @@ def continue_training(
     # Create output directory
     os.makedirs(new_output_dir, exist_ok=True)
     
-    # Calculate new epochs
+    # Calculate training steps
     original_epochs = original_args.get("epochs", 1)
-    new_epochs = original_epochs * epochs_multiplier
+    batch_size = original_args.get("batch_size", 2)
+    grad_accum = original_args.get("gradient_accumulation_steps", 16)
+    effective_batch_size = batch_size * grad_accum
+    steps_per_epoch = len(train_dataset) // effective_batch_size
     
-    # Training arguments - continue from checkpoint
+    # Calculate max_steps: we want to train for epochs_multiplier * original epochs TOTAL
+    # The checkpoint is at original_epochs worth of steps, so we need additional steps
+    original_steps = steps_per_epoch * original_epochs
+    target_total_steps = steps_per_epoch * original_epochs * epochs_multiplier
+    
+    print(f"  Steps per epoch: {steps_per_epoch}")
+    print(f"  Original run steps: {original_steps}")
+    print(f"  Target total steps: {target_total_steps}")
+    
+    # Training arguments - use max_steps for precise control
+    # When resuming, trainer will continue from checkpoint's global_step to max_steps
     training_args = TrainingArguments(
         output_dir=new_output_dir,
         run_name=new_run_name,
-        num_train_epochs=new_epochs,
-        per_device_train_batch_size=original_args.get("batch_size", 2),
+        max_steps=target_total_steps,  # Use max_steps instead of num_train_epochs
+        per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=original_args.get("eval_batch_size", 8),
-        gradient_accumulation_steps=original_args.get("gradient_accumulation_steps", 16),
+        gradient_accumulation_steps=grad_accum,
         learning_rate=original_args.get("lr", 5e-4),
         lr_scheduler_type=original_args.get("schedule", "constant"),
         warmup_ratio=original_args.get("warmup_ratio", 0.0),
@@ -403,7 +416,8 @@ def continue_training(
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=original_args.get("eval_steps", 50) if eval_dataset is not None else None,
         eval_delay=0,
-        save_strategy="epoch",
+        save_strategy="steps",
+        save_steps=steps_per_epoch,  # Save every epoch-equivalent
         save_total_limit=2,
         bf16=(original_args.get("dtype") == "bfloat16" and device == "cuda"),
         fp16=(original_args.get("dtype") == "float16" and device == "cuda"),
@@ -426,8 +440,10 @@ def continue_training(
             **original_args,
             "continued_from": run_name,
             "original_epochs": original_epochs,
-            "new_epochs": new_epochs,
+            "target_epochs": original_epochs * epochs_multiplier,
             "epochs_multiplier": epochs_multiplier,
+            "original_steps": original_steps,
+            "target_total_steps": target_total_steps,
         },
     )
     
@@ -458,9 +474,12 @@ def continue_training(
         **original_args,
         "continued_from": run_name,
         "original_epochs": original_epochs,
-        "new_epochs": new_epochs,
+        "target_epochs": original_epochs * epochs_multiplier,
         "epochs_multiplier": epochs_multiplier,
-        "reft_checkpoint_dir": reft_dir,
+        "original_steps": original_steps,
+        "target_total_steps": target_total_steps,
+        "reft_config_dir": reft_config_dir,
+        "reft_weights_dir": reft_weights_dir,
         "trainer_checkpoint_dir": trainer_checkpoint_dir,
     }
     with open(os.path.join(new_output_dir, "training_args.json"), "w") as f:
