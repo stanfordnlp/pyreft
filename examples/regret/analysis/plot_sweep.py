@@ -4,11 +4,13 @@ Plot results from the LoReFT sweep experiments.
 
 Usage:
     python plot_sweep.py --project loreft-regret
+    python plot_sweep.py --project loreft-regret --project-10x loreft-regret-10x --curves
     python plot_sweep.py --project loreft-regret --output plots/
     python plot_sweep.py --csv results.csv  # Use cached CSV instead of wandb
 """
 
 import argparse
+import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -78,6 +80,120 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
         records.append(record)
     
     return pd.DataFrame(records)
+
+
+def fetch_10x_runs(project_10x: str, entity: str = None) -> dict:
+    """
+    Fetch 10x continuation runs and return a mapping from original run config to 10x run.
+    
+    Returns dict: {(method_type, rank, position): {"run_id": ..., "original_run_name": ...}}
+    """
+    import wandb
+    
+    api = wandb.Api()
+    project_path = f"{entity}/{project_10x}" if entity else project_10x
+    
+    try:
+        runs = api.runs(project_path)
+    except Exception as e:
+        print(f"Warning: Could not fetch 10x runs from {project_10x}: {e}")
+        return {}
+    
+    runs_10x = {}
+    for run in runs:
+        if run.state != "finished":
+            continue
+        
+        config = run.config
+        
+        # Parse the original run info from config or name
+        # The 10x runs should have stored the original config
+        rank = config.get("rank")
+        position = config.get("position")
+        use_lora = config.get("use_lora", False)
+        disable_reft = config.get("disable_reft", False)
+        
+        if use_lora and disable_reft:
+            method_type = "lora"
+        elif use_lora:
+            method_type = "lora+reft"
+        else:
+            method_type = "reft"
+        
+        # For LoRA, use lora_rank
+        if method_type == "lora":
+            rank = config.get("lora_rank", rank)
+        
+        key = (method_type, rank, position)
+        runs_10x[key] = {
+            "run_id": run.id,
+            "run_name": run.name,
+            "config": config,
+        }
+    
+    return runs_10x
+
+
+def fetch_combined_history(run_id: str, run_id_10x: str, project: str, project_10x: str, entity: str = None):
+    """
+    Fetch and combine history from original run and its 10x continuation.
+    
+    The 10x run continues from where the original left off, so we need to 
+    offset its steps appropriately.
+    """
+    import wandb
+    
+    api = wandb.Api()
+    project_path = f"{entity}/{project}" if entity else project
+    project_path_10x = f"{entity}/{project_10x}" if entity else project_10x
+    
+    # Fetch original run history
+    try:
+        wandb_run = api.run(f"{project_path}/{run_id}")
+        history = wandb_run.history(keys=["_step", "eval/nll"])
+        history = history.dropna(subset=["eval/nll"])
+        
+        if history.empty:
+            return None, None
+        
+        steps = history["_step"].values
+        nll = history["eval/nll"].values
+        
+        # Get max step from original
+        max_original_step = steps.max() if len(steps) > 0 else 0
+        
+    except Exception as e:
+        print(f"Error fetching original run {run_id}: {e}")
+        return None, None
+    
+    # Fetch 10x continuation history if available
+    if run_id_10x:
+        try:
+            wandb_run_10x = api.run(f"{project_path_10x}/{run_id_10x}")
+            history_10x = wandb_run_10x.history(keys=["_step", "eval/nll"])
+            history_10x = history_10x.dropna(subset=["eval/nll"])
+            
+            if not history_10x.empty:
+                steps_10x = history_10x["_step"].values
+                nll_10x = history_10x["eval/nll"].values
+                
+                # The 10x run's steps should be offset from where original ended
+                # But check if wandb already has the offset applied
+                if steps_10x.min() <= max_original_step:
+                    # Steps are relative to the 10x run, need to offset
+                    steps_10x = steps_10x + max_original_step
+                
+                # Combine, avoiding duplicate steps
+                mask_10x = steps_10x > max_original_step
+                steps = np.concatenate([steps, steps_10x[mask_10x]])
+                nll = np.concatenate([nll, nll_10x[mask_10x]])
+                
+        except Exception as e:
+            print(f"Warning: Could not fetch 10x continuation {run_id_10x}: {e}")
+    
+    # Filter to positive steps for log
+    mask = steps > 0
+    return steps[mask], nll[mask]
 
 
 def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
@@ -296,8 +412,13 @@ def get_best_runs(df: pd.DataFrame):
     return best_runs
 
 
-def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None):
-    """Fetch history and compute linear fit coefficients for each run."""
+def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None,
+                               project_10x: str = None, runs_10x: dict = None):
+    """
+    Fetch history and compute linear fit coefficients for each run.
+    
+    If project_10x and runs_10x are provided, combines original and 10x histories.
+    """
     import wandb
     
     api = wandb.Api()
@@ -307,22 +428,41 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
     
     for run in best_runs:
         run_id = run["run_id"]
+        method_type = run["method_type"]
+        rank = run["rank_val"]
+        position = run.get("position_val")
+        
+        # Check if there's a 10x continuation
+        run_id_10x = None
+        if runs_10x:
+            key = (method_type, rank, position)
+            if key in runs_10x:
+                run_id_10x = runs_10x[key]["run_id"]
         
         try:
-            wandb_run = api.run(f"{project_path}/{run_id}")
-            history = wandb_run.history(keys=["_step", "eval/nll"])
-            history = history.dropna(subset=["eval/nll"])
-            
-            if history.empty or len(history) < 2:
-                continue
-            
-            steps = history["_step"].values
-            nll = history["eval/nll"].values
-            
-            # Filter to positive steps for log
-            mask = steps > 0
-            steps = steps[mask]
-            nll = nll[mask]
+            if run_id_10x and project_10x:
+                # Fetch combined history
+                steps, nll = fetch_combined_history(
+                    run_id, run_id_10x, project, project_10x, entity
+                )
+                if steps is None:
+                    continue
+            else:
+                # Fetch original only
+                wandb_run = api.run(f"{project_path}/{run_id}")
+                history = wandb_run.history(keys=["_step", "eval/nll"])
+                history = history.dropna(subset=["eval/nll"])
+                
+                if history.empty or len(history) < 2:
+                    continue
+                
+                steps = history["_step"].values
+                nll = history["eval/nll"].values
+                
+                # Filter to positive steps for log
+                mask = steps > 0
+                steps = steps[mask]
+                nll = nll[mask]
             
             if len(steps) < 2:
                 continue
@@ -331,17 +471,22 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
             log_steps = np.log10(steps)
             slope, intercept, r_value, p_value, std_err = stats.linregress(log_steps, nll)
             
+            has_10x = run_id_10x is not None and project_10x is not None
+            
             coefficients.append({
                 "run_id": run_id,
+                "run_id_10x": run_id_10x,
                 "facet": run["facet"],
-                "method_type": run["method_type"],
-                "position_val": run.get("position_val"),
-                "rank": run["rank_val"],
+                "method_type": method_type,
+                "position_val": position,
+                "rank": rank,
                 "slope": slope,
                 "intercept": intercept,
                 "r_squared": r_value**2,
                 "steps": steps,
                 "nll": nll,
+                "has_10x": has_10x,
+                "max_step": steps.max(),
             })
             
         except Exception as e:
@@ -350,10 +495,12 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
     return coefficients
 
 
-def plot_scaling_curves(coefficients: list, output_dir: Path):
+def plot_scaling_curves(coefficients: list, output_dir: Path, include_10x: bool = False):
     """
     Plot NLL curves for best LR per (method, rank, position), faceted by method+position.
     Each curve gets a linear fit in log-space with equation inscribed.
+    
+    If include_10x, indicates which runs include 10x continuation data.
     """
     if not coefficients:
         print("No coefficients for scaling curves")
@@ -393,6 +540,8 @@ def plot_scaling_curves(coefficients: list, output_dir: Path):
             slope = coef["slope"]
             intercept = coef["intercept"]
             rank = coef["rank"]
+            has_10x = coef.get("has_10x", False)
+            max_step = coef.get("max_step", steps.max())
             
             # Plot the curve (low opacity - background)
             ax.plot(steps, nll, color=colors[i], linewidth=1.5, alpha=0.2)
@@ -400,8 +549,15 @@ def plot_scaling_curves(coefficients: list, output_dir: Path):
             # Plot fit line (high opacity - foreground)
             fit_steps = np.logspace(np.log10(steps.min()), np.log10(steps.max()), 100)
             fit_nll = slope * np.log10(fit_steps) + intercept
+            
+            # Label includes 10x indicator and max step if relevant
+            if include_10x and has_10x:
+                label = f"r={int(rank)} (10x, {int(max_step):,} steps)"
+            else:
+                label = f"r={int(rank)}"
+            
             ax.plot(fit_steps, fit_nll, color=colors[i], linewidth=2.5, 
-                    linestyle='-', alpha=0.9, label=f"r={int(rank)}")
+                    linestyle='-', alpha=0.9, label=label)
             
             # Add equation text along the line
             text_idx = int(len(fit_steps) * 0.6)
@@ -425,10 +581,13 @@ def plot_scaling_curves(coefficients: list, output_dir: Path):
         ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(output_dir / "scaling_curves.png", dpi=150)
-    plt.savefig(output_dir / "scaling_curves.pdf")
+    
+    # Save with different names based on 10x inclusion
+    suffix = "_with_10x" if include_10x else ""
+    plt.savefig(output_dir / f"scaling_curves{suffix}.png", dpi=150)
+    plt.savefig(output_dir / f"scaling_curves{suffix}.pdf")
     plt.close()
-    print("Saved: scaling_curves.png")
+    print(f"Saved: scaling_curves{suffix}.png")
 
 
 def plot_scaling_coefficients(coefficients: list, output_dir: Path):
@@ -539,10 +698,126 @@ def plot_scaling_coefficients(coefficients: list, output_dir: Path):
     print("Saved: scaling_coefficients_table.png")
 
 
+def plot_scaling_coefficients_with_10x(coefficients: list, output_dir: Path):
+    """
+    Plot slope and intercept vs rank for runs with 10x continuation data.
+    Also generates a table with max_step info.
+    """
+    if not coefficients:
+        print("No coefficients for 10x scaling coefficient plots")
+        return
+    
+    # Convert to DataFrame for easier plotting
+    coef_df = pd.DataFrame([{
+        "facet": c["facet"],
+        "method_type": c["method_type"],
+        "position": c["position_val"],
+        "rank": c["rank"],
+        "slope": c["slope"],
+        "intercept": c["intercept"],
+        "r_squared": c["r_squared"],
+        "has_10x": c.get("has_10x", False),
+        "max_step": c.get("max_step", 0),
+    } for c in coefficients])
+    
+    facets = sorted(coef_df["facet"].unique())
+    markers = ['o', 's', '^', 'D', 'v', '<', 'p', 'h']
+    colors = plt.cm.tab10(np.linspace(0, 1, len(facets)))
+    
+    # Plot: Slope vs Rank and Intercept vs Rank with 10x data
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    ax = axes[0]
+    for i, facet in enumerate(facets):
+        facet_data = coef_df[coef_df["facet"] == facet].sort_values("rank")
+        ax.plot(facet_data["rank"], facet_data["slope"],
+                marker=markers[i % len(markers)], color=colors[i],
+                linewidth=2, markersize=10, label=facet)
+    
+    ax.set_xlabel("Rank", fontsize=12)
+    ax.set_ylabel("Slope (rate of NLL decrease)", fontsize=12)
+    ax.set_title("Scaling Slope vs Rank (with 10x data)", fontsize=14)
+    ax.set_xscale("log", base=2)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+    
+    ax = axes[1]
+    for i, facet in enumerate(facets):
+        facet_data = coef_df[coef_df["facet"] == facet].sort_values("rank")
+        ax.plot(facet_data["rank"], facet_data["intercept"],
+                marker=markers[i % len(markers)], color=colors[i],
+                linewidth=2, markersize=10, label=facet)
+    
+    ax.set_xlabel("Rank", fontsize=12)
+    ax.set_ylabel("Intercept (initial NLL at step=1)", fontsize=12)
+    ax.set_title("Scaling Intercept vs Rank (with 10x data)", fontsize=14)
+    ax.set_xscale("log", base=2)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "scaling_coefficients_with_10x.png", dpi=150)
+    plt.savefig(output_dir / "scaling_coefficients_with_10x.pdf")
+    plt.close()
+    print("Saved: scaling_coefficients_with_10x.png")
+    
+    # Table with 10x info
+    fig, ax = plt.subplots(figsize=(14, 10))
+    ax.axis('off')
+    
+    table_data = []
+    for _, row in coef_df.sort_values(["facet", "rank"]).iterrows():
+        steps_str = f"{int(row['max_step']):,}" if row["has_10x"] else f"{int(row['max_step']):,}"
+        table_data.append([
+            row["facet"],
+            f"{int(row['rank'])}",
+            f"{row['slope']:.4f}",
+            f"{row['intercept']:.3f}",
+            f"{row['r_squared']:.4f}",
+            steps_str,
+            "✓" if row["has_10x"] else "",
+        ])
+    
+    table = ax.table(
+        cellText=table_data,
+        colLabels=["Method/Position", "Rank", "Slope", "Intercept", "R²", "Max Steps", "10x"],
+        loc='center',
+        cellLoc='center',
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.2, 1.5)
+    
+    # Style header
+    for i in range(7):
+        table[(0, i)].set_facecolor('#4472C4')
+        table[(0, i)].set_text_props(color='white', fontweight='bold')
+    
+    # Alternate row colors, highlight 10x rows
+    for i in range(1, len(table_data) + 1):
+        for j in range(7):
+            if table_data[i-1][6] == "✓":  # has 10x
+                table[(i, j)].set_facecolor('#E2EFDA')  # light green
+            elif i % 2 == 0:
+                table[(i, j)].set_facecolor('#D9E2F3')
+    
+    plt.title("Scaling Law Coefficients (with 10x continuation data)\nNLL = slope·log₁₀(step) + intercept", 
+              fontsize=14, fontweight='bold', pad=20)
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "scaling_coefficients_table_with_10x.png", dpi=150)
+    plt.savefig(output_dir / "scaling_coefficients_table_with_10x.pdf")
+    plt.close()
+    print("Saved: scaling_coefficients_table_with_10x.png")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Plot LoReFT sweep results")
     parser.add_argument("--project", type=str, default="loreft-regret",
                         help="Wandb project name")
+    parser.add_argument("--project-10x", type=str, default=None,
+                        help="Wandb project name for 10x continuation runs")
     parser.add_argument("--entity", type=str, default=None,
                         help="Wandb entity (username or team)")
     parser.add_argument("--csv", type=str, default=None,
@@ -578,6 +853,13 @@ def main():
     print(f"LoRA Ranks: {sorted(df['lora_rank'].dropna().unique())}")
     print(f"LRs: {sorted(df['lr'].dropna().unique())}")
     
+    # Fetch 10x continuation runs if specified
+    runs_10x = {}
+    if args.project_10x and not args.csv:
+        print(f"\nFetching 10x continuation runs from: {args.project_10x}")
+        runs_10x = fetch_10x_runs(args.project_10x, args.entity)
+        print(f"Found {len(runs_10x)} continuation runs")
+    
     # Generate plots (only the useful ones)
     plot_lora_results(df, output_dir)
     plot_method_comparison(df, output_dir)
@@ -587,10 +869,23 @@ def main():
     if args.curves and not args.csv:
         print("\nFetching run histories for scaling analysis...")
         best_runs = get_best_runs(df)
-        coefficients = fetch_scaling_coefficients(best_runs, args.project, args.entity)
         
-        plot_scaling_curves(coefficients, output_dir)
+        # First plot without 10x
+        coefficients = fetch_scaling_coefficients(best_runs, args.project, args.entity)
+        plot_scaling_curves(coefficients, output_dir, include_10x=False)
         plot_scaling_coefficients(coefficients, output_dir)
+        
+        # If 10x data available, also plot combined curves
+        if runs_10x:
+            print("\nFetching combined histories with 10x continuation...")
+            coefficients_10x = fetch_scaling_coefficients(
+                best_runs, args.project, args.entity,
+                project_10x=args.project_10x, runs_10x=runs_10x
+            )
+            plot_scaling_curves(coefficients_10x, output_dir, include_10x=True)
+            
+            # Also save updated coefficients table with 10x data
+            plot_scaling_coefficients_with_10x(coefficients_10x, output_dir)
     
     print(f"\nAll plots saved to {output_dir}")
 
