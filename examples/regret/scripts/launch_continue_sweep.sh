@@ -19,7 +19,7 @@ POSITIONS=("f1+l1" "all" "f1+s1" "alls")
 
 # Output settings
 SOURCE_PROJECT="loreft-regret"
-OUTPUT_PROJECT="loreft-regret-10x"
+OUTPUT_PROJECT="loreft-regret-10x-restart"
 OUTPUT_DIR="./outputs_10x"
 EPOCHS=10
 

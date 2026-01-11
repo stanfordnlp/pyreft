@@ -149,7 +149,7 @@ def main():
                         help="Wandb entity (username or team)")
     parser.add_argument("--output_dir", type=str, default="./outputs_10x",
                         help="Output directory for retrained models")
-    parser.add_argument("--output_wandb_project", type=str, default="loreft-regret-10x",
+    parser.add_argument("--output_wandb_project", type=str, default="loreft-regret-10x-restart",
                         help="Wandb project for retrained runs")
     parser.add_argument("--epochs", type=int, default=10,
                         help="Number of epochs to train")

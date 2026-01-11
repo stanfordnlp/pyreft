@@ -25,7 +25,7 @@ set -e
 RANK=${RANK:-4}
 POSITION=${POSITION:-"f1+l1"}
 SOURCE_PROJECT=${SOURCE_PROJECT:-"loreft-regret"}
-OUTPUT_PROJECT=${OUTPUT_PROJECT:-"loreft-regret-10x"}
+OUTPUT_PROJECT=${OUTPUT_PROJECT:-"loreft-regret-10x-restart"}
 OUTPUT_DIR=${OUTPUT_DIR:-"./outputs_10x"}
 EPOCHS=${EPOCHS:-10}
 
