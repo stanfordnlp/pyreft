@@ -134,34 +134,24 @@ def fetch_10x_runs(project_10x: str, entity: str = None) -> dict:
     return runs_10x
 
 
-def fetch_combined_history(run_id: str, run_id_10x: str, project: str, project_10x: str, entity: str = None):
-    """
-    Fetch and combine history from original run and its 10x continuation.
-    
-    The 10x run continues from where the original left off. We use train/global_step
-    instead of wandb's _step because wandb resets _step for new runs.
-    """
+def fetch_run_history(run_id: str, project: str, entity: str = None):
+    """Fetch history for a single run."""
     import wandb
     
     api = wandb.Api()
     project_path = f"{entity}/{project}" if entity else project
-    project_path_10x = f"{entity}/{project_10x}" if entity else project_10x
     
-    # Fetch original run history
     try:
         wandb_run = api.run(f"{project_path}/{run_id}")
-        # Use scan_history for more reliable access
         history = list(wandb_run.scan_history(keys=["_step", "train/global_step", "eval/nll"]))
         
         if not history:
             return None, None
         
-        # Extract eval points (only rows with eval/nll)
         eval_points = []
         for h in history:
             nll = h.get("eval/nll")
             if nll is not None:
-                # Prefer global_step, fall back to _step
                 step = h.get("train/global_step") or h.get("_step", 0)
                 eval_points.append((step, nll))
         
@@ -171,44 +161,12 @@ def fetch_combined_history(run_id: str, run_id_10x: str, project: str, project_1
         steps = np.array([p[0] for p in eval_points])
         nll = np.array([p[1] for p in eval_points])
         
-        # Get max step from original
-        max_original_step = steps.max() if len(steps) > 0 else 0
+        mask = steps > 0
+        return steps[mask], nll[mask]
         
     except Exception as e:
-        print(f"Error fetching original run {run_id}: {e}")
+        print(f"Error fetching run {run_id}: {e}")
         return None, None
-    
-    # Fetch 10x continuation history if available
-    if run_id_10x:
-        try:
-            wandb_run_10x = api.run(f"{project_path_10x}/{run_id_10x}")
-            history_10x = list(wandb_run_10x.scan_history(keys=["_step", "train/global_step", "eval/nll"]))
-            
-            if history_10x:
-                eval_points_10x = []
-                for h in history_10x:
-                    nll_val = h.get("eval/nll")
-                    if nll_val is not None:
-                        # Use global_step - this has the true step count from resumed training
-                        step = h.get("train/global_step") or h.get("_step", 0)
-                        eval_points_10x.append((step, nll_val))
-                
-                if eval_points_10x:
-                    steps_10x = np.array([p[0] for p in eval_points_10x])
-                    nll_10x = np.array([p[1] for p in eval_points_10x])
-                    
-                    # Combine, avoiding duplicate steps
-                    mask_10x = steps_10x > max_original_step
-                    if mask_10x.any():
-                        steps = np.concatenate([steps, steps_10x[mask_10x]])
-                        nll = np.concatenate([nll, nll_10x[mask_10x]])
-                
-        except Exception as e:
-            print(f"Warning: Could not fetch 10x continuation {run_id_10x}: {e}")
-    
-    # Filter to positive steps for log
-    mask = steps > 0
-    return steps[mask], nll[mask]
 
 
 def plot_position_comparison(df: pd.DataFrame, output_dir: Path):
@@ -432,12 +390,10 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
     """
     Fetch history and compute linear fit coefficients for each run.
     
-    If project_10x and runs_10x are provided, combines original and 10x histories.
+    If project_10x and runs_10x are provided, uses 10x runs instead of original
+    (10x runs are now independent full retraining, not continuations).
     """
     import wandb
-    
-    api = wandb.Api()
-    project_path = f"{entity}/{project}" if entity else project
     
     coefficients = []
     
@@ -447,56 +403,29 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
         rank = run["rank_val"]
         position = run.get("position_val")
         
-        # Check if there's a 10x continuation
-        run_id_10x = None
+        # Check if there's a 10x run (independent retrain with 10x epochs)
+        use_10x = False
         if runs_10x:
             key = (method_type, rank, position)
             if key in runs_10x:
-                run_id_10x = runs_10x[key]["run_id"]
+                run_id = runs_10x[key]["run_id"]
+                use_10x = True
+        
+        # Fetch from appropriate project
+        fetch_project = project_10x if (use_10x and project_10x) else project
         
         try:
-            if run_id_10x and project_10x:
-                # Fetch combined history
-                steps, nll = fetch_combined_history(
-                    run_id, run_id_10x, project, project_10x, entity
-                )
-                if steps is None:
-                    continue
-            else:
-                # Fetch original only - use scan_history for consistency
-                wandb_run = api.run(f"{project_path}/{run_id}")
-                history = list(wandb_run.scan_history(keys=["_step", "train/global_step", "eval/nll"]))
-                
-                eval_points = []
-                for h in history:
-                    nll_val = h.get("eval/nll")
-                    if nll_val is not None:
-                        step = h.get("train/global_step") or h.get("_step", 0)
-                        eval_points.append((step, nll_val))
-                
-                if len(eval_points) < 2:
-                    continue
-                
-                steps = np.array([p[0] for p in eval_points])
-                nll = np.array([p[1] for p in eval_points])
-                
-                # Filter to positive steps for log
-                mask = steps > 0
-                steps = steps[mask]
-                nll = nll[mask]
+            steps, nll = fetch_run_history(run_id, fetch_project, entity)
             
-            if len(steps) < 2:
+            if steps is None or len(steps) < 2:
                 continue
             
             # Linear fit in log-space: NLL = slope * log10(step) + intercept
             log_steps = np.log10(steps)
             slope, intercept, r_value, p_value, std_err = stats.linregress(log_steps, nll)
             
-            has_10x = run_id_10x is not None and project_10x is not None
-            
             coefficients.append({
                 "run_id": run_id,
-                "run_id_10x": run_id_10x,
                 "facet": run["facet"],
                 "method_type": method_type,
                 "position_val": position,
@@ -506,7 +435,7 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
                 "r_squared": r_value**2,
                 "steps": steps,
                 "nll": nll,
-                "has_10x": has_10x,
+                "is_10x": use_10x,
                 "max_step": steps.max(),
             })
             
@@ -561,7 +490,7 @@ def plot_scaling_curves(coefficients: list, output_dir: Path, include_10x: bool 
             slope = coef["slope"]
             intercept = coef["intercept"]
             rank = coef["rank"]
-            has_10x = coef.get("has_10x", False)
+            is_10x = coef.get("is_10x", False)
             max_step = coef.get("max_step", steps.max())
             
             # Plot the curve (low opacity - background)
@@ -572,7 +501,7 @@ def plot_scaling_curves(coefficients: list, output_dir: Path, include_10x: bool 
             fit_nll = slope * np.log10(fit_steps) + intercept
             
             # Label includes 10x indicator and max step if relevant
-            if include_10x and has_10x:
+            if include_10x and is_10x:
                 label = f"r={int(rank)} (10x, {int(max_step):,} steps)"
             else:
                 label = f"r={int(rank)}"
@@ -737,7 +666,7 @@ def plot_scaling_coefficients_with_10x(coefficients: list, output_dir: Path):
         "slope": c["slope"],
         "intercept": c["intercept"],
         "r_squared": c["r_squared"],
-        "has_10x": c.get("has_10x", False),
+        "is_10x": c.get("is_10x", False),
         "max_step": c.get("max_step", 0),
     } for c in coefficients])
     
@@ -789,7 +718,7 @@ def plot_scaling_coefficients_with_10x(coefficients: list, output_dir: Path):
     
     table_data = []
     for _, row in coef_df.sort_values(["facet", "rank"]).iterrows():
-        steps_str = f"{int(row['max_step']):,}" if row["has_10x"] else f"{int(row['max_step']):,}"
+        steps_str = f"{int(row['max_step']):,}"
         table_data.append([
             row["facet"],
             f"{int(row['rank'])}",
@@ -797,7 +726,7 @@ def plot_scaling_coefficients_with_10x(coefficients: list, output_dir: Path):
             f"{row['intercept']:.3f}",
             f"{row['r_squared']:.4f}",
             steps_str,
-            "✓" if row["has_10x"] else "",
+            "✓" if row["is_10x"] else "",
         ])
     
     table = ax.table(
@@ -818,7 +747,7 @@ def plot_scaling_coefficients_with_10x(coefficients: list, output_dir: Path):
     # Alternate row colors, highlight 10x rows
     for i in range(1, len(table_data) + 1):
         for j in range(7):
-            if table_data[i-1][6] == "✓":  # has 10x
+            if table_data[i-1][6] == "✓":  # is 10x run
                 table[(i, j)].set_facecolor('#E2EFDA')  # light green
             elif i % 2 == 0:
                 table[(i, j)].set_facecolor('#D9E2F3')

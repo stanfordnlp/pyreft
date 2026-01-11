@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================
-# Launch continuation sweep for "ReFT Without Regret" experiments
+# Launch 10x retraining sweep for "ReFT Without Regret" experiments
 # ============================================================
-# This script continues training from the best LR for each
-# (rank, position) configuration, running for 10x longer.
+# This script retrains with the best LR for each (rank, position)
+# configuration, training from scratch for 10 epochs.
 #
 # Usage (run from examples/regret/):
 #   ./scripts/launch_continue_sweep.sh              # Launch all
@@ -14,7 +14,6 @@
 set -e
 
 # --- Configuration ---
-# These should match the original sweep
 RANKS=(1 2 4 8 16 32 64)
 POSITIONS=("f1+l1" "all" "f1+s1" "alls")
 
@@ -22,7 +21,7 @@ POSITIONS=("f1+l1" "all" "f1+s1" "alls")
 SOURCE_PROJECT="loreft-regret"
 OUTPUT_PROJECT="loreft-regret-10x"
 OUTPUT_DIR="./outputs_10x"
-EPOCHS_MULTIPLIER=10
+EPOCHS=10
 
 # --- Parse args ---
 DRY_RUN=false
@@ -36,8 +35,10 @@ done
 
 # Function to check if job is already done
 is_done() {
-    local run_name="$1"
-    [[ -f "${OUTPUT_DIR}/${run_name}___10x/training_args.json" ]]
+    local rank="$1"
+    local position="$2"
+    # Check if any 10x run exists for this rank/position
+    ls "${OUTPUT_DIR}/r${rank}___10x_${position}___lr"*/training_args.json 1>/dev/null 2>&1
 }
 
 # --- Create directories ---
@@ -49,25 +50,19 @@ total_jobs=$((${#RANKS[@]} * ${#POSITIONS[@]}))
 job_count=0
 skipped_count=0
 
-echo "Submitting continuation sweep:"
+echo "Submitting 10x retraining sweep:"
 echo "  Ranks: ${RANKS[*]}"
 echo "  Positions: ${POSITIONS[*]}"
 echo "  Total: $total_jobs jobs"
 echo "  Source project: $SOURCE_PROJECT"
 echo "  Output project: $OUTPUT_PROJECT"
+echo "  Epochs: $EPOCHS"
 echo ""
 
 for rank in "${RANKS[@]}"; do
     for position in "${POSITIONS[@]}"; do
-        # Build expected run name (matches original naming convention)
-        run_name="r${rank}___${position}___lr*"  # We don't know best LR yet
-        
-        # For checking if done, we need to check all possible LRs
-        # or just check if any 10x run exists for this rank/position
-        check_pattern="${OUTPUT_DIR}/r${rank}___${position}___*___10x/training_args.json"
-        
         # Skip if already done
-        if $SKIP_DONE && ls $check_pattern 1>/dev/null 2>&1; then
+        if $SKIP_DONE && is_done "$rank" "$position"; then
             echo "Skipping (done): rank=$rank, position=$position"
             skipped_count=$((skipped_count + 1))
             continue
@@ -75,12 +70,12 @@ for rank in "${RANKS[@]}"; do
         
         job_name="loreft_10x_r${rank}_${position//+/_}"
         
-        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,POSITION=$position,SOURCE_PROJECT=$SOURCE_PROJECT,OUTPUT_PROJECT=$OUTPUT_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,EPOCHS_MULTIPLIER=$EPOCHS_MULTIPLIER scripts/continue_sweep.sbatch"
+        cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,POSITION=$position,SOURCE_PROJECT=$SOURCE_PROJECT,OUTPUT_PROJECT=$OUTPUT_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,EPOCHS=$EPOCHS scripts/continue_sweep.sbatch"
         
         if $DRY_RUN; then
             echo "$cmd"
         else
-            echo "Submitting: rank=$rank, position=$position (10x continuation)"
+            echo "Submitting: rank=$rank, position=$position (10 epochs from scratch)"
             $cmd
         fi
         
@@ -93,4 +88,3 @@ echo "Submitted $job_count jobs"
 if $SKIP_DONE; then
     echo "Skipped $skipped_count completed jobs"
 fi
-

@@ -12,11 +12,11 @@
 #SBATCH --mem=16G
 
 # ============================================================
-# Continue training from best checkpoints for 10x longer
+# Retrain with best LR for 10x longer (from scratch)
 # ============================================================
 # Usage:
-#   sbatch --export=RANK=4,POSITION=f1+l1 continue_sweep.sbatch
-#   ./launch_continue_sweep.sh
+#   sbatch --export=RANK=4,POSITION=f1+l1 scripts/continue_sweep.sbatch
+#   ./scripts/launch_continue_sweep.sh
 # ============================================================
 
 set -e
@@ -27,7 +27,7 @@ POSITION=${POSITION:-"f1+l1"}
 SOURCE_PROJECT=${SOURCE_PROJECT:-"loreft-regret"}
 OUTPUT_PROJECT=${OUTPUT_PROJECT:-"loreft-regret-10x"}
 OUTPUT_DIR=${OUTPUT_DIR:-"./outputs_10x"}
-EPOCHS_MULTIPLIER=${EPOCHS_MULTIPLIER:-10}
+EPOCHS=${EPOCHS:-10}
 
 # --- Setup ---
 echo "============================================"
@@ -40,7 +40,7 @@ echo "  Rank: $RANK"
 echo "  Position: $POSITION"
 echo "  Source project: $SOURCE_PROJECT"
 echo "  Output project: $OUTPUT_PROJECT"
-echo "  Epochs multiplier: $EPOCHS_MULTIPLIER"
+echo "  Epochs: $EPOCHS"
 echo "============================================"
 
 # Change to submit directory (where sbatch was called from)
@@ -50,16 +50,16 @@ cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs
 mkdir -p "$OUTPUT_DIR"
 
-# --- Run continuation ---
+# --- Run retraining ---
+# The script will fetch the best LR from wandb and train from scratch
 uv run continue_training.py \
     --wandb_project "$SOURCE_PROJECT" \
     --output_wandb_project "$OUTPUT_PROJECT" \
     --output_dir "$OUTPUT_DIR" \
-    --epochs_multiplier "$EPOCHS_MULTIPLIER" \
+    --epochs "$EPOCHS" \
     --rank "$RANK" \
     --position "$POSITION"
 
 echo "============================================"
 echo "Finished at: $(date)"
 echo "============================================"
-

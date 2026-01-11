@@ -1,67 +1,25 @@
 #!/usr/bin/env python3
 """
-Continue training from best checkpoints for 10x longer.
+Retrain with best LR from sweep for 10x longer.
 
-For each (rank, position) setting, this script:
+For each (rank, position) configuration, this script:
 1. Finds the best-performing LR from wandb
-2. Loads the saved checkpoint
-3. Continues training for 10x as long
-4. Logs to wandb as a new run with proper step offset
+2. Retrains from scratch with that LR for 10x epochs
 
 Usage:
     # Analyze what would be run (dry run)
     python continue_training.py --dry-run
     
-    # Run continuation for all best configs
+    # Run retraining for all best configs
     python continue_training.py
     
     # Run for specific rank/position
     python continue_training.py --rank 4 --position f1+l1
 """
 
-import os
 import argparse
-import datetime
-import json
-import glob
-from pathlib import Path
-
-import torch
-import transformers
-from transformers import (
-    AutoConfig,
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    TrainingArguments,
-    set_seed,
-)
-from datasets import load_dataset
-
-from pyreft import (
-    ReftModel,
-    ReftConfig,
-    LoreftIntervention,
-    ReftDataCollator,
-    ReftGenerationDataset,
-)
-from trainer import ReftTrainerForCausalLMWithEval, FullFinetuneTrainer
-
-# Check for peft availability
-try:
-    import peft
-    is_peft_available = True
-except ModuleNotFoundError:
-    is_peft_available = False
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-dtype_mapping = {
-    "float32": torch.float32,
-    "float16": torch.float16,
-    "bfloat16": torch.bfloat16,
-}
-
-IGNORE_INDEX = -100
+import subprocess
+import sys
 
 
 def fetch_best_runs(project: str, entity: str = None):
@@ -81,7 +39,7 @@ def fetch_best_runs(project: str, entity: str = None):
         config = run.config
         summary = run.summary._json_dict
         
-        # Skip LoRA and full finetune for now
+        # Skip LoRA and full finetune
         use_lora = config.get("use_lora", False)
         disable_reft = config.get("disable_reft", False)
         full_finetune = config.get("full_finetune", False)
@@ -102,8 +60,6 @@ def fetch_best_runs(project: str, entity: str = None):
             "position": config.get("position"),
             "share_weights": config.get("share_weights", False),
             "eval_nll": eval_nll,
-            "output_dir": config.get("output_dir", "./outputs"),
-            # Store full config for continuation
             "config": config,
         }
         records.append(record)
@@ -122,393 +78,90 @@ def fetch_best_runs(project: str, entity: str = None):
     return best_runs
 
 
-def load_original_args(checkpoint_dir: str):
-    """Load training args from checkpoint directory."""
-    args_file = os.path.join(checkpoint_dir, "training_args.json")
-    if os.path.exists(args_file):
-        with open(args_file, "r") as f:
-            return json.load(f)
-    return None
+def format_lr(lr: float) -> str:
+    """Format LR for run name (e.g., 0.001 -> '1e-3')."""
+    if lr >= 1:
+        return str(int(lr))
+    exp = 0
+    while lr < 1:
+        lr *= 10
+        exp += 1
+    return f"{int(lr)}e-{exp}"
 
 
-def find_checkpoint_dirs(run_dir: str):
-    """Find checkpoint directories for a run.
-    
-    Returns:
-        (reft_config_dir, reft_weights_dir, trainer_checkpoint_dir)
-        - reft_config_dir: where config.json is (usually run_dir)
-        - reft_weights_dir: where intervention .bin files are (checkpoint or run_dir)
-        - trainer_checkpoint_dir: where HF Trainer state (optimizer, etc) is saved
-    """
-    if not os.path.exists(run_dir):
-        return None, None, None
-    
-    # Look for HF Trainer checkpoints (checkpoint-XXXX)
-    checkpoints = sorted(glob.glob(os.path.join(run_dir, "checkpoint-*")))
-    trainer_dir = checkpoints[-1] if checkpoints else None
-    
-    # Config is always in run_dir (pyvene saves it there)
-    has_config = os.path.exists(os.path.join(run_dir, "config.json"))
-    reft_config_dir = run_dir if has_config else None
-    
-    # Weights: prefer checkpoint's intervenable_model/ for continuation
-    if trainer_dir and os.path.exists(os.path.join(trainer_dir, "intervenable_model")):
-        reft_weights_dir = os.path.join(trainer_dir, "intervenable_model")
-    elif len(glob.glob(os.path.join(run_dir, "intkey_*.bin"))) > 0:
-        reft_weights_dir = run_dir
-    else:
-        reft_weights_dir = None
-    
-    return reft_config_dir, reft_weights_dir, trainer_dir
-
-
-def preprocess_tulu3_to_prompt_completion(dataset, tokenizer):
-    """Preprocess Tulu-3 dataset to add 'prompt' and 'completion' fields."""
-    def convert_example(example):
-        messages = example.get("messages", [])
-        if not messages:
-            return {"prompt": "", "completion": ""}
-        
-        prompt_messages = []
-        completion = ""
-        
-        for msg in messages:
-            if msg["role"] == "assistant":
-                completion = msg["content"]
-                break
-            prompt_messages.append(msg)
-        
-        prompt = tokenizer.apply_chat_template(
-            prompt_messages, 
-            tokenize=False, 
-            add_generation_prompt=True
-        )
-        
-        return {"prompt": prompt, "completion": completion}
-    
-    return dataset.map(convert_example, desc="Preprocessing")
-
-
-def continue_training(
-    original_run: dict,
-    output_base_dir: str = "./outputs_10x",
+def run_training(
+    rank: int,
+    position: str,
+    lr: float,
+    epochs: int = 10,
+    output_dir: str = "./outputs_10x",
     wandb_project: str = "loreft-regret-10x",
-    epochs_multiplier: int = 10,
     dry_run: bool = False,
+    extra_args: list = None,
 ):
-    """Continue training from a checkpoint for 10x longer."""
-    config = original_run["config"]
-    run_name = original_run["run_name"]
+    """Run train.py with the given config."""
     
-    # Find checkpoint directories
-    # output_dir in wandb config already includes the run name
-    run_dir = config.get("output_dir", "./outputs")
-    reft_config_dir, reft_weights_dir, trainer_checkpoint_dir = find_checkpoint_dirs(run_dir)
+    # Build run name
+    run_name = f"r{int(rank)}___10x_{position}___lr{format_lr(lr)}"
+    full_output_dir = f"{output_dir}/{run_name}"
     
-    if reft_config_dir is None:
-        print(f"  ERROR: No ReFT config found in {run_dir}")
-        return None
-    if reft_weights_dir is None:
-        print(f"  ERROR: No ReFT weights found in {run_dir}")
-        return None
+    # Determine share_weights based on position
+    share_weights = position in ["all", "alls"]
     
-    # Load original training args
-    original_args = load_original_args(run_dir)
-    if original_args is None:
-        print(f"  WARNING: No training_args.json found, using wandb config")
-        original_args = config
+    cmd = [
+        sys.executable, "train.py",
+        "--rank", str(int(rank)),
+        "--position", position,
+        "--lr", str(lr),
+        "--epochs", str(epochs),
+        "--output_dir", full_output_dir,
+        "--wandb_project", wandb_project,
+        "--run_name", run_name,
+    ]
     
-    # Build new run name
-    new_run_name = f"{run_name}___10x"
-    new_output_dir = os.path.join(output_base_dir, new_run_name)
+    if share_weights:
+        cmd.append("--share_weights")
+    
+    if extra_args:
+        cmd.extend(extra_args)
     
     print(f"\n{'='*60}")
-    print(f"Continuing: {run_name}")
-    print(f"  ReFT config: {reft_config_dir}")
-    print(f"  ReFT weights: {reft_weights_dir}")
-    print(f"  Trainer checkpoint: {trainer_checkpoint_dir}")
-    print(f"  Original epochs: {original_args.get('epochs', 1)}")
-    print(f"  Target epochs: {original_args.get('epochs', 1) * epochs_multiplier}")
-    print(f"  Output: {new_output_dir}")
+    print(f"Training: rank={rank}, position={position}, lr={lr}")
+    print(f"Run name: {run_name}")
+    print(f"Epochs: {epochs}")
+    print(f"Output: {full_output_dir}")
     print(f"{'='*60}")
+    print(f"Command: {' '.join(cmd)}")
     
     if dry_run:
-        print("  [DRY RUN] Would continue training")
-        return None
+        print("[DRY RUN] Would execute above command")
+        return 0
     
-    # Set seed
-    seed = original_args.get("seed", 42)
-    set_seed(seed)
-    
-    # Parse layers
-    layers_str = original_args.get("layers", "all")
-    position = original_args.get("position", "f1+l1")
-    share_weights = original_args.get("share_weights", False)
-    rank = original_args.get("rank", 4)
-    model_name = original_args.get("model_name_or_path", "meta-llama/Llama-3.2-1B-Instruct")
-    
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name,
-        model_max_length=original_args.get("max_length", 2048),
-        padding_side="right",
-        use_fast=True,
-    )
-    
-    if tokenizer.pad_token is None:
-        if tokenizer.unk_token is not None:
-            tokenizer.pad_token = tokenizer.unk_token
-            need_resize = False
-        else:
-            tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-            need_resize = True
-    else:
-        need_resize = False
-    
-    # Load model and ReFT checkpoint
-    dtype = dtype_mapping.get(original_args.get("dtype", "bfloat16"), torch.bfloat16)
-    print(f"Loading ReFT model...")
-    print(f"  Config from: {reft_config_dir}")
-    print(f"  Weights from: {reft_weights_dir}")
-    
-    # Match original training's model loading settings
-    use_flash_attn = original_args.get("use_flash_attn", False)
-    attn_implementation = "flash_attention_2" if use_flash_attn else None
-    
-    # First load the base model
-    base_model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=dtype,
-        device_map=device,
-        trust_remote_code=True,
-        attn_implementation=attn_implementation,
-    )
-    
-    # Resize embeddings if we added a new pad token (to match original training)
-    if need_resize:
-        base_model.resize_token_embeddings(len(tokenizer))
-    
-    # Load ReFT model structure from config dir
-    reft_model = ReftModel.load(reft_config_dir, model=base_model)
-    
-    # If weights are in a different location (checkpoint), load them
-    if reft_weights_dir != reft_config_dir:
-        print(f"  Loading checkpoint weights from {reft_weights_dir}...")
-        # Manually load intervention weights from checkpoint
-        for key, intervention in reft_model.interventions.items():
-            weight_file = os.path.join(reft_weights_dir, f"{key}.bin")
-            if os.path.exists(weight_file):
-                state_dict = torch.load(weight_file, map_location=device)
-                intervention.load_state_dict(state_dict)
-            else:
-                print(f"  WARNING: Weight file not found: {weight_file}")
-    
-    reft_model.set_device(device)
-    
-    # Count interventions
-    num_interventions = len(reft_model.interventions)
-    print(f"Loaded {num_interventions} interventions")
-    
-    # Prepare dataset (same as original)
-    print("Loading dataset...")
-    raw_dataset = load_dataset("allenai/tulu-3-sft-mixture", split="train")
-    
-    max_n_train = original_args.get("max_n_train_example")
-    eval_split = original_args.get("eval_split", 0.05)
-    
-    if max_n_train is not None:
-        raw_dataset = raw_dataset.shuffle(seed=seed)
-        total_needed = int(max_n_train / (1 - eval_split))
-        raw_dataset = raw_dataset.select(range(min(total_needed, len(raw_dataset))))
-    
-    processed_dataset = preprocess_tulu3_to_prompt_completion(raw_dataset, tokenizer)
-    
-    # Split into train/eval
-    if eval_split > 0:
-        split_dataset = processed_dataset.train_test_split(test_size=eval_split, seed=seed)
-        train_hf_dataset = split_dataset["train"]
-        eval_hf_dataset = split_dataset["test"]
-        
-        max_eval = original_args.get("max_eval_samples")
-        if max_eval is not None and len(eval_hf_dataset) > max_eval:
-            eval_hf_dataset = eval_hf_dataset.shuffle(seed=seed).select(range(max_eval))
-    else:
-        train_hf_dataset = processed_dataset
-        eval_hf_dataset = None
-    
-    print(f"Dataset: {len(train_hf_dataset)} train, {len(eval_hf_dataset) if eval_hf_dataset else 0} eval")
-    
-    # Create datasets
-    train_dataset = ReftGenerationDataset(
-        task="tulu3",
-        data_path=None,
-        tokenizer=tokenizer,
-        data_split="train",
-        dataset=train_hf_dataset,
-        seed=seed,
-        max_n_example=None,
-        prompt_field="prompt",
-        completion_field="completion",
-        num_interventions=num_interventions,
-        position=position,
-        share_weights=share_weights,
-    )
-    
-    eval_dataset = None
-    if eval_hf_dataset is not None:
-        eval_dataset = ReftGenerationDataset(
-            task="tulu3",
-            data_path=None,
-            tokenizer=tokenizer,
-            data_split="train",
-            dataset=eval_hf_dataset,
-            seed=seed,
-            max_n_example=None,
-            prompt_field="prompt",
-            completion_field="completion",
-            num_interventions=num_interventions,
-            position=position,
-            share_weights=share_weights,
-        )
-    
-    # Create data collator
-    data_collator_fn = transformers.DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        model=reft_model.model,
-        label_pad_token_id=-100,
-        padding="longest",
-    )
-    data_collator = ReftDataCollator(data_collator=data_collator_fn)
-    
-    # Create output directory
-    os.makedirs(new_output_dir, exist_ok=True)
-    
-    # Calculate training steps
-    original_epochs = original_args.get("epochs", 1)
-    batch_size = original_args.get("batch_size", 2)
-    grad_accum = original_args.get("gradient_accumulation_steps", 16)
-    effective_batch_size = batch_size * grad_accum
-    steps_per_epoch = len(train_dataset) // effective_batch_size
-    
-    # Calculate max_steps: we want to train for epochs_multiplier * original epochs TOTAL
-    # The checkpoint is at original_epochs worth of steps, so we need additional steps
-    original_steps = steps_per_epoch * original_epochs
-    target_total_steps = steps_per_epoch * original_epochs * epochs_multiplier
-    
-    print(f"  Steps per epoch: {steps_per_epoch}")
-    print(f"  Original run steps: {original_steps}")
-    print(f"  Target total steps: {target_total_steps}")
-    
-    # Training arguments - use max_steps for precise control
-    # When resuming, trainer will continue from checkpoint's global_step to max_steps
-    training_args = TrainingArguments(
-        output_dir=new_output_dir,
-        run_name=new_run_name,
-        max_steps=target_total_steps,  # Use max_steps instead of num_train_epochs
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=original_args.get("eval_batch_size", 8),
-        gradient_accumulation_steps=grad_accum,
-        learning_rate=original_args.get("lr", 5e-4),
-        lr_scheduler_type=original_args.get("schedule", "constant"),
-        warmup_ratio=original_args.get("warmup_ratio", 0.0),
-        weight_decay=original_args.get("weight_decay", 0.0),
-        logging_steps=original_args.get("logging_steps", 10),
-        eval_strategy="steps" if eval_dataset is not None else "no",
-        eval_steps=original_args.get("eval_steps", 50) if eval_dataset is not None else None,
-        eval_delay=0,
-        save_strategy="steps",
-        save_steps=steps_per_epoch,  # Save every epoch-equivalent
-        save_total_limit=2,
-        bf16=(original_args.get("dtype") == "bfloat16" and device == "cuda"),
-        fp16=(original_args.get("dtype") == "float16" and device == "cuda"),
-        optim="adamw_torch",
-        report_to="wandb",
-        seed=seed,
-        remove_unused_columns=False,
-        dataloader_pin_memory=True,
-        gradient_checkpointing=original_args.get("gradient_checkpointing", False),
-        # Resume from checkpoint - this handles dataloader state
-        ignore_data_skip=False,  # Important: continue from where we left off
-    )
-    
-    # Initialize wandb
-    import wandb
-    wandb.init(
-        project=wandb_project,
-        name=new_run_name,
-        config={
-            **original_args,
-            "continued_from": run_name,
-            "original_epochs": original_epochs,
-            "target_epochs": original_epochs * epochs_multiplier,
-            "epochs_multiplier": epochs_multiplier,
-            "original_steps": original_steps,
-            "target_total_steps": target_total_steps,
-        },
-    )
-    
-    # Create trainer
-    trainer = ReftTrainerForCausalLMWithEval(
-        model=reft_model,
-        tokenizer=tokenizer,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=data_collator,
-    )
-    
-    # Resume training from checkpoint
-    if trainer_checkpoint_dir:
-        print(f"Resuming training from {trainer_checkpoint_dir}...")
-        trainer.train(resume_from_checkpoint=trainer_checkpoint_dir)
-    else:
-        print("No trainer checkpoint found, starting fresh training...")
-        trainer.train()
-    
-    # Save final model
-    print(f"Saving model to {new_output_dir}")
-    reft_model.save(new_output_dir)
-    
-    # Save training args
-    args_dict = {
-        **original_args,
-        "continued_from": run_name,
-        "original_epochs": original_epochs,
-        "target_epochs": original_epochs * epochs_multiplier,
-        "epochs_multiplier": epochs_multiplier,
-        "original_steps": original_steps,
-        "target_total_steps": target_total_steps,
-        "reft_config_dir": reft_config_dir,
-        "reft_weights_dir": reft_weights_dir,
-        "trainer_checkpoint_dir": trainer_checkpoint_dir,
-    }
-    with open(os.path.join(new_output_dir, "training_args.json"), "w") as f:
-        json.dump(args_dict, f, indent=2)
-    
-    print(f"Training complete! Model saved to {new_output_dir}")
-    wandb.finish()
-    
-    return reft_model
+    result = subprocess.run(cmd)
+    return result.returncode
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Continue training from best checkpoints")
+    parser = argparse.ArgumentParser(description="Retrain with best LR for 10x longer")
     parser.add_argument("--wandb_project", type=str, default="loreft-regret",
                         help="Source wandb project to find best runs")
     parser.add_argument("--wandb_entity", type=str, default=None,
                         help="Wandb entity (username or team)")
     parser.add_argument("--output_dir", type=str, default="./outputs_10x",
-                        help="Output directory for continued training")
+                        help="Output directory for retrained models")
     parser.add_argument("--output_wandb_project", type=str, default="loreft-regret-10x",
-                        help="Wandb project for continued runs")
-    parser.add_argument("--epochs_multiplier", type=int, default=10,
-                        help="Multiply original epochs by this factor")
+                        help="Wandb project for retrained runs")
+    parser.add_argument("--epochs", type=int, default=10,
+                        help="Number of epochs to train")
     parser.add_argument("--rank", type=int, default=None,
-                        help="Only continue training for this rank")
+                        help="Only train for this rank")
     parser.add_argument("--position", type=str, default=None,
-                        help="Only continue training for this position")
+                        help="Only train for this position")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print what would be done without actually running")
+    # Pass through additional args to train.py
+    parser.add_argument("extra_args", nargs="*",
+                        help="Additional arguments to pass to train.py")
     args = parser.parse_args()
     
     print("Fetching best runs from wandb...")
@@ -534,28 +187,38 @@ def main():
         best_runs = filtered
         print(f"\nFiltered to {len(best_runs)} configurations")
     
-    # Continue training for each
+    # Run training for each
+    failed = []
     for (rank, position), run in sorted(best_runs.items()):
         print(f"\n{'#'*60}")
         print(f"# Processing: rank={rank}, position={position}")
-        print(f"# Best LR: {run['lr']}, Eval NLL: {run['eval_nll']:.4f}")
+        print(f"# Best LR: {run['lr']}, Original Eval NLL: {run['eval_nll']:.4f}")
         print(f"{'#'*60}")
         
-        try:
-            continue_training(
-                original_run=run,
-                output_base_dir=args.output_dir,
-                wandb_project=args.output_wandb_project,
-                epochs_multiplier=args.epochs_multiplier,
-                dry_run=args.dry_run,
-            )
-        except Exception as e:
-            print(f"ERROR: Failed to continue training for rank={rank}, position={position}")
-            print(f"  {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+        returncode = run_training(
+            rank=rank,
+            position=position,
+            lr=run["lr"],
+            epochs=args.epochs,
+            output_dir=args.output_dir,
+            wandb_project=args.output_wandb_project,
+            dry_run=args.dry_run,
+            extra_args=args.extra_args,
+        )
+        
+        if returncode != 0:
+            failed.append((rank, position))
+            print(f"ERROR: Training failed for rank={rank}, position={position}")
+    
+    print(f"\n{'='*60}")
+    print(f"Complete!")
+    if failed:
+        print(f"Failed: {len(failed)} configurations")
+        for rank, position in failed:
+            print(f"  - rank={rank}, position={position}")
+    else:
+        print(f"All {len(best_runs)} configurations trained successfully")
 
 
 if __name__ == "__main__":
     main()
-
