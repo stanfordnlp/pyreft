@@ -4,7 +4,7 @@ Plot results from the LoReFT sweep experiments.
 
 Usage:
     python plot_sweep.py --project loreft-regret
-    python plot_sweep.py --project loreft-regret --project-10x loreft-regret-10x --curves
+    python plot_sweep.py --project loreft-regret --project-10x loreft-regret-10x-restart --curves
     python plot_sweep.py --project loreft-regret --output plots/
     python plot_sweep.py --csv results.csv  # Use cached CSV instead of wandb
 """
