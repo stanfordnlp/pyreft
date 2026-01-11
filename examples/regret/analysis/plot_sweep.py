@@ -540,6 +540,85 @@ def plot_scaling_curves(coefficients: list, output_dir: Path, include_10x: bool 
     print(f"Saved: scaling_curves{suffix}.png")
 
 
+def plot_scaling_by_rank(coefficients: list, output_dir: Path, include_10x: bool = False):
+    """
+    Plot NLL curves facetted by RANK, with each position/method as a line.
+    This shows how different positions compare at each rank level.
+    """
+    if not coefficients:
+        print("No coefficients for scaling by rank plot")
+        return
+    
+    # Get unique ranks
+    ranks = sorted(set(c["rank"] for c in coefficients))
+    n_ranks = len(ranks)
+    
+    if n_ranks == 0:
+        print("No ranks found")
+        return
+    
+    # Create figure with subplots
+    n_cols = min(4, n_ranks)
+    n_rows = (n_ranks + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows), squeeze=False, sharey=True)
+    axes = axes.flatten()
+    
+    # Hide unused axes
+    for i in range(n_ranks, len(axes)):
+        axes[i].set_visible(False)
+    
+    # Color map for different positions/methods
+    facets = sorted(set(c["facet"] for c in coefficients))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(facets)))
+    facet_colors = {f: colors[i] for i, f in enumerate(facets)}
+    markers = {'ReFT (f1+l1)': 'o', 'ReFT (all)': 's', 'ReFT (f1+s1)': '^', 
+               'ReFT (alls)': 'D', 'LoRA': 'p'}
+    
+    # Plot each rank
+    for rank_idx, rank in enumerate(ranks):
+        ax = axes[rank_idx]
+        rank_data = [c for c in coefficients if c["rank"] == rank]
+        
+        for coef in rank_data:
+            facet = coef["facet"]
+            steps = coef["steps"]
+            nll = coef["nll"]
+            slope = coef["slope"]
+            intercept = coef["intercept"]
+            
+            color = facet_colors.get(facet, 'gray')
+            marker = markers.get(facet, 'o')
+            
+            # Plot actual data (low opacity)
+            ax.plot(steps, nll, color=color, linewidth=1, alpha=0.15)
+            
+            # Plot fit line (high opacity)
+            fit_steps = np.logspace(np.log10(steps.min()), np.log10(steps.max()), 100)
+            fit_nll = slope * np.log10(fit_steps) + intercept
+            ax.plot(fit_steps, fit_nll, color=color, linewidth=2.5, 
+                    linestyle='-', alpha=0.9, label=facet, marker=marker,
+                    markevery=[0, -1], markersize=6)
+        
+        ax.set_xscale("log")
+        ax.set_xlabel("Step", fontsize=10)
+        if rank_idx % n_cols == 0:
+            ax.set_ylabel("Eval NLL", fontsize=10)
+        ax.set_title(f"Rank {int(rank)}", fontsize=11, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        # Only show legend on first subplot
+        if rank_idx == 0:
+            ax.legend(fontsize=7, loc='upper right')
+    
+    plt.tight_layout()
+    
+    suffix = "_with_10x" if include_10x else ""
+    plt.savefig(output_dir / f"scaling_by_rank{suffix}.png", dpi=150)
+    plt.savefig(output_dir / f"scaling_by_rank{suffix}.pdf")
+    plt.close()
+    print(f"Saved: scaling_by_rank{suffix}.png")
+
+
 def plot_scaling_coefficients(coefficients: list, output_dir: Path):
     """
     Plot slope and intercept vs rank for each method/position.
@@ -823,6 +902,7 @@ def main():
         # First plot without 10x
         coefficients = fetch_scaling_coefficients(best_runs, args.project, args.entity)
         plot_scaling_curves(coefficients, output_dir, include_10x=False)
+        plot_scaling_by_rank(coefficients, output_dir, include_10x=False)
         plot_scaling_coefficients(coefficients, output_dir)
         
         # If 10x data available, also plot combined curves
@@ -833,6 +913,7 @@ def main():
                 project_10x=args.project_10x, runs_10x=runs_10x
             )
             plot_scaling_curves(coefficients_10x, output_dir, include_10x=True)
+            plot_scaling_by_rank(coefficients_10x, output_dir, include_10x=True)
             
             # Also save updated coefficients table with 10x data
             plot_scaling_coefficients_with_10x(coefficients_10x, output_dir)
