@@ -187,10 +187,10 @@ def train(args):
         print(f"Mode: LoRA-only (rank={args.lora_rank}, alpha={args.lora_alpha}, modules={args.lora_modules})")
     elif args.use_lora:
         scale_info = f", scale={args.scale_type}" if args.scale_type else ""
-        print(f"Mode: LoRA + LoReFT (LoRA rank={args.lora_rank}, ReFT rank={args.rank}{scale_info})")
+        print(f"Mode: LoRA + LoReFT (LoRA rank={args.lora_rank}, ReFT rank={args.rank}, component={args.component}{scale_info})")
     else:
         scale_info = f", scale={args.scale_type}" if args.scale_type else ""
-        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position}{scale_info})")
+        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position}, component={args.component}{scale_info})")
     print(f"LR: {args.lr}, Epochs: {args.epochs}, Batch size: {args.batch_size}")
     
     # Parse ReFT layers (only needed when using ReFT)
@@ -311,7 +311,7 @@ def train(args):
             # PEFT model has a different module structure
             component = "base_model.model.model.layers[{layer}].output"
         else:
-            component = "block_output"
+            component = args.component
         
         representations = [{
             "layer": l,
@@ -672,7 +672,13 @@ def main():
         choices=[None, "none", "scalar", "sigmoid", "datadep", "token"],
         help="Gating type for LoReFT: none (default), scalar (learned), sigmoid (bounded [0,2]), datadep (per-sequence), token (per-token)"
     )
-    
+    parser.add_argument(
+        "--component",
+        type=str,
+        default="block_output",
+        help="Transformer component to intervene on (e.g., block_output, mlp_output, attention_output)"
+    )
+
     # Training arguments
     parser.add_argument(
         "--lr",

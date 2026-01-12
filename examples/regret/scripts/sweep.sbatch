@@ -30,6 +30,7 @@ LAYERS=${LAYERS:-"all"}
 POSITION=${POSITION:-"f1+l1"}
 SHARE_WEIGHTS=${SHARE_WEIGHTS:-false}
 SCALE_TYPE=${SCALE_TYPE:-""}
+COMPONENT=${COMPONENT:-"block_output"}
 
 # LoRA config
 USE_LORA=${USE_LORA:-false}
@@ -66,6 +67,7 @@ echo "  Rank: $RANK"
 echo "  LR: $LR"
 echo "  Layers: $LAYERS"
 echo "  Position: $POSITION"
+echo "  Component: $COMPONENT"
 echo "  Max examples: $MAX_EXAMPLES"
 echo "============================================"
 
@@ -82,6 +84,12 @@ if [ -n "$SCALE_TYPE" ]; then
     SCALE_SUFFIX="_${SCALE_TYPE}"
 fi
 
+# Add component to name if not block_output (default)
+COMPONENT_PART=""
+if [ "$COMPONENT" != "block_output" ]; then
+    COMPONENT_PART="___${COMPONENT}"
+fi
+
 if [ "$FULL_FINETUNE" = "true" ]; then
     RUN_NAME="fullft_lr${LR}"
 elif [ "$USE_LORA" = "true" ] && [ "$DISABLE_REFT" = "true" ]; then
@@ -95,7 +103,7 @@ elif [ "$USE_LORA" = "true" ]; then
     RUN_NAME="lora_r${LORA_RANK}_reft_r${RANK}${SCALE_SUFFIX}___${MODULES_SHORT}___lr${LR}"
 else
     # ReFT-only
-    RUN_NAME="r${RANK}${SCALE_SUFFIX}___${POSITION}___lr${LR}"
+    RUN_NAME="r${RANK}${SCALE_SUFFIX}___${POSITION}${COMPONENT_PART}___lr${LR}"
 fi
 
 # --- Build command ---
@@ -106,6 +114,7 @@ CMD="uv run train.py \
     --lr $LR \
     --layers $LAYERS \
     --position $POSITION \
+    --component $COMPONENT \
     --epochs $EPOCHS \
     --batch_size $BATCH_SIZE \
     --gradient_accumulation_steps $GRAD_ACCUM \

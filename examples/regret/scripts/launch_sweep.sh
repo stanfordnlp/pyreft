@@ -5,11 +5,13 @@
 # This script submits a grid of jobs varying rank and LR
 # 
 # Usage (run from examples/regret/):
-#   ./scripts/launch_sweep.sh              # Default: f1+s1 only
+#   ./scripts/launch_sweep.sh              # Default: f1+s1 only, block_output
 #   ./scripts/launch_sweep.sh --dry-run    # Print commands without submitting
 #   ./scripts/launch_sweep.sh --skip-done  # Skip completed jobs
 #   ./scripts/launch_sweep.sh --all-positions  # All positions (f1+l1, all, f1+s1, alls)
 #   ./scripts/launch_sweep.sh --with-lora  # Include LoRA baseline
+#   ./scripts/launch_sweep.sh --with-mlp   # Add mlp_activation experiments
+#   ./scripts/launch_sweep.sh --all-components # All components (block_output, mlp_activation)
 #   ./scripts/launch_sweep.sh --rank1-only # Only rank=1 experiments
 # ============================================================
 
@@ -23,6 +25,9 @@ LRS=(1e-4 2e-4 5e-4 1e-3 2e-3 5e-3)
 LORA_RANKS=(1 2 4 8 16 32 64)
 LORA_LRS=(1e-4 2e-4 5e-4 1e-3 2e-3)
 
+# Component options (for comparing intervention points)
+COMPONENTS=("block_output")  # Default: residual stream only
+
 # Other settings
 MAX_EXAMPLES=50000
 EPOCHS=1
@@ -34,6 +39,8 @@ DRY_RUN=false
 SKIP_DONE=false
 WITH_LORA=false
 ALL_POSITIONS=false
+WITH_MLP=false
+ALL_COMPONENTS=false
 RANK1_ONLY=false
 
 for arg in "$@"; do
@@ -42,6 +49,8 @@ for arg in "$@"; do
         --skip-done) SKIP_DONE=true; echo "=== SKIPPING COMPLETED JOBS ===" ;;
         --with-lora) WITH_LORA=true; echo "=== INCLUDING LORA BASELINE ===" ;;
         --all-positions) ALL_POSITIONS=true; echo "=== ALL POSITIONS MODE ===" ;;
+        --with-mlp) WITH_MLP=true; echo "=== INCLUDING MLP_ACTIVATION EXPERIMENTS ===" ;;
+        --all-components) ALL_COMPONENTS=true; echo "=== ALL COMPONENTS MODE ===" ;;
         --rank1-only) RANK1_ONLY=true; echo "=== RANK 1 ONLY ==="; RANKS=(1); LORA_RANKS=(1) ;;
     esac
 done
@@ -62,8 +71,17 @@ else
     POSITIONS=("f1+s1")
 fi
 
+# --- Build component list ---
+if $ALL_COMPONENTS; then
+    COMPONENTS=("block_output" "mlp_activation")
+elif $WITH_MLP; then
+    COMPONENTS=("block_output" "mlp_activation")
+else
+    COMPONENTS=("block_output")
+fi
+
 # --- Calculate total jobs ---
-reft_jobs=$((${#RANKS[@]} * ${#LRS[@]} * ${#POSITIONS[@]}))
+reft_jobs=$((${#RANKS[@]} * ${#LRS[@]} * ${#POSITIONS[@]} * ${#COMPONENTS[@]}))
 lora_jobs=0
 if $WITH_LORA; then
     lora_jobs=$((${#LORA_RANKS[@]} * ${#LORA_LRS[@]}))
@@ -72,7 +90,8 @@ total_jobs=$((reft_jobs + lora_jobs))
 
 echo "Submitting sweep:"
 echo "  Positions: ${POSITIONS[*]}"
-echo "  ReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x ${#POSITIONS[@]} positions = $reft_jobs jobs"
+echo "  Components: ${COMPONENTS[*]}"
+echo "  ReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x ${#POSITIONS[@]} positions x ${#COMPONENTS[@]} components = $reft_jobs jobs"
 if $WITH_LORA; then
     echo "  LoRA: ${#LORA_RANKS[@]} ranks x ${#LORA_LRS[@]} LRs = $lora_jobs jobs"
 fi
@@ -83,36 +102,53 @@ job_count=0
 skipped_count=0
 
 # --- ReFT sweep ---
-for position in "${POSITIONS[@]}"; do
-    # Determine if share_weights is needed
-    SHARE_FLAG=""
-    if [[ "$position" == "all" || "$position" == "alls" ]]; then
-        SHARE_FLAG=",SHARE_WEIGHTS=true"
+for component in "${COMPONENTS[@]}"; do
+    # Short name for component (for job naming)
+    if [[ "$component" == "block_output" ]]; then
+        comp_short=""  # Default, don't add to name
+        COMPONENT_FLAG=""
+    else
+        comp_short="_${component}"
+        COMPONENT_FLAG=",COMPONENT=$component"
     fi
-    
-    for rank in "${RANKS[@]}"; do
-        for lr in "${LRS[@]}"; do
-            pos_short=$(echo "$position" | sed 's/+//')
-            job_name="loreft_r${rank}_${pos_short}_lr${lr}"
-            run_name="r${rank}___${position}___lr${lr}"
-            
-            # Skip if already done
-            if $SKIP_DONE && is_done "$run_name"; then
-                echo "Skipping (done): $run_name"
-                skipped_count=$((skipped_count + 1))
-                continue
-            fi
-            
-            cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=$position${SHARE_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
-            
-            if $DRY_RUN; then
-                echo "$cmd"
-            else
-                echo "Submitting: rank=$rank, position=$position, lr=$lr"
-                $cmd
-            fi
-            
-            job_count=$((job_count + 1))
+
+    for position in "${POSITIONS[@]}"; do
+        # Determine if share_weights is needed
+        SHARE_FLAG=""
+        if [[ "$position" == "all" || "$position" == "alls" ]]; then
+            SHARE_FLAG=",SHARE_WEIGHTS=true"
+        fi
+
+        for rank in "${RANKS[@]}"; do
+            for lr in "${LRS[@]}"; do
+                pos_short=$(echo "$position" | sed 's/+//')
+                job_name="loreft_r${rank}_${pos_short}${comp_short}_lr${lr}"
+
+                # Add component to run_name if not block_output
+                if [[ "$component" == "block_output" ]]; then
+                    run_name="r${rank}___${position}___lr${lr}"
+                else
+                    run_name="r${rank}___${position}___${component}___lr${lr}"
+                fi
+
+                # Skip if already done
+                if $SKIP_DONE && is_done "$run_name"; then
+                    echo "Skipping (done): $run_name"
+                    skipped_count=$((skipped_count + 1))
+                    continue
+                fi
+
+                cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=$position${SHARE_FLAG}${COMPONENT_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
+
+                if $DRY_RUN; then
+                    echo "$cmd"
+                else
+                    echo "Submitting: rank=$rank, position=$position, component=$component, lr=$lr"
+                    $cmd
+                fi
+
+                job_count=$((job_count + 1))
+            done
         done
     done
 done
