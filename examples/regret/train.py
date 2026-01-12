@@ -253,8 +253,9 @@ def train(args):
 
     # Enable gradient checkpointing on base model BEFORE wrapping
     # (ReftModel doesn't expose this method, so we do it here)
+    # use_reentrant=False is required since ReFT doesn't train embeddings
     if args.gradient_checkpointing:
-        model.gradient_checkpointing_enable()
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         print("Enabled gradient checkpointing on base model")
 
     # Apply LoRA if requested (before ReFT wrapping)
