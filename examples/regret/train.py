@@ -525,7 +525,6 @@ def train(args):
         else:
             # Save only ReFT interventions, not the full model (which includes LoRA)
             # This requires saving intervention weights separately
-            import os
             intervention_dir = os.path.join(output_dir, "interventions")
             os.makedirs(intervention_dir, exist_ok=True)
             reft_model.save_intervention(intervention_dir)
