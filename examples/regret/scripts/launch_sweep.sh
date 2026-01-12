@@ -36,8 +36,9 @@ OUTPUT_DIR="./outputs"
 
 # Model settings (default: Llama 3.2 1B)
 MODEL="meta-llama/Llama-3.2-1B-Instruct"
+BATCH_SIZE=2
+GRAD_ACCUM=16
 USE_FLASH_ATTN=false
-GRADIENT_CHECKPOINTING=false
 GPU_MEM="16G"
 SBATCH_EXTRA=""
 
@@ -67,7 +68,8 @@ done
 # Configure for 8B model if requested
 if $MODEL_8B; then
     MODEL="meta-llama/Llama-3.1-8B-Instruct"
-    GRADIENT_CHECKPOINTING=true
+    BATCH_SIZE=1
+    GRAD_ACCUM=32
     GPU_MEM="48G"
     WANDB_PROJECT="loreft-regret-8b"
     OUTPUT_DIR="./outputs-8b"
@@ -113,7 +115,7 @@ echo "  Components: ${COMPONENTS[*]}"
 echo "  Wandb project: $WANDB_PROJECT"
 echo "  Output dir: $OUTPUT_DIR"
 if $MODEL_8B; then
-    echo "  GPU memory: $GPU_MEM (grad_ckpt=$GRADIENT_CHECKPOINTING)"
+    echo "  GPU memory: $GPU_MEM (bs=$BATCH_SIZE, grad_accum=$GRAD_ACCUM)"
 fi
 echo "  ReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x ${#POSITIONS[@]} positions x ${#COMPONENTS[@]} components = $reft_jobs jobs"
 if $WITH_LORA; then
@@ -169,7 +171,7 @@ for component in "${COMPONENTS[@]}"; do
                     continue
                 fi
 
-                cmd="sbatch $SBATCH_EXTRA --mem=$GPU_MEM --job-name=$job_name --export=ALL,MODEL=$MODEL,RANK=$rank,LR=$lr,POSITION=$position${SHARE_FLAG}${COMPONENT_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,USE_FLASH_ATTN=$USE_FLASH_ATTN,GRADIENT_CHECKPOINTING=$GRADIENT_CHECKPOINTING scripts/sweep.sbatch"
+                cmd="sbatch $SBATCH_EXTRA --mem=$GPU_MEM --job-name=$job_name --export=ALL,MODEL=$MODEL,RANK=$rank,LR=$lr,POSITION=$position${SHARE_FLAG}${COMPONENT_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,BATCH_SIZE=$BATCH_SIZE,GRAD_ACCUM=$GRAD_ACCUM,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,USE_FLASH_ATTN=$USE_FLASH_ATTN scripts/sweep.sbatch"
 
                 if $DRY_RUN; then
                     echo "$cmd"
@@ -202,7 +204,7 @@ if $WITH_LORA; then
                 continue
             fi
 
-            cmd="sbatch $SBATCH_EXTRA --mem=$GPU_MEM --job-name=$job_name --export=ALL,MODEL=$MODEL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$LORA_MODULES,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,USE_FLASH_ATTN=$USE_FLASH_ATTN,GRADIENT_CHECKPOINTING=$GRADIENT_CHECKPOINTING scripts/sweep.sbatch"
+            cmd="sbatch $SBATCH_EXTRA --mem=$GPU_MEM --job-name=$job_name --export=ALL,MODEL=$MODEL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$LORA_MODULES,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,BATCH_SIZE=$BATCH_SIZE,GRAD_ACCUM=$GRAD_ACCUM,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,USE_FLASH_ATTN=$USE_FLASH_ATTN,GRADIENT_CHECKPOINTING=true scripts/sweep.sbatch"
             
             if $DRY_RUN; then
                 echo "$cmd"
