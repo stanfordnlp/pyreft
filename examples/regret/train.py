@@ -302,23 +302,30 @@ def train(args):
         }
         intervention_cls = intervention_classes[scale_type]
         
-        # Create LoReFT interventions
-        scale_str = f", scale={scale_type}" if scale_type != "none" else ""
-        print(f"Creating LoReFT interventions with rank={args.rank}{scale_str}")
-        
         # Component path depends on whether we're wrapping a PEFT model
         if args.use_lora:
             # PEFT model has a different module structure
             component = "base_model.model.model.layers[{layer}].output"
         else:
             component = args.component
-        
+
+        # Determine embedding dimension based on component
+        # mlp_activation is intermediate_size (4x hidden_size), others are hidden_size
+        if args.component == "mlp_activation":
+            embed_dim = model.config.intermediate_size
+        else:
+            embed_dim = model.config.hidden_size
+
+        # Print intervention details
+        scale_str = f", scale={scale_type}" if scale_type != "none" else ""
+        print(f"Creating LoReFT interventions: rank={args.rank}, embed_dim={embed_dim}{scale_str}")
+
         representations = [{
             "layer": l,
             "component": component.format(layer=l) if args.use_lora else component,
             "low_rank_dimension": args.rank,
             "intervention": intervention_cls(
-                embed_dim=model.config.hidden_size,
+                embed_dim=embed_dim,
                 low_rank_dimension=args.rank,
                 dropout=args.dropout,
                 dtype=dtype,
