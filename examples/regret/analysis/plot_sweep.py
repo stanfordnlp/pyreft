@@ -82,40 +82,47 @@ def compute_reft_flops(
     reft_rank: int,
     prompt_length: int,
     position: str = "f1+s1",
+    component: str = "block_output",
     num_layers: int = None,
     model_config: dict = None,
 ) -> int:
     """
     Compute additional FLOPs for ReFT per forward pass.
-    
+
     ReFT intervention: h' = h + R(Wh_proj + b - h_proj) where h_proj = R^T h
     FLOPs per intervention per position:
         - R^T @ h: d * r
-        - W @ h_proj: r * r  
+        - W @ h_proj: r * r
         - R @ delta: r * d
         - Total: ~2*d*r + r*r per intervened position
-    
+
     Note: ReFT only intervenes on PROMPT tokens, not response tokens.
-    
+
     Args:
         reft_rank: ReFT rank (low_rank_dimension)
         prompt_length: Number of prompt tokens (not full sequence)
         position: Position string (f1+s1, all, etc.)
+        component: Transformer component (block_output, mlp_activation, etc.)
         num_layers: Override number of layers with interventions
         model_config: Model architecture config
-    
+
     Returns:
         Total additional FLOPs for one forward pass
     """
     if model_config is None:
         model_config = DEFAULT_MODEL_CONFIG
-    
-    d = model_config["hidden_dim"]
+
+    # Embedding dimension depends on component
+    if component == "mlp_activation":
+        d = model_config["intermediate_dim"]
+    else:
+        d = model_config["hidden_dim"]
+
     if num_layers is None:
         num_layers = model_config["num_layers"]
-    
+
     r = reft_rank
-    
+
     # Determine number of positions intervened (always on prompt only)
     if position in ["all", "alls"]:
         n_positions = prompt_length  # All prompt tokens
@@ -123,16 +130,16 @@ def compute_reft_flops(
         n_positions = 2  # First and last prompt token
     else:
         n_positions = 2  # Default assumption
-    
+
     # FLOPs per intervention: project, transform, unproject
     # R^T @ h (d*r) + W @ Rh (r*r) + R @ result (r*d) ≈ 2*d*r + r*r
     flops_per_position = 2 * d * r + r * r
-    
+
     # Total: per position * positions * layers
     # Note: ReFT typically has 2 interventions per layer (for f1+l1 style)
     # but with share_weights, same params are used
     interventions_per_layer = 1 if position in ["all", "alls"] else 2
-    
+
     return flops_per_position * n_positions * num_layers * interventions_per_layer
 
 
@@ -173,6 +180,7 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
             "rank": config.get("rank"),
             "lr": config.get("lr"),
             "position": config.get("position"),
+            "component": config.get("component", "block_output"),
             "share_weights": config.get("share_weights", False),
             # LoRA config
             "use_lora": use_lora,
@@ -198,52 +206,53 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
 def fetch_10x_runs(project_10x: str, entity: str = None) -> dict:
     """
     Fetch 10x continuation runs and return a mapping from original run config to 10x run.
-    
-    Returns dict: {(method_type, rank, position): {"run_id": ..., "original_run_name": ...}}
+
+    Returns dict: {(method_type, rank, position, component): {"run_id": ..., "original_run_name": ...}}
     """
     import wandb
-    
+
     api = wandb.Api()
     project_path = f"{entity}/{project_10x}" if entity else project_10x
-    
+
     try:
         runs = api.runs(project_path)
     except Exception as e:
         print(f"Warning: Could not fetch 10x runs from {project_10x}: {e}")
         return {}
-    
+
     runs_10x = {}
     for run in runs:
         if run.state != "finished":
             continue
-        
+
         config = run.config
-        
+
         # Parse the original run info from config or name
         # The 10x runs should have stored the original config
         rank = config.get("rank")
         position = config.get("position")
+        component = config.get("component", "block_output")
         use_lora = config.get("use_lora", False)
         disable_reft = config.get("disable_reft", False)
-        
+
         if use_lora and disable_reft:
             method_type = "lora"
         elif use_lora:
             method_type = "lora+reft"
         else:
             method_type = "reft"
-        
+
         # For LoRA, use lora_rank
         if method_type == "lora":
             rank = config.get("lora_rank", rank)
-        
-        key = (method_type, rank, position)
+
+        key = (method_type, rank, position, component)
         runs_10x[key] = {
             "run_id": run.id,
             "run_name": run.name,
             "config": config,
         }
-    
+
     return runs_10x
 
 
@@ -421,56 +430,73 @@ def plot_lora_results(df: pd.DataFrame, output_dir: Path):
 
 
 def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
-    """Compare ReFT (by position) vs LoRA head-to-head."""
+    """Compare ReFT (by position and component) vs LoRA head-to-head."""
     reft_df = df[df["method"] == "reft"].copy()
     lora_df = df[df["method"] == "lora"].copy()
-    
+
     if reft_df.empty:
         print("No ReFT data for comparison")
         return
-    
+
     fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # Colors and markers for each position
-    position_styles = {
-        'f1+l1': {'color': 'blue', 'marker': 'o'},
-        'all': {'color': 'green', 'marker': 's'},
-        'f1+s1': {'color': 'red', 'marker': '^'},
-        'alls': {'color': 'purple', 'marker': 'D'},
+
+    # Colors for positions, different line styles for components
+    position_colors = {
+        'f1+l1': 'blue',
+        'all': 'green',
+        'f1+s1': 'red',
+        'alls': 'purple',
     }
-    
-    # Plot ReFT by position
+    component_styles = {
+        'block_output': {'linestyle': '-', 'marker': 'o'},
+        'mlp_activation': {'linestyle': '--', 'marker': 's'},
+        'mlp_output': {'linestyle': ':', 'marker': '^'},
+        'attention_output': {'linestyle': '-.', 'marker': 'D'},
+    }
+
+    # Plot ReFT by position and component
     for position in sorted(reft_df["position"].dropna().unique()):
         pos_df = reft_df[reft_df["position"] == position]
-        
-        # Get best NLL for each rank, keeping trainable_params
-        pos_best = pos_df.groupby("rank").agg({
-            "eval_nll": "min",
-            "trainable_params": "first",
-        }).reset_index().sort_values("trainable_params")
-        
-        style = position_styles.get(position, {'color': 'gray', 'marker': 'x'})
-        ax.plot(pos_best["trainable_params"], pos_best["eval_nll"],
-                marker=style['marker'], label=f"ReFT ({position})", 
-                color=style['color'], linewidth=2, markersize=8)
-    
+
+        for component in sorted(pos_df["component"].dropna().unique()):
+            comp_df = pos_df[pos_df["component"] == component]
+
+            # Get best NLL for each rank, keeping trainable_params
+            best = comp_df.groupby("rank").agg({
+                "eval_nll": "min",
+                "trainable_params": "first",
+            }).reset_index().sort_values("trainable_params")
+
+            color = position_colors.get(position, 'gray')
+            style = component_styles.get(component, {'linestyle': '-', 'marker': 'x'})
+
+            # Label: include component only if not default
+            if component == "block_output":
+                label = f"ReFT ({position})"
+            else:
+                label = f"ReFT ({position}, {component})"
+
+            ax.plot(best["trainable_params"], best["eval_nll"],
+                    marker=style['marker'], linestyle=style['linestyle'],
+                    label=label, color=color, linewidth=2, markersize=8)
+
     # Plot LoRA if available
     if not lora_df.empty:
         lora_best = lora_df.groupby("lora_rank").agg({
             "eval_nll": "min",
             "trainable_params": "first",
         }).reset_index().sort_values("trainable_params")
-        
+
         ax.plot(lora_best["trainable_params"], lora_best["eval_nll"],
                 marker='p', label="LoRA", color='orange', linewidth=2, markersize=8)
-    
+
     ax.set_xlabel("Trainable Parameters", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
     ax.set_title("ReFT vs LoRA: Efficiency Comparison", fontsize=14)
     ax.set_xscale("log")
-    ax.legend(loc="best")
+    ax.legend(loc="best", fontsize=9)
     ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.savefig(output_dir / "method_comparison.png", dpi=150)
     plt.savefig(output_dir / "method_comparison.pdf")
@@ -479,76 +505,93 @@ def plot_method_comparison(df: pd.DataFrame, output_dir: Path):
 
 
 def plot_flops_comparison(
-    df: pd.DataFrame, 
-    output_dir: Path, 
+    df: pd.DataFrame,
+    output_dir: Path,
     prompt_length: int = 128,
     total_seq_len: int = 512
 ):
     """
-    Compare ReFT (by position) vs LoRA with FLOPs on x-axis.
-    
+    Compare ReFT (by position and component) vs LoRA with FLOPs on x-axis.
+
     Note: ReFT only intervenes on PROMPT tokens, while LoRA is applied to
     all tokens (prompt + response) during the forward pass.
     """
     reft_df = df[df["method"] == "reft"].copy()
     lora_df = df[df["method"] == "lora"].copy()
-    
+
     if reft_df.empty:
         print("No ReFT data for FLOPs comparison")
         return
-    
+
     fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # Colors and markers for each position
-    position_styles = {
-        'f1+l1': {'color': 'blue', 'marker': 'o'},
-        'all': {'color': 'green', 'marker': 's'},
-        'f1+s1': {'color': 'red', 'marker': '^'},
-        'alls': {'color': 'purple', 'marker': 'D'},
+
+    # Colors for positions, different line styles for components
+    position_colors = {
+        'f1+l1': 'blue',
+        'all': 'green',
+        'f1+s1': 'red',
+        'alls': 'purple',
     }
-    
-    # Plot ReFT by position (uses prompt_length since ReFT only intervenes on prompt)
+    component_styles = {
+        'block_output': {'linestyle': '-', 'marker': 'o'},
+        'mlp_activation': {'linestyle': '--', 'marker': 's'},
+        'mlp_output': {'linestyle': ':', 'marker': '^'},
+        'attention_output': {'linestyle': '-.', 'marker': 'D'},
+    }
+
+    # Plot ReFT by position and component
     for position in sorted(reft_df["position"].dropna().unique()):
         pos_df = reft_df[reft_df["position"] == position]
-        
-        # Get best NLL for each rank
-        pos_best = pos_df.groupby("rank").agg({
-            "eval_nll": "min",
-        }).reset_index()
-        
-        # Compute FLOPs for each rank (ReFT uses prompt_length)
-        pos_best["flops"] = pos_best["rank"].apply(
-            lambda r: compute_reft_flops(int(r), prompt_length, position)
-        )
-        pos_best = pos_best.sort_values("flops")
-        
-        style = position_styles.get(position, {'color': 'gray', 'marker': 'x'})
-        ax.plot(pos_best["flops"], pos_best["eval_nll"],
-                marker=style['marker'], label=f"ReFT ({position})", 
-                color=style['color'], linewidth=2, markersize=8)
-    
+
+        for component in sorted(pos_df["component"].dropna().unique()):
+            comp_df = pos_df[pos_df["component"] == component]
+
+            # Get best NLL for each rank
+            best = comp_df.groupby("rank").agg({
+                "eval_nll": "min",
+            }).reset_index()
+
+            # Compute FLOPs for each rank (ReFT uses prompt_length)
+            best["flops"] = best["rank"].apply(
+                lambda r: compute_reft_flops(int(r), prompt_length, position, component)
+            )
+            best = best.sort_values("flops")
+
+            color = position_colors.get(position, 'gray')
+            style = component_styles.get(component, {'linestyle': '-', 'marker': 'x'})
+
+            # Label: include component only if not default
+            if component == "block_output":
+                label = f"ReFT ({position})"
+            else:
+                label = f"ReFT ({position}, {component})"
+
+            ax.plot(best["flops"], best["eval_nll"],
+                    marker=style['marker'], linestyle=style['linestyle'],
+                    label=label, color=color, linewidth=2, markersize=8)
+
     # Plot LoRA if available (uses total_seq_len since LoRA applies to all tokens)
     if not lora_df.empty:
         lora_best = lora_df.groupby("lora_rank").agg({
             "eval_nll": "min",
         }).reset_index()
-        
+
         # Compute FLOPs for each LoRA rank (LoRA uses full sequence)
         lora_best["flops"] = lora_best["lora_rank"].apply(
             lambda r: compute_lora_flops(int(r), total_seq_len)
         )
         lora_best = lora_best.sort_values("flops")
-        
+
         ax.plot(lora_best["flops"], lora_best["eval_nll"],
                 marker='p', label="LoRA", color='orange', linewidth=2, markersize=8)
-    
+
     ax.set_xlabel("Additional FLOPs per Forward Pass", fontsize=12)
     ax.set_ylabel("Best Eval NLL", fontsize=12)
     ax.set_title(f"ReFT vs LoRA: FLOPs Efficiency\n(ReFT: prompt_len={prompt_length}, LoRA: seq_len={total_seq_len})", fontsize=14)
     ax.set_xscale("log")
-    ax.legend(loc="best")
+    ax.legend(loc="best", fontsize=9)
     ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.savefig(output_dir / "flops_comparison.png", dpi=150)
     plt.savefig(output_dir / "flops_comparison.pdf")
@@ -557,25 +600,32 @@ def plot_flops_comparison(
 
 
 def get_best_runs(df: pd.DataFrame):
-    """Get best LR run for each (method, rank, position)."""
+    """Get best LR run for each (method, rank, position, component)."""
     best_runs = []
-    
+
     # ReFT runs
     reft_df = df[df["method"] == "reft"].copy()
-    
+
     for position in reft_df["position"].dropna().unique():
         pos_data = reft_df[reft_df["position"] == position]
-        for rank in pos_data["rank"].dropna().unique():
-            rank_data = pos_data[pos_data["rank"] == rank]
-            if not rank_data.empty:
-                best_idx = rank_data["eval_nll"].idxmin()
-                best_row = rank_data.loc[best_idx].to_dict()
-                best_row["facet"] = f"ReFT ({position})"
-                best_row["rank_val"] = rank
-                best_row["method_type"] = "reft"
-                best_row["position_val"] = position
-                best_runs.append(best_row)
-    
+        for component in pos_data["component"].dropna().unique():
+            comp_data = pos_data[pos_data["component"] == component]
+            for rank in comp_data["rank"].dropna().unique():
+                rank_data = comp_data[comp_data["rank"] == rank]
+                if not rank_data.empty:
+                    best_idx = rank_data["eval_nll"].idxmin()
+                    best_row = rank_data.loc[best_idx].to_dict()
+                    # Include component in facet name if not default
+                    if component == "block_output":
+                        best_row["facet"] = f"ReFT ({position})"
+                    else:
+                        best_row["facet"] = f"ReFT ({position}, {component})"
+                    best_row["rank_val"] = rank
+                    best_row["method_type"] = "reft"
+                    best_row["position_val"] = position
+                    best_row["component_val"] = component
+                    best_runs.append(best_row)
+
     # LoRA runs
     lora_df = df[df["method"] == "lora"].copy()
     for lora_rank in lora_df["lora_rank"].dropna().unique():
@@ -587,8 +637,9 @@ def get_best_runs(df: pd.DataFrame):
             best_row["rank_val"] = lora_rank
             best_row["method_type"] = "lora"
             best_row["position_val"] = None
+            best_row["component_val"] = None
             best_runs.append(best_row)
-    
+
     return best_runs
 
 
@@ -596,46 +647,48 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
                                project_10x: str = None, runs_10x: dict = None):
     """
     Fetch history and compute linear fit coefficients for each run.
-    
+
     If project_10x and runs_10x are provided, uses 10x runs instead of original
     (10x runs are now independent full retraining, not continuations).
     """
     import wandb
-    
+
     coefficients = []
-    
+
     for run in best_runs:
         run_id = run["run_id"]
         method_type = run["method_type"]
         rank = run["rank_val"]
         position = run.get("position_val")
-        
+        component = run.get("component_val", "block_output")
+
         # Check if there's a 10x run (independent retrain with 10x epochs)
         use_10x = False
         if runs_10x:
-            key = (method_type, rank, position)
+            key = (method_type, rank, position, component)
             if key in runs_10x:
                 run_id = runs_10x[key]["run_id"]
                 use_10x = True
-        
+
         # Fetch from appropriate project
         fetch_project = project_10x if (use_10x and project_10x) else project
-        
+
         try:
             steps, nll = fetch_run_history(run_id, fetch_project, entity)
-            
+
             if steps is None or len(steps) < 2:
                 continue
-            
+
             # Linear fit in log-space: NLL = slope * log10(step) + intercept
             log_steps = np.log10(steps)
             slope, intercept, r_value, p_value, std_err = stats.linregress(log_steps, nll)
-            
+
             coefficients.append({
                 "run_id": run_id,
                 "facet": run["facet"],
                 "method_type": method_type,
                 "position_val": position,
+                "component_val": component,
                 "rank": rank,
                 "slope": slope,
                 "intercept": intercept,
@@ -645,10 +698,10 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
                 "is_10x": use_10x,
                 "max_step": steps.max(),
             })
-            
+
         except Exception as e:
             print(f"Error fetching history for {run_id}: {e}")
-    
+
     return coefficients
 
 
@@ -778,8 +831,18 @@ def plot_scaling_by_rank(coefficients: list, output_dir: Path, include_10x: bool
     facets = sorted(set(c["facet"] for c in coefficients))
     colors = plt.cm.tab10(np.linspace(0, 1, len(facets)))
     facet_colors = {f: colors[i] for i, f in enumerate(facets)}
-    markers = {'ReFT (f1+l1)': 'o', 'ReFT (all)': 's', 'ReFT (f1+s1)': '^', 
-               'ReFT (alls)': 'D', 'LoRA': 'p'}
+    # Build markers dict dynamically based on facets found
+    base_markers = {'f1+l1': 'o', 'all': 's', 'f1+s1': '^', 'alls': 'D'}
+    markers = {'LoRA': 'p'}
+    for facet in facets:
+        if facet.startswith('ReFT'):
+            # Extract position from facet name
+            for pos, marker in base_markers.items():
+                if pos in facet:
+                    markers[facet] = marker
+                    break
+            if facet not in markers:
+                markers[facet] = 'x'
     
     # Plot each rank
     for rank_idx, rank in enumerate(ranks):
@@ -1085,6 +1148,7 @@ def main():
     print(f"Loaded {len(df)} runs")
     print(f"Methods: {df['method'].unique()}")
     print(f"Positions: {df['position'].dropna().unique()}")
+    print(f"Components: {df['component'].dropna().unique()}")
     print(f"ReFT Ranks: {sorted(df['rank'].dropna().unique())}")
     print(f"LoRA Ranks: {sorted(df['lora_rank'].dropna().unique())}")
     print(f"LRs: {sorted(df['lr'].dropna().unique())}")

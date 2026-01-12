@@ -17,7 +17,7 @@ for arg in "$@"; do
 done
 
 # Common settings
-COMMON_ARGS="--rank 1 --position f1+s1 --logging_steps 1 --max_n_train_example 1000 --epochs 1 --use_wandb --wandb_project loreft-regret-rank1"
+COMMON_ARGS="--rank 1 --position f1+s1 --logging_steps 1 --max_n_train_example 1000 --epochs 1 --use_wandb --wandb_project loreft-regret-rank1 --debug_interventions"
 
 # Experiments to run
 declare -A EXPERIMENTS=(

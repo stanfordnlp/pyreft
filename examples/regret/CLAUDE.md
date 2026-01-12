@@ -92,6 +92,26 @@ python continue_training.py --rank 4 --position f1+s1
 cd analysis && python plot_sweep.py --project loreft-regret --project-10x loreft-regret-10x-restart --curves
 ```
 
+## Intervention Debug Logging
+Pass `--debug_interventions` to enable metrics logging to wandb:
+- `intervention/diff_norm_mean` / `_max` - norm of (Wh+b - Rh)
+- `intervention/b_norm_mean` - bias norm
+- `intervention/delta_base_ratio_mean` / `_max` - relative intervention magnitude
+
+This flag is enabled by default in all sweep scripts.
+
+## Orthogonality Save/Load Fix
+The orthogonal parameterization in LoReFT now correctly preserves internal state during checkpoint save/load. Previously, only the computed orthogonal weight was saved, which broke orthogonality during training continuation (causing loss spikes).
+
+**New state_dict format** (backwards compatible):
+- `rotate_layer` - computed orthogonal weight (for inference)
+- `rotate_layer_original` - internal optimization variable
+- `rotate_layer_base` - trivialization base matrix
+
+Legacy checkpoints (without `_original` and `_base`) still work for inference but may break during continued training.
+
+See `tests/test_orthogonality_save_load.py` for verification.
+
 ## Known Issues
 1. **position vs positions**: Inconsistent naming in `pyreft/dataset.py`. `get_intervention_locations` checks both keys as a workaround.
 2. **Trainer.log() signature**: HuggingFace changed it to include `start_time` - our custom trainer override must match.

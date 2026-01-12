@@ -54,6 +54,7 @@ CMD="uv run train.py \
     --epochs 1 \
     --use_wandb \
     --wandb_project $WANDB_PROJECT \
+    --debug_interventions \
     --run_name $RUN_NAME"
 
 # Add scale type if specified

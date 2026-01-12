@@ -89,36 +89,35 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         """Collect metrics from all interventions and aggregate them."""
         if not hasattr(self.model, 'interventions'):
             return {}
-        
-        all_delta_norms = []
+
         all_diff_norms = []
+        all_b_norms = []
         all_delta_base_ratios = []
-        
+
         for key, v in self.model.interventions.items():
             intervention = v[0] if isinstance(v, (list, tuple)) else v
             if hasattr(intervention, 'metrics') and intervention.metrics:
                 metrics = intervention.metrics
-                if 'delta_norm' in metrics:
-                    all_delta_norms.append(metrics['delta_norm'])
                 if 'diff_norm' in metrics:
                     all_diff_norms.append(metrics['diff_norm'])
+                if 'b_norm' in metrics:
+                    all_b_norms.append(metrics['b_norm'])
                 if 'delta_base_ratio' in metrics:
                     all_delta_base_ratios.append(metrics['delta_base_ratio'])
                 # Clear metrics after collecting
                 if clear_after:
                     intervention.metrics = {}
-        
+
         result = {}
-        if all_delta_norms:
-            result['intervention/delta_norm_mean'] = np.mean(all_delta_norms)
-            result['intervention/delta_norm_max'] = np.max(all_delta_norms)
         if all_diff_norms:
             result['intervention/diff_norm_mean'] = np.mean(all_diff_norms)
             result['intervention/diff_norm_max'] = np.max(all_diff_norms)
+        if all_b_norms:
+            result['intervention/b_norm_mean'] = np.mean(all_b_norms)
         if all_delta_base_ratios:
             result['intervention/delta_base_ratio_mean'] = np.mean(all_delta_base_ratios)
             result['intervention/delta_base_ratio_max'] = np.max(all_delta_base_ratios)
-        
+
         return result
 
     def log(self, logs, start_time=None):

@@ -330,6 +330,7 @@ def train(args):
                 dropout=args.dropout,
                 dtype=dtype,
                 act_fn=args.act_fn,
+                debug=args.debug_interventions,
             )
         } for l in layers]
         
@@ -670,6 +671,11 @@ def main():
         type=str,
         default=None,
         help="Activation function for LoReFT (default: None/linear)"
+    )
+    parser.add_argument(
+        "--debug_interventions",
+        action="store_true",
+        help="Enable debug logging and metrics for interventions (logs to wandb)"
     )
     parser.add_argument(
         "--scale_type",

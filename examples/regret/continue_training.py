@@ -117,8 +117,9 @@ def run_training(
         "--output_dir", full_output_dir,
         "--wandb_project", wandb_project,
         "--run_name", run_name,
+        "--debug_interventions",
     ]
-    
+
     if share_weights:
         cmd.append("--share_weights")
     

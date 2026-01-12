@@ -128,7 +128,8 @@ CMD="uv run train.py \
     --eval_steps $EVAL_STEPS \
     --output_dir $OUTPUT_DIR \
     --use_wandb \
-    --wandb_project $WANDB_PROJECT"
+    --wandb_project $WANDB_PROJECT \
+    --debug_interventions"
 
 # Add share_weights flag if needed
 if [ "$SHARE_WEIGHTS" = "true" ]; then
