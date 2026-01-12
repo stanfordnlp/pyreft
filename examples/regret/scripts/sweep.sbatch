@@ -51,6 +51,7 @@ MAX_EVAL_SAMPLES=${MAX_EVAL_SAMPLES:-500}
 EVAL_STEPS=${EVAL_STEPS:-50}
 MODEL=${MODEL:-"meta-llama/Llama-3.2-1B-Instruct"}
 USE_FLASH_ATTN=${USE_FLASH_ATTN:-false}
+GRADIENT_CHECKPOINTING=${GRADIENT_CHECKPOINTING:-false}
 OUTPUT_DIR=${OUTPUT_DIR:-"./outputs"}
 WANDB_PROJECT=${WANDB_PROJECT:-"loreft-regret"}
 FULL_FINETUNE=${FULL_FINETUNE:-false}
@@ -69,6 +70,8 @@ echo "  Layers: $LAYERS"
 echo "  Position: $POSITION"
 echo "  Component: $COMPONENT"
 echo "  Max examples: $MAX_EXAMPLES"
+echo "  Flash attention: $USE_FLASH_ATTN"
+echo "  Gradient checkpointing: $GRADIENT_CHECKPOINTING"
 echo "============================================"
 
 # Change to submit directory (where sbatch was called from)
@@ -142,9 +145,14 @@ if [ "$USE_FLASH_ATTN" = "true" ]; then
     CMD="$CMD --use_flash_attn"
 fi
 
-# Add full finetune flag and gradient checkpointing if needed
+# Add full finetune flag if needed
 if [ "$FULL_FINETUNE" = "true" ]; then
-    CMD="$CMD --full_finetune --gradient_checkpointing"
+    CMD="$CMD --full_finetune"
+fi
+
+# Add gradient checkpointing if enabled (for large models)
+if [ "$GRADIENT_CHECKPOINTING" = "true" ]; then
+    CMD="$CMD --gradient_checkpointing"
 fi
 
 # Add LoRA flags if enabled

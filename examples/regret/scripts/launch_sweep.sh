@@ -34,6 +34,13 @@ EPOCHS=1
 WANDB_PROJECT="loreft-regret"
 OUTPUT_DIR="./outputs"
 
+# Model settings (default: Llama 3.2 1B)
+MODEL="meta-llama/Llama-3.2-1B-Instruct"
+USE_FLASH_ATTN=false
+GRADIENT_CHECKPOINTING=false
+GPU_MEM="16G"
+SBATCH_EXTRA=""
+
 # --- Parse args ---
 DRY_RUN=false
 SKIP_DONE=false
@@ -42,6 +49,7 @@ ALL_POSITIONS=false
 WITH_MLP=false
 ALL_COMPONENTS=false
 RANK1_ONLY=false
+MODEL_8B=false
 
 for arg in "$@"; do
     case $arg in
@@ -52,8 +60,18 @@ for arg in "$@"; do
         --with-mlp) WITH_MLP=true; echo "=== INCLUDING MLP_ACTIVATION EXPERIMENTS ===" ;;
         --all-components) ALL_COMPONENTS=true; echo "=== ALL COMPONENTS MODE ===" ;;
         --rank1-only) RANK1_ONLY=true; echo "=== RANK 1 ONLY ==="; RANKS=(1); LORA_RANKS=(1) ;;
+        --model-8b) MODEL_8B=true; echo "=== LLAMA 3.1 8B MODE ===" ;;
     esac
 done
+
+# Configure for 8B model if requested
+if $MODEL_8B; then
+    MODEL="meta-llama/Llama-3.1-8B-Instruct"
+    GRADIENT_CHECKPOINTING=true
+    GPU_MEM="48G"
+    WANDB_PROJECT="loreft-regret-8b"
+    OUTPUT_DIR="./outputs-8b"
+fi
 
 # Function to check if job is already done
 is_done() {
@@ -89,8 +107,14 @@ fi
 total_jobs=$((reft_jobs + lora_jobs))
 
 echo "Submitting sweep:"
+echo "  Model: $MODEL"
 echo "  Positions: ${POSITIONS[*]}"
 echo "  Components: ${COMPONENTS[*]}"
+echo "  Wandb project: $WANDB_PROJECT"
+echo "  Output dir: $OUTPUT_DIR"
+if $MODEL_8B; then
+    echo "  GPU memory: $GPU_MEM (grad_ckpt=$GRADIENT_CHECKPOINTING)"
+fi
 echo "  ReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x ${#POSITIONS[@]} positions x ${#COMPONENTS[@]} components = $reft_jobs jobs"
 if $WITH_LORA; then
     echo "  LoRA: ${#LORA_RANKS[@]} ranks x ${#LORA_LRS[@]} LRs = $lora_jobs jobs"
@@ -100,6 +124,13 @@ echo ""
 
 job_count=0
 skipped_count=0
+
+# Model-specific prefix for job naming
+if $MODEL_8B; then
+    MODEL_PREFIX="8b_"
+else
+    MODEL_PREFIX=""
+fi
 
 # --- ReFT sweep ---
 for component in "${COMPONENTS[@]}"; do
@@ -122,7 +153,7 @@ for component in "${COMPONENTS[@]}"; do
         for rank in "${RANKS[@]}"; do
             for lr in "${LRS[@]}"; do
                 pos_short=$(echo "$position" | sed 's/+//')
-                job_name="loreft_r${rank}_${pos_short}${comp_short}_lr${lr}"
+                job_name="${MODEL_PREFIX}loreft_r${rank}_${pos_short}${comp_short}_lr${lr}"
 
                 # Add component to run_name if not block_output
                 if [[ "$component" == "block_output" ]]; then
@@ -138,7 +169,7 @@ for component in "${COMPONENTS[@]}"; do
                     continue
                 fi
 
-                cmd="sbatch --job-name=$job_name --export=ALL,RANK=$rank,LR=$lr,POSITION=$position${SHARE_FLAG}${COMPONENT_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
+                cmd="sbatch $SBATCH_EXTRA --mem=$GPU_MEM --job-name=$job_name --export=ALL,MODEL=$MODEL,RANK=$rank,LR=$lr,POSITION=$position${SHARE_FLAG}${COMPONENT_FLAG},MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,USE_FLASH_ATTN=$USE_FLASH_ATTN,GRADIENT_CHECKPOINTING=$GRADIENT_CHECKPOINTING scripts/sweep.sbatch"
 
                 if $DRY_RUN; then
                     echo "$cmd"
@@ -158,20 +189,20 @@ if $WITH_LORA; then
     echo ""
     echo "=== LoRA Sweep ==="
     LORA_MODULES="q_proj;k_proj;v_proj;o_proj;gate_proj;up_proj;down_proj"
-    
+
     for lora_rank in "${LORA_RANKS[@]}"; do
         for lr in "${LORA_LRS[@]}"; do
-            job_name="lora_r${lora_rank}_lr${lr}"
+            job_name="${MODEL_PREFIX}lora_r${lora_rank}_lr${lr}"
             run_name="lora_r${lora_rank}___q+k+v+o+gate+up+down___lr${lr}"
-            
+
             # Skip if already done
             if $SKIP_DONE && is_done "$run_name"; then
                 echo "Skipping (done): $run_name"
                 skipped_count=$((skipped_count + 1))
                 continue
             fi
-            
-            cmd="sbatch --job-name=$job_name --export=ALL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$LORA_MODULES,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR scripts/sweep.sbatch"
+
+            cmd="sbatch $SBATCH_EXTRA --mem=$GPU_MEM --job-name=$job_name --export=ALL,MODEL=$MODEL,USE_LORA=true,DISABLE_REFT=true,LORA_RANK=$lora_rank,LORA_MODULES=$LORA_MODULES,LR=$lr,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,USE_FLASH_ATTN=$USE_FLASH_ATTN,GRADIENT_CHECKPOINTING=$GRADIENT_CHECKPOINTING scripts/sweep.sbatch"
             
             if $DRY_RUN; then
                 echo "$cmd"

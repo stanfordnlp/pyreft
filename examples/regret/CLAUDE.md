@@ -31,68 +31,65 @@ There was an off-by-one bug in the original position parsing. For backwards comp
 
 Use strict mode (`f1+s1`, `alls`) for new experiments.
 
-## Component Selection (New Feature)
-ReFT interventions can now be applied to different transformer components via `--component`:
-- **`block_output`** (default) - Residual stream (current experiments use this)
+## Component Selection
+ReFT can target different transformer components via `--component`:
+- **`block_output`** (default) - Residual stream
+- **`mlp_activation`** - MLP intermediate layer (use `--with-mlp` flag in sweep)
 - **`mlp_output`** - MLP/FFN output
 - **`attention_output`** - Attention module output
-- **`mlp_activation`** - MLP intermediate activations
-- And more (see pyvene docs for full list)
-
-This allows comparing intervention effectiveness at different points in the model.
 
 ## Sweep Configuration
-- Model: Llama 3.2 1B Instruct
+- **Model (1B)**: Llama 3.2 1B Instruct
+- **Model (8B)**: Llama 3.1 8B Instruct (use `--model-8b` flag)
 - Dataset: allenai/tulu-3-sft-mixture (50K examples)
 - Ranks: 1, 2, 4, 8, 16, 32, 64
 - LRs: 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3
 - Positions: `f1+l1`, `all`, `f1+s1`, `alls`
 - Component: `block_output` (default, residual stream)
-- wandb projects: `loreft-regret` (1 epoch), `loreft-regret-10x-restart` (10 epochs)
+- wandb projects:
+  - `loreft-regret` (1B, 1 epoch)
+  - `loreft-regret-10x-restart` (1B, 10 epochs)
+  - `loreft-regret-8b` (8B, 1 epoch)
 
 ## Launch Script Flags
+- `--dry-run` - Preview jobs without submitting
+- `--skip-done` - Skip completed runs
+- `--rank1-only` - Only rank=1 (for testing)
+- `--all-positions` - All positions: f1+l1, all, f1+s1, alls
+- `--with-mlp` - Add mlp_activation component experiments
+- `--with-lora` - Include LoRA baseline
+- `--model-8b` - Use Llama 3.1 8B instead of 3.2 1B (auto-enables gradient checkpointing, 48G memory)
+
+## Quick Start
 ```bash
-./scripts/launch_sweep.sh --dry-run          # Preview without submitting
-./scripts/launch_sweep.sh --skip-done        # Skip completed runs
-./scripts/launch_sweep.sh --with-lora        # Include LoRA baseline
-./scripts/launch_sweep.sh --all-positions    # All positions (f1+l1, all, f1+s1, alls)
-./scripts/launch_sweep.sh --with-mlp         # Add mlp_activation experiments
-./scripts/launch_sweep.sh --all-components   # All components (block_output, mlp_activation)
-./scripts/launch_sweep.sh --rank1-only       # Only rank=1 experiments
-```
+# Setup
+uv sync --extra flash --extra peft
 
-## Useful Commands
-```bash
-# Install with uv
-uv sync
-uv sync --extra flash  # optional, for Flash Attention 2
-uv sync --extra peft   # optional, for LoRA support
+# Run 1B sweep (7 ranks × 6 LRs × 1 position = 42 jobs)
+./scripts/launch_sweep.sh --dry-run --skip-done
 
-# Run sweep (default: f1+s1 position, block_output component)
-./scripts/launch_sweep.sh --dry-run
-./scripts/launch_sweep.sh --skip-done
+# Run 8B sweep (same grid, larger model)
+./scripts/launch_sweep.sh --model-8b --dry-run --skip-done
 
-# Run sweep with mlp_activation experiments (compares residual stream vs MLP output)
-./scripts/launch_sweep.sh --with-mlp --dry-run
+# Add mlp_activation experiments (doubles jobs: 84 total)
 ./scripts/launch_sweep.sh --with-mlp --skip-done
 
-# Single test run
-uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4
+# Single test run (1B)
+uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --component mlp_activation
 
-# Test with different intervention components
-uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --component mlp_output
-uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --component attention_output
+# Single test run (8B)
+uv run train.py --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \
+    --max_n_train_example 100 --position f1+s1 --rank 4 \
+    --gradient_checkpointing
 
-# LoRA-only baseline
+# LoRA baseline
 uv run train.py --max_n_train_example 100 --use_lora --disable_reft --lora_rank 8
 
-# 10x retraining with best LR
-python continue_training.py --dry-run
+# 10x retraining
 python continue_training.py --rank 4 --position f1+s1
 
 # Generate plots
-cd analysis
-python plot_sweep.py --project loreft-regret --project-10x loreft-regret-10x-restart --curves
+cd analysis && python plot_sweep.py --project loreft-regret --project-10x loreft-regret-10x-restart --curves
 ```
 
 ## Known Issues
