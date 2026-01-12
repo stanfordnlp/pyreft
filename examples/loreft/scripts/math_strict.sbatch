@@ -53,7 +53,7 @@ cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs
 
 # --- Run training + evaluation ---
-python train.py -task math \
+uv run train.py -task math \
     -data_dir "$DATA_DIR" \
     -model "$MODEL" \
     -seed "$SEED" \

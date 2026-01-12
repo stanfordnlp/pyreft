@@ -55,7 +55,7 @@ cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs
 
 # --- Run training + evaluation ---
-python train.py -task commonsense \
+uv run train.py -task commonsense \
     -data_dir "$DATA_DIR" \
     -model "$MODEL" \
     -seed "$SEED" \
