@@ -250,7 +250,13 @@ def train(args):
     # Resize embeddings if needed
     if need_resize:
         model.resize_token_embeddings(len(tokenizer))
-    
+
+    # Enable gradient checkpointing on base model BEFORE wrapping
+    # (ReftModel doesn't expose this method, so we do it here)
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+        print("Enabled gradient checkpointing on base model")
+
     # Apply LoRA if requested (before ReFT wrapping)
     if args.use_lora:
         if not is_peft_available:
@@ -482,7 +488,9 @@ def train(args):
         seed=args.seed,
         remove_unused_columns=False,  # Required for ReFT
         dataloader_pin_memory=True,
-        gradient_checkpointing=args.gradient_checkpointing,
+        # Note: gradient_checkpointing is enabled on base model before wrapping
+        # (ReftModel doesn't expose gradient_checkpointing_enable, so we disable here)
+        gradient_checkpointing=False,
     )
     
     # Create trainer based on mode
