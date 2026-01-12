@@ -509,13 +509,28 @@ def train(args):
         model.save_pretrained(output_dir)
         tokenizer.save_pretrained(output_dir)
     elif args.use_lora and args.disable_reft:
-        # LoRA-only: save using peft
-        model.save_pretrained(output_dir)
-        tokenizer.save_pretrained(output_dir)
+        # LoRA-only: save using peft (only if --save_lora is set)
+        if args.save_lora:
+            model.save_pretrained(output_dir)
+            tokenizer.save_pretrained(output_dir)
+            print("LoRA weights saved")
+        else:
+            print("Skipping LoRA weight save (use --save_lora to save)")
     elif args.use_lora:
-        # LoRA + LoReFT: save both
-        reft_model.save(output_dir)
-        # LoRA adapters are saved within the reft_model
+        # LoRA + LoReFT: save ReFT always, LoRA only if --save_lora is set
+        if args.save_lora:
+            # Save both ReFT and LoRA
+            reft_model.save(output_dir)
+            print("ReFT and LoRA weights saved")
+        else:
+            # Save only ReFT interventions, not the full model (which includes LoRA)
+            # This requires saving intervention weights separately
+            import os
+            intervention_dir = os.path.join(output_dir, "interventions")
+            os.makedirs(intervention_dir, exist_ok=True)
+            reft_model.save_intervention(intervention_dir)
+            tokenizer.save_pretrained(output_dir)
+            print("ReFT interventions saved (LoRA skipped, use --save_lora to save)")
     else:
         # LoReFT-only
         reft_model.save(output_dir)
@@ -577,6 +592,11 @@ def main():
         "--disable_reft",
         action="store_true",
         help="Disable ReFT interventions (use with --use_lora for LoRA-only baseline)"
+    )
+    parser.add_argument(
+        "--save_lora",
+        action="store_true",
+        help="Save LoRA weights (only applies when --use_lora is set)"
     )
     parser.add_argument(
         "--lora_rank",
