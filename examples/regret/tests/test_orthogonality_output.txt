@@ -5,22 +5,23 @@ ReFT Orthogonality Save/Load Test Results
 ----------------------------------------------------------------------
 Test 1: Basic orthogonality utilities
 ----------------------------------------------------------------------
-  Orthogonal matrix (64x64): error = 3.06e-06
-  Random matrix (64x64): error = 7.13e+02
+  Orthogonal matrix (64x64): error = 2.84e-06
+  Random matrix (64x64): error = 7.01e+02
 
 ----------------------------------------------------------------------
-Test 2: New format state_dict keys
+Test 2: state_dict formats (default vs save_for_training)
 ----------------------------------------------------------------------
 nnsight is not detected. Please install via 'pip install nnsight' for nnsight backend.
-  State dict keys: ['weight', 'bias', 'rotate_layer', 'rotate_layer_original', 'rotate_layer_base']
-  Has new format keys: True
-  [PASS] New format is active!
+  Default keys: ['weight', 'bias', 'rotate_layer']
+  [PASS] Default format saves only inference weights
+  Training keys: ['weight', 'bias', 'rotate_layer', 'rotate_layer_original', 'rotate_layer_base']
+  [PASS] Training format saves full parametrization state
 
 ----------------------------------------------------------------------
-Test 3: New format checkpoint continuation
+Test 3: Training continuation (save_for_training=True)
 ----------------------------------------------------------------------
-  Before save (after 20 steps): ortho_error = 6.07e-07
-  After continuation (10 more steps): ortho_error = 6.39e-07
+  Before save (after 20 steps): ortho_error = 8.15e-07
+  After continuation (10 more steps): ortho_error = 8.60e-07
   [PASS] New format maintains orthogonality!
 
 ----------------------------------------------------------------------

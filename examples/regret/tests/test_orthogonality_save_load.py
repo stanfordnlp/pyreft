@@ -103,8 +103,8 @@ class TestOrthogonalityBasic:
 class TestNewFormatSaveLoad:
     """Tests for new checkpoint format with full parametrization state."""
 
-    def test_new_format_state_dict_keys(self):
-        """Test that new format includes all required keys."""
+    def test_default_state_dict_keys(self):
+        """Test that default format only saves inference weights."""
         from pyreft import LoreftIntervention
 
         intervention = LoreftIntervention(
@@ -112,19 +112,36 @@ class TestNewFormatSaveLoad:
         )
         state_dict = intervention.state_dict()
 
-        # New format should have these keys
+        # Default: only rotate_layer (inference weights)
+        assert "rotate_layer" in state_dict, "Missing rotate_layer"
+        assert "rotate_layer_original" not in state_dict, "Should not have rotate_layer_original by default"
+        assert "rotate_layer_base" not in state_dict, "Should not have rotate_layer_base by default"
+        print(f"Default state dict keys: {list(state_dict.keys())}")
+
+    def test_training_format_state_dict_keys(self):
+        """Test that save_for_training=True includes all required keys."""
+        from pyreft import LoreftIntervention
+
+        intervention = LoreftIntervention(
+            embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32,
+            save_for_training=True
+        )
+        state_dict = intervention.state_dict()
+
+        # Training format: includes parametrization state
         assert "rotate_layer" in state_dict, "Missing rotate_layer"
         assert "rotate_layer_original" in state_dict, "Missing rotate_layer_original"
         assert "rotate_layer_base" in state_dict, "Missing rotate_layer_base"
-        print(f"State dict keys: {list(state_dict.keys())}")
+        print(f"Training state dict keys: {list(state_dict.keys())}")
 
     def test_new_format_continuation_orthogonality(self):
-        """Test that new format preserves orthogonality through checkpoint continuation."""
+        """Test that save_for_training=True preserves orthogonality through checkpoint continuation."""
         from pyreft import LoreftIntervention
 
-        # Phase 1: Train
+        # Phase 1: Train with save_for_training=True
         intervention = LoreftIntervention(
-            embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32
+            embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32,
+            save_for_training=True
         )
         optimizer = torch.optim.Adam(intervention.parameters(), lr=1e-3)
 
@@ -267,17 +284,18 @@ class TestCheckpointContinuation:
 
     def test_side_by_side_comparison(self):
         """
-        Side-by-side comparison of new vs legacy format during continuation.
+        Side-by-side comparison of save_for_training vs legacy format during continuation.
         """
         from pyreft import LoreftIntervention
 
         results = {}
 
         for format_name, use_legacy in [("new", False), ("legacy", True)]:
-            # Phase 1: Train
+            # Phase 1: Train (use save_for_training=True for new format)
             torch.manual_seed(0)
             intervention = LoreftIntervention(
-                embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32
+                embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32,
+                save_for_training=(not use_legacy)
             )
             optimizer = torch.optim.Adam(intervention.parameters(), lr=1e-3)
 
@@ -390,40 +408,47 @@ def run_all_tests_with_output():
         error = get_orthogonality_error(random_matrix)
         print(f"  Random matrix (64x64): error = {error:.2e}")
 
-        # Test 2: New format state dict
+        # Test 2: state_dict formats
         print("\n" + "-" * 70)
-        print("Test 2: New format state_dict keys")
+        print("Test 2: state_dict formats (default vs save_for_training)")
         print("-" * 70)
 
         try:
             from pyreft import LoreftIntervention
 
+            # Default: inference only
             intervention = LoreftIntervention(
                 embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32
             )
             state_dict = intervention.state_dict()
-            print(f"  State dict keys: {list(state_dict.keys())}")
+            print(f"  Default keys: {list(state_dict.keys())}")
+            assert "rotate_layer_original" not in state_dict
+            print("  [PASS] Default format saves only inference weights")
 
-            has_new_keys = "rotate_layer_original" in state_dict and "rotate_layer_base" in state_dict
-            print(f"  Has new format keys: {has_new_keys}")
-            if has_new_keys:
-                print("  [PASS] New format is active!")
-            else:
-                print("  [FAIL] New format keys missing!")
+            # save_for_training=True: full state
+            intervention = LoreftIntervention(
+                embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32,
+                save_for_training=True
+            )
+            state_dict = intervention.state_dict()
+            print(f"  Training keys: {list(state_dict.keys())}")
+            assert "rotate_layer_original" in state_dict and "rotate_layer_base" in state_dict
+            print("  [PASS] Training format saves full parametrization state")
         except Exception as e:
             print(f"  Error: {e}")
 
-        # Test 3: New format continuation
+        # Test 3: Training continuation with save_for_training=True
         print("\n" + "-" * 70)
-        print("Test 3: New format checkpoint continuation")
+        print("Test 3: Training continuation (save_for_training=True)")
         print("-" * 70)
 
         try:
             from pyreft import LoreftIntervention
 
-            # Phase 1: Train
+            # Phase 1: Train with save_for_training=True
             intervention = LoreftIntervention(
-                embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32
+                embed_dim=256, low_rank_dimension=8, dropout=0.0, dtype=torch.float32,
+                save_for_training=True
             )
             optimizer = torch.optim.Adam(intervention.parameters(), lr=1e-3)
 

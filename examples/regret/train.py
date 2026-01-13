@@ -39,8 +39,8 @@ from pyreft import (
     LoreftIntervention,
     LoreftIntervention_Scale,
     LoreftIntervention_SigmoidScale,
-    LoreftIntervention_DataDepScale,
     LoreftIntervention_TokenScale,
+    DireftIntervention,
     ReftDataCollator,
     ReftGenerationDataset,
 )
@@ -167,18 +167,19 @@ def train(args):
     else:
         model_str = args.model_name_or_path.split("/")[-1]
         now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        reft_type = args.intervention_type or "loreft"
         if args.full_finetune:
             run_name = f"{model_str}.tulu3.fullft.{now}"
         elif args.use_lora and args.disable_reft:
             run_name = f"{model_str}.tulu3.lora_r{args.lora_rank}.{now}"
         elif args.use_lora:
-            run_name = f"{model_str}.tulu3.lora_r{args.lora_rank}_reft_r{args.rank}.{now}"
+            run_name = f"{model_str}.tulu3.lora_r{args.lora_rank}_{reft_type}_r{args.rank}.{now}"
         else:
-            run_name = f"{model_str}.tulu3.reft_r{args.rank}.{now}"
-    
+            run_name = f"{model_str}.tulu3.{reft_type}_r{args.rank}.{now}"
+
     # Determine training mode
     use_reft = not args.full_finetune and not args.disable_reft
-    
+
     print(f"Starting training run: {run_name}")
     print(f"Model: {args.model_name_or_path}")
     if args.full_finetune:
@@ -187,10 +188,12 @@ def train(args):
         print(f"Mode: LoRA-only (rank={args.lora_rank}, alpha={args.lora_alpha}, modules={args.lora_modules})")
     elif args.use_lora:
         scale_info = f", scale={args.scale_type}" if args.scale_type else ""
-        print(f"Mode: LoRA + LoReFT (LoRA rank={args.lora_rank}, ReFT rank={args.rank}, component={args.component}{scale_info})")
+        reft_name = "DiReFT" if args.intervention_type == "direft" else "LoReFT"
+        print(f"Mode: LoRA + {reft_name} (LoRA rank={args.lora_rank}, ReFT rank={args.rank}, component={args.component}{scale_info})")
     else:
         scale_info = f", scale={args.scale_type}" if args.scale_type else ""
-        print(f"Mode: LoReFT (rank={args.rank}, layers={args.layers}, position={args.position}, component={args.component}{scale_info})")
+        reft_name = "DiReFT" if args.intervention_type == "direft" else "LoReFT"
+        print(f"Mode: {reft_name} (rank={args.rank}, layers={args.layers}, position={args.position}, component={args.component}{scale_info})")
     print(f"LR: {args.lr}, Epochs: {args.epochs}, Batch size: {args.batch_size}")
     
     # Parse ReFT layers (only needed when using ReFT)
@@ -305,17 +308,24 @@ def train(args):
         reft_model = None
         train_model = model
     elif use_reft:
-        # Select intervention class based on scale_type
+        # Select intervention class based on intervention_type and scale_type
+        intervention_type = args.intervention_type or "loreft"
         scale_type = args.scale_type or "none"
-        intervention_classes = {
-            "none": LoreftIntervention,
-            "scalar": LoreftIntervention_Scale,
-            "sigmoid": LoreftIntervention_SigmoidScale,
-            "datadep": LoreftIntervention_DataDepScale,
-            "token": LoreftIntervention_TokenScale,
-        }
-        intervention_cls = intervention_classes[scale_type]
-        
+
+        if intervention_type == "direft":
+            intervention_cls = DireftIntervention
+            if scale_type != "none":
+                print(f"WARNING: scale_type={scale_type} is ignored for DiReFT (not implemented)")
+        else:
+            # LoReFT with optional scaling
+            intervention_classes = {
+                "none": LoreftIntervention,
+                "scalar": LoreftIntervention_Scale,
+                "sigmoid": LoreftIntervention_SigmoidScale,
+                "token": LoreftIntervention_TokenScale,
+            }
+            intervention_cls = intervention_classes[scale_type]
+
         # Component path depends on whether we're wrapping a PEFT model
         if args.use_lora:
             # PEFT model has a different module structure
@@ -332,7 +342,8 @@ def train(args):
 
         # Print intervention details
         scale_str = f", scale={scale_type}" if scale_type != "none" else ""
-        print(f"Creating LoReFT interventions: rank={args.rank}, embed_dim={embed_dim}{scale_str}")
+        type_str = intervention_type.upper()
+        print(f"Creating {type_str} interventions: rank={args.rank}, embed_dim={embed_dim}{scale_str}")
 
         representations = [{
             "layer": l,
@@ -697,8 +708,15 @@ def main():
         "--scale_type",
         type=str,
         default=None,
-        choices=[None, "none", "scalar", "sigmoid", "datadep", "token"],
-        help="Gating type for LoReFT: none (default), scalar (learned), sigmoid (bounded [0,2]), datadep (per-sequence), token (per-token)"
+        choices=[None, "none", "scalar", "sigmoid", "token"],
+        help="Gating type for LoReFT: none (default), scalar (learned), sigmoid (bounded [0,2]), token (per-token)"
+    )
+    parser.add_argument(
+        "--intervention_type",
+        type=str,
+        default="loreft",
+        choices=["loreft", "direft"],
+        help="Intervention type: loreft (default) or direft (no Rh subtraction)"
     )
     parser.add_argument(
         "--component",

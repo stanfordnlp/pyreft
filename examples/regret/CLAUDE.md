@@ -13,7 +13,8 @@ When plotting NLL vs log(steps), **ReFT and LoRA have the same slope but differe
 - The multiplier k = exp((c_reft - c_lora) / |slope|)
 - This is fundamentally about **sample efficiency**, not initialization
 
-A potential fix: reparameterize as `W = R + ΔW` where `ΔW` is learned and initialized to 0.
+**Tried and didn't work:**
+- Zero-init (W = R^T, b = 0 so diff ≈ 0 at init) — no improvement in sample efficiency
 
 ## Key Files
 - `train.py` - Main training script for LoReFT, LoRA, LoRA+LoReFT, and full fine-tuning
@@ -38,6 +39,15 @@ ReFT can target different transformer components via `--component`:
 - **`mlp_output`** - MLP/FFN output
 - **`attention_output`** - Attention module output
 
+## Intervention Types
+Two ReFT variants are available via `--intervention_type`:
+- **`loreft`** (default): LoReFT(h) = h + R^T(Wh + b − Rh) — replaces R-subspace component
+- **`direft`**: DiReFT(h) = h + R^T(Wh + b) — adds to R-subspace (no subtraction)
+
+Key difference: In DiReFT, when W=0 and b=0, the intervention is identity (does nothing).
+In LoReFT, W=0 and b=0 means the intervention subtracts the R-subspace component.
+This has implications for weight decay regularization — see discussion in sample efficiency notes.
+
 ## Sweep Configuration
 - **Model (1B)**: Llama 3.2 1B Instruct
 - **Model (8B)**: Llama 3.1 8B Instruct (use `--model-8b` flag)
@@ -58,6 +68,7 @@ ReFT can target different transformer components via `--component`:
 - `--all-positions` - All positions: f1+l1, all, f1+s1, alls
 - `--with-mlp` - Add mlp_activation component experiments
 - `--with-lora` - Include LoRA baseline
+- `--with-direft` - Include DiReFT experiments (doubles ReFT jobs)
 - `--model-8b` - Use Llama 3.1 8B instead of 3.2 1B (auto-enables gradient checkpointing, 48G memory)
 
 ## Quick Start
@@ -74,8 +85,14 @@ uv sync --extra flash --extra peft
 # Add mlp_activation experiments (doubles jobs: 84 total)
 ./scripts/launch_sweep.sh --with-mlp --skip-done
 
+# Add DiReFT experiments (doubles ReFT jobs: 84 total)
+./scripts/launch_sweep.sh --with-direft --skip-done
+
 # Single test run (1B)
 uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --component mlp_activation
+
+# DiReFT test run
+uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type direft
 
 # Single test run (8B)
 uv run train.py --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \
@@ -94,6 +111,7 @@ cd analysis && python plot_sweep.py --project loreft-regret --project-10x loreft
 
 ## Intervention Debug Logging
 Pass `--debug_interventions` to enable metrics logging to wandb:
+- `intervention/base_norm_mean` - norm of input activations (h)
 - `intervention/diff_norm_mean` / `_max` - norm of (Wh+b - Rh)
 - `intervention/b_norm_mean` - bias norm
 - `intervention/delta_base_ratio_mean` / `_max` - relative intervention magnitude

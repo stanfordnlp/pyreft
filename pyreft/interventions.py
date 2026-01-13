@@ -47,6 +47,8 @@ class LoreftIntervention(
         self._debug_logged = False
         # Store metrics for wandb logging
         self.metrics = {}
+        # Save full parametrization state for training continuation (off by default for smaller files)
+        self.save_for_training = kwargs.get("save_for_training", False)
         
     def forward(
         self, base, source=None, subspaces=None
@@ -87,17 +89,21 @@ class LoreftIntervention(
 
     def state_dict(self, *args, **kwargs):
         """
-        Save state for checkpoint. Includes both the computed orthogonal weight
-        and the internal parametrization state for proper training continuation.
+        Save state for checkpoint.
+
+        By default, only saves the computed orthogonal weight (for inference).
+        If save_for_training=True, also saves internal parametrization state
+        needed for training continuation without breaking orthogonality.
         """
         state_dict = OrderedDict()
         for k, v in self.learned_source.state_dict().items():
             state_dict[k] = v
-        # Save computed orthogonal weight (for inference/backwards compat)
+        # Save computed orthogonal weight (always, for inference)
         state_dict["rotate_layer"] = self.rotate_layer.weight.data
-        # Save internal parametrization state (for training continuation)
-        state_dict["rotate_layer_original"] = self.rotate_layer.parametrizations.weight.original.data
-        state_dict["rotate_layer_base"] = self.rotate_layer.parametrizations.weight[0].base.data
+        # Optionally save internal parametrization state (for training continuation)
+        if self.save_for_training:
+            state_dict["rotate_layer_original"] = self.rotate_layer.parametrizations.weight.original.data
+            state_dict["rotate_layer_base"] = self.rotate_layer.parametrizations.weight[0].base.data
         return state_dict
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -184,36 +190,6 @@ class LoreftIntervention_SigmoidScale(LoreftIntervention):
             self.rotate_layer.weight.T
         )
         scale = 2.0 * torch.sigmoid(self.scale_logit - 5.0)
-        output = base + scale * delta
-        return self.dropout(output.to(base.dtype))
-
-
-class LoreftIntervention_DataDepScale(LoreftIntervention):
-    """
-    LoReFT with data-dependent gating (per-sequence).
-    
-    LoReFT(h) = h + scale(h) * R^T(Wh + b − Rh)
-    where scale(h) = 2 * sigmoid(gate_proj(pool(h)))
-    
-    Similar to Deep Delta Learning's gating mechanism.
-    """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        dtype = kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
-        self.gate_proj = torch.nn.Linear(self.embed_dim, 1, bias=True).to(dtype)
-        # Initialize to output near 0 at start
-        torch.nn.init.zeros_(self.gate_proj.weight)
-        torch.nn.init.constant_(self.gate_proj.bias, -5.0)
-    
-    def forward(self, base, source=None, subspaces=None):
-        rotated_base = self.rotate_layer(base)
-        delta = torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base), 
-            self.rotate_layer.weight.T
-        )
-        # Pool over sequence dimension, compute gate
-        pooled = base.mean(dim=1, keepdim=True)  # (B, 1, D)
-        scale = 2.0 * torch.sigmoid(self.gate_proj(pooled))  # (B, 1, 1)
         output = base + scale * delta
         return self.dropout(output.to(base.dtype))
 
@@ -328,7 +304,7 @@ class LobireftIntervention(
 
 class DireftIntervention(
     SourcelessIntervention,
-    TrainableIntervention, 
+    TrainableIntervention,
     DistributedRepresentationIntervention
 ):
     """
@@ -343,14 +319,39 @@ class DireftIntervention(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
         self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
-        
+        # Debug logging (off by default)
+        self.debug = kwargs.get("debug", False)
+        self._debug_logged = False
+        self.metrics = {}
+
     def forward(
         self, base, source=None, subspaces=None
     ):
         cast_base = base.to(self.learned_source.weight.dtype)
-        output = base + torch.matmul(
-            (self.act_fn(self.learned_source(cast_base))).to(self.rotate_layer.weight.dtype), self.rotate_layer.weight.T
-        )
+        learned = self.act_fn(self.learned_source(cast_base))
+        delta = torch.matmul(learned.to(self.rotate_layer.weight.dtype), self.rotate_layer.weight.T)
+
+        # Store metrics for logging (only if debug=True)
+        if self.debug:
+            # For DiReFT: diff = Wh + b (no subtraction), ||delta|| = ||learned|| since R is orthonormal
+            learned_norm = learned.norm().item()
+            base_norm = base.norm().item()
+            b_norm = self.learned_source.bias.norm().item()
+            self.metrics = {
+                "base_norm": base_norm,
+                "learned_norm": learned_norm,
+                "b_norm": b_norm,
+                "diff_norm": learned_norm,  # For DiReFT, diff = learned = Wh + b
+                "delta_base_ratio": learned_norm / (base_norm + 1e-8),
+            }
+            if not self._debug_logged:
+                print(f"[DEBUG DireftIntervention] First forward:")
+                print(f"  base norm: {base_norm:.4f}")
+                print(f"  Wh+b norm: {learned_norm:.4f}, b norm: {b_norm:.4f}")
+                print(f"  delta/base ratio: {self.metrics['delta_base_ratio']:.4f}")
+                self._debug_logged = True
+
+        output = base + delta
         return self.dropout(output.to(base.dtype))
 
 
