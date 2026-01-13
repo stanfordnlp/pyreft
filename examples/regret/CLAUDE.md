@@ -40,13 +40,14 @@ ReFT can target different transformer components via `--component`:
 - **`attention_output`** - Attention module output
 
 ## Intervention Types
-Two ReFT variants are available via `--intervention_type`:
-- **`loreft`** (default): LoReFT(h) = h + R^T(Wh + b − Rh) — replaces R-subspace component
-- **`direft`**: DiReFT(h) = h + R^T(Wh + b) — adds to R-subspace (no subtraction)
+Three ReFT variants are available via `--intervention_type`:
+- **`loreft`** (default): LoReFT(h) = h + R^T(Wh + b − Rh) — replaces R-subspace component (R orthogonal)
+- **`direft`**: DiReFT(h) = h + R^T(Wh + b) — adds to R-subspace (R orthogonal, no subtraction)
+- **`nodireft`**: NoDiReFT(h) = h + W2^T(W1h + b) — no orthogonality constraint on W2
 
-Key difference: In DiReFT, when W=0 and b=0, the intervention is identity (does nothing).
-In LoReFT, W=0 and b=0 means the intervention subtracts the R-subspace component.
-This has implications for weight decay regularization — see discussion in sample efficiency notes.
+Key differences:
+- **LoReFT vs DiReFT**: In DiReFT, when W=0 and b=0, the intervention is identity. In LoReFT, it subtracts the R-subspace. This affects weight decay regularization.
+- **DiReFT vs NoDiReFT**: NoDiReFT removes the orthogonality constraint on the projection matrix, making it a standard low-rank adapter.
 
 ## Sweep Configuration
 - **Model (1B)**: Llama 3.2 1B Instruct
@@ -68,7 +69,8 @@ This has implications for weight decay regularization — see discussion in samp
 - `--all-positions` - All positions: f1+l1, all, f1+s1, alls
 - `--with-mlp` - Add mlp_activation component experiments
 - `--with-lora` - Include LoRA baseline
-- `--with-direft` - Include DiReFT experiments (doubles ReFT jobs)
+- `--with-direft` - Include DiReFT experiments
+- `--with-nodireft` - Include NoDiReFT experiments (no orthogonality)
 - `--model-8b` - Use Llama 3.1 8B instead of 3.2 1B (auto-enables gradient checkpointing, 48G memory)
 
 ## Quick Start
@@ -93,6 +95,9 @@ uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --component 
 
 # DiReFT test run
 uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type direft
+
+# NoDiReFT test run (no orthogonality)
+uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type nodireft
 
 # Single test run (8B)
 uv run train.py --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \

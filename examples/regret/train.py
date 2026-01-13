@@ -41,6 +41,7 @@ from pyreft import (
     LoreftIntervention_SigmoidScale,
     LoreftIntervention_TokenScale,
     DireftIntervention,
+    NodireftIntervention,
     ReftDataCollator,
     ReftGenerationDataset,
 )
@@ -316,6 +317,10 @@ def train(args):
             intervention_cls = DireftIntervention
             if scale_type != "none":
                 print(f"WARNING: scale_type={scale_type} is ignored for DiReFT (not implemented)")
+        elif intervention_type == "nodireft":
+            intervention_cls = NodireftIntervention
+            if scale_type != "none":
+                print(f"WARNING: scale_type={scale_type} is ignored for NoDiReFT (not implemented)")
         else:
             # LoReFT with optional scaling
             intervention_classes = {
@@ -345,18 +350,24 @@ def train(args):
         type_str = intervention_type.upper()
         print(f"Creating {type_str} interventions: rank={args.rank}, embed_dim={embed_dim}{scale_str}")
 
+        # Build intervention kwargs
+        intervention_kwargs = {
+            "embed_dim": embed_dim,
+            "low_rank_dimension": args.rank,
+            "dropout": args.dropout,
+            "dtype": dtype,
+            "act_fn": args.act_fn,
+            "debug": args.debug_interventions,
+        }
+        # NodireftIntervention requires add_bias
+        if intervention_type == "nodireft":
+            intervention_kwargs["add_bias"] = True
+
         representations = [{
             "layer": l,
             "component": component.format(layer=l) if args.use_lora else component,
             "low_rank_dimension": args.rank,
-            "intervention": intervention_cls(
-                embed_dim=embed_dim,
-                low_rank_dimension=args.rank,
-                dropout=args.dropout,
-                dtype=dtype,
-                act_fn=args.act_fn,
-                debug=args.debug_interventions,
-            )
+            "intervention": intervention_cls(**intervention_kwargs)
         } for l in layers]
         
         # Create ReFT config and model
@@ -715,8 +726,8 @@ def main():
         "--intervention_type",
         type=str,
         default="loreft",
-        choices=["loreft", "direft"],
-        help="Intervention type: loreft (default) or direft (no Rh subtraction)"
+        choices=["loreft", "direft", "nodireft"],
+        help="Intervention type: loreft (default), direft (no Rh subtraction), nodireft (no orthogonality)"
     )
     parser.add_argument(
         "--component",

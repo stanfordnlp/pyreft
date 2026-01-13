@@ -357,7 +357,7 @@ class DireftIntervention(
 
 class NodireftIntervention(
     SourcelessIntervention,
-    TrainableIntervention, 
+    TrainableIntervention,
     DistributedRepresentationIntervention
 ):
     """
@@ -373,12 +373,37 @@ class NodireftIntervention(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
         self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
-        
+        # Debug logging (off by default)
+        self.debug = kwargs.get("debug", False)
+        self._debug_logged = False
+        self.metrics = {}
+
     def forward(
         self, base, source=None, subspaces=None
     ):
-        output = base + torch.matmul(
-            self.act_fn(self.learned_source(base)), self.proj_layer.weight
-        )
+        cast_base = base.to(self.learned_source.weight.dtype)
+        learned = self.act_fn(self.learned_source(cast_base))
+        delta = torch.matmul(learned, self.proj_layer.weight)
+
+        # Store metrics for logging (only if debug=True)
+        if self.debug:
+            learned_norm = learned.norm().item()
+            base_norm = base.norm().item()
+            b_norm = self.learned_source.bias.norm().item()
+            self.metrics = {
+                "base_norm": base_norm,
+                "learned_norm": learned_norm,
+                "b_norm": b_norm,
+                "diff_norm": learned_norm,  # For NodiReFT, diff = learned = W1h + b
+                "delta_base_ratio": delta.norm().item() / (base_norm + 1e-8),
+            }
+            if not self._debug_logged:
+                print(f"[DEBUG NodireftIntervention] First forward:")
+                print(f"  base norm: {base_norm:.4f}")
+                print(f"  W1h+b norm: {learned_norm:.4f}, b norm: {b_norm:.4f}")
+                print(f"  delta/base ratio: {self.metrics['delta_base_ratio']:.4f}")
+                self._debug_logged = True
+
+        output = base + delta
         return self.dropout(output.to(base.dtype))
 

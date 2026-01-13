@@ -13,6 +13,7 @@
 #   ./scripts/launch_sweep.sh --with-mlp   # Add mlp_activation experiments
 #   ./scripts/launch_sweep.sh --all-components # All components (block_output, mlp_activation)
 #   ./scripts/launch_sweep.sh --with-direft  # Include DiReFT experiments
+#   ./scripts/launch_sweep.sh --with-nodireft # Include NoDiReFT experiments (no orthogonality)
 #   ./scripts/launch_sweep.sh --rank1-only # Only rank=1 experiments
 # ============================================================
 
@@ -51,6 +52,7 @@ ALL_POSITIONS=false
 WITH_MLP=false
 ALL_COMPONENTS=false
 WITH_DIREFT=false
+WITH_NODIREFT=false
 RANK1_ONLY=false
 MODEL_8B=false
 
@@ -63,6 +65,7 @@ for arg in "$@"; do
         --with-mlp) WITH_MLP=true; echo "=== INCLUDING MLP_ACTIVATION EXPERIMENTS ===" ;;
         --all-components) ALL_COMPONENTS=true; echo "=== ALL COMPONENTS MODE ===" ;;
         --with-direft) WITH_DIREFT=true; echo "=== INCLUDING DIREFT EXPERIMENTS ===" ;;
+        --with-nodireft) WITH_NODIREFT=true; echo "=== INCLUDING NODIREFT EXPERIMENTS ===" ;;
         --rank1-only) RANK1_ONLY=true; echo "=== RANK 1 ONLY ==="; RANKS=(1); LORA_RANKS=(1) ;;
         --model-8b) MODEL_8B=true; echo "=== LLAMA 3.1 8B MODE ===" ;;
     esac
@@ -109,11 +112,15 @@ direft_jobs=0
 if $WITH_DIREFT; then
     direft_jobs=$((${#RANKS[@]} * ${#LRS[@]} * ${#POSITIONS[@]} * ${#COMPONENTS[@]}))
 fi
+nodireft_jobs=0
+if $WITH_NODIREFT; then
+    nodireft_jobs=$((${#RANKS[@]} * ${#LRS[@]} * ${#POSITIONS[@]} * ${#COMPONENTS[@]}))
+fi
 lora_jobs=0
 if $WITH_LORA; then
     lora_jobs=$((${#LORA_RANKS[@]} * ${#LORA_LRS[@]}))
 fi
-total_jobs=$((loreft_jobs + direft_jobs + lora_jobs))
+total_jobs=$((loreft_jobs + direft_jobs + nodireft_jobs + lora_jobs))
 
 echo "Submitting sweep:"
 echo "  Model: $MODEL"
@@ -127,6 +134,9 @@ fi
 echo "  LoReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x ${#POSITIONS[@]} positions x ${#COMPONENTS[@]} components = $loreft_jobs jobs"
 if $WITH_DIREFT; then
     echo "  DiReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x ${#POSITIONS[@]} positions x ${#COMPONENTS[@]} components = $direft_jobs jobs"
+fi
+if $WITH_NODIREFT; then
+    echo "  NoDiReFT: ${#RANKS[@]} ranks x ${#LRS[@]} LRs x ${#POSITIONS[@]} positions x ${#COMPONENTS[@]} components = $nodireft_jobs jobs"
 fi
 if $WITH_LORA; then
     echo "  LoRA: ${#LORA_RANKS[@]} ranks x ${#LORA_LRS[@]} LRs = $lora_jobs jobs"
@@ -242,6 +252,62 @@ if $WITH_DIREFT; then
                         echo "$cmd"
                     else
                         echo "Submitting DiReFT: rank=$rank, position=$position, component=$component, lr=$lr"
+                        $cmd
+                    fi
+
+                    job_count=$((job_count + 1))
+                done
+            done
+        done
+    done
+fi
+
+# --- NoDiReFT sweep ---
+if $WITH_NODIREFT; then
+    echo ""
+    echo "=== NoDiReFT Sweep ==="
+    for component in "${COMPONENTS[@]}"; do
+        # Short name for component (for job naming)
+        if [[ "$component" == "block_output" ]]; then
+            comp_short=""  # Default, don't add to name
+            COMPONENT_FLAG=""
+        else
+            comp_short="_${component}"
+            COMPONENT_FLAG=",COMPONENT=$component"
+        fi
+
+        for position in "${POSITIONS[@]}"; do
+            # Determine if share_weights is needed
+            SHARE_FLAG=""
+            if [[ "$position" == "all" || "$position" == "alls" ]]; then
+                SHARE_FLAG=",SHARE_WEIGHTS=true"
+            fi
+
+            for rank in "${RANKS[@]}"; do
+                for lr in "${LRS[@]}"; do
+                    pos_short=$(echo "$position" | sed 's/+//')
+                    job_name="${MODEL_PREFIX}nodireft_r${rank}_${pos_short}${comp_short}_lr${lr}"
+
+                    # Add component to run_name if not block_output
+                    if [[ "$component" == "block_output" ]]; then
+                        run_name="nodireft_r${rank}___${position}___lr${lr}"
+                    else
+                        run_name="nodireft_r${rank}___${position}___${component}___lr${lr}"
+                    fi
+
+                    # Skip if already done
+                    if $SKIP_DONE && is_done "$run_name"; then
+                        echo "Skipping (done): $run_name"
+                        skipped_count=$((skipped_count + 1))
+                        continue
+                    fi
+
+                    cmd="sbatch $SBATCH_EXTRA --mem=$GPU_MEM --job-name=$job_name --export=ALL,MODEL=$MODEL,RANK=$rank,LR=$lr,POSITION=$position${SHARE_FLAG}${COMPONENT_FLAG},INTERVENTION_TYPE=nodireft,MAX_EXAMPLES=$MAX_EXAMPLES,EPOCHS=$EPOCHS,BATCH_SIZE=$BATCH_SIZE,GRAD_ACCUM=$GRAD_ACCUM,WANDB_PROJECT=$WANDB_PROJECT,OUTPUT_DIR=$OUTPUT_DIR,USE_FLASH_ATTN=$USE_FLASH_ATTN scripts/sweep.sbatch"
+
+                    if $DRY_RUN; then
+                        echo "$cmd"
+                    else
+                        echo "Submitting NoDiReFT: rank=$rank, position=$position, component=$component, lr=$lr"
                         $cmd
                     fi
 
