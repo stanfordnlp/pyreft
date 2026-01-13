@@ -14,6 +14,7 @@
 #   ./scripts/launch_sweep.sh --all-components # All components (block_output, mlp_activation)
 #   ./scripts/launch_sweep.sh --with-direft  # Include DiReFT experiments
 #   ./scripts/launch_sweep.sh --with-nodireft # Include NoDiReFT experiments (no orthogonality)
+#   ./scripts/launch_sweep.sh --with-suffix-positions # Add suffix position experiments (s1, s3, s5, f1+s3, f1+s5)
 #   ./scripts/launch_sweep.sh --rank1-only # Only rank=1 experiments
 # ============================================================
 
@@ -53,6 +54,7 @@ WITH_MLP=false
 ALL_COMPONENTS=false
 WITH_DIREFT=false
 WITH_NODIREFT=false
+WITH_SUFFIX_POSITIONS=false
 RANK1_ONLY=false
 MODEL_8B=false
 
@@ -66,6 +68,7 @@ for arg in "$@"; do
         --all-components) ALL_COMPONENTS=true; echo "=== ALL COMPONENTS MODE ===" ;;
         --with-direft) WITH_DIREFT=true; echo "=== INCLUDING DIREFT EXPERIMENTS ===" ;;
         --with-nodireft) WITH_NODIREFT=true; echo "=== INCLUDING NODIREFT EXPERIMENTS ===" ;;
+        --with-suffix-positions) WITH_SUFFIX_POSITIONS=true; echo "=== INCLUDING SUFFIX POSITION EXPERIMENTS ===" ;;
         --rank1-only) RANK1_ONLY=true; echo "=== RANK 1 ONLY ==="; RANKS=(1); LORA_RANKS=(1) ;;
         --model-8b) MODEL_8B=true; echo "=== LLAMA 3.1 8B MODE ===" ;;
     esac
@@ -95,6 +98,11 @@ if $ALL_POSITIONS; then
     POSITIONS=("f1+s1" "alls" "f1+l1" "all")
 else
     POSITIONS=("f1+s1")
+fi
+
+# Add suffix position experiments if requested
+if $WITH_SUFFIX_POSITIONS; then
+    POSITIONS+=("s1" "s3" "s5" "f1+s3" "f1+s5")
 fi
 
 # --- Build component list ---
