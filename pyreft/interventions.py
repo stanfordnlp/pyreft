@@ -47,6 +47,8 @@ class LoreftIntervention(
         self._debug_logged = False
         # Store metrics for wandb logging
         self.metrics = {}
+        # Save full parametrization state for training continuation (off by default for smaller files)
+        self.save_for_training = kwargs.get("save_for_training", False)
         
     def forward(
         self, base, source=None, subspaces=None
@@ -87,17 +89,21 @@ class LoreftIntervention(
 
     def state_dict(self, *args, **kwargs):
         """
-        Save state for checkpoint. Includes both the computed orthogonal weight
-        and the internal parametrization state for proper training continuation.
+        Save state for checkpoint.
+
+        By default, only saves the computed orthogonal weight (for inference).
+        If save_for_training=True, also saves internal parametrization state
+        needed for training continuation without breaking orthogonality.
         """
         state_dict = OrderedDict()
         for k, v in self.learned_source.state_dict().items():
             state_dict[k] = v
-        # Save computed orthogonal weight (for inference/backwards compat)
+        # Save computed orthogonal weight (always, for inference)
         state_dict["rotate_layer"] = self.rotate_layer.weight.data
-        # Save internal parametrization state (for training continuation)
-        state_dict["rotate_layer_original"] = self.rotate_layer.parametrizations.weight.original.data
-        state_dict["rotate_layer_base"] = self.rotate_layer.parametrizations.weight[0].base.data
+        # Optionally save internal parametrization state (for training continuation)
+        if self.save_for_training:
+            state_dict["rotate_layer_original"] = self.rotate_layer.parametrizations.weight.original.data
+            state_dict["rotate_layer_base"] = self.rotate_layer.parametrizations.weight[0].base.data
         return state_dict
 
     def load_state_dict(self, state_dict, *args, **kwargs):
