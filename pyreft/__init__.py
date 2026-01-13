@@ -21,7 +21,6 @@ from .interventions import (
     LoreftIntervention,
     LoreftIntervention_Scale,
     LoreftIntervention_SigmoidScale,
-    LoreftIntervention_DataDepScale,
     LoreftIntervention_TokenScale,
     ConsreftIntervention,
     LobireftIntervention,

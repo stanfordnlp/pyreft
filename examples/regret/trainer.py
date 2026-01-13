@@ -90,6 +90,7 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         if not hasattr(self.model, 'interventions'):
             return {}
 
+        all_base_norms = []
         all_diff_norms = []
         all_b_norms = []
         all_delta_base_ratios = []
@@ -98,6 +99,8 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
             intervention = v[0] if isinstance(v, (list, tuple)) else v
             if hasattr(intervention, 'metrics') and intervention.metrics:
                 metrics = intervention.metrics
+                if 'base_norm' in metrics:
+                    all_base_norms.append(metrics['base_norm'])
                 if 'diff_norm' in metrics:
                     all_diff_norms.append(metrics['diff_norm'])
                 if 'b_norm' in metrics:
@@ -109,6 +112,8 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
                     intervention.metrics = {}
 
         result = {}
+        if all_base_norms:
+            result['intervention/base_norm_mean'] = np.mean(all_base_norms)
         if all_diff_norms:
             result['intervention/diff_norm_mean'] = np.mean(all_diff_norms)
             result['intervention/diff_norm_max'] = np.max(all_diff_norms)
