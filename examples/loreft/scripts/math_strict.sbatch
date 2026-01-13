@@ -72,8 +72,7 @@ uv run train.py -task math \
     --share_weights \
     --warmup_ratio 0.1 \
     --greedy_decoding \
-    --is_wandb \
-    --wandb_name "math_${POSITION}_seed${SEED}"
+    --is_wandb
 
 echo "============================================"
 echo "Finished at: $(date)"
