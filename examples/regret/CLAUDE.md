@@ -138,6 +138,23 @@ See `tests/test_orthogonality_save_load.py` for verification.
 ## Known Issues
 1. **position vs positions**: Inconsistent naming in `pyreft/dataset.py`. `get_intervention_locations` checks both keys as a workaround.
 2. **Trainer.log() signature**: HuggingFace changed it to include `start_time` - our custom trainer override must match.
+3. **Gradient checkpointing + pyvene**: Incompatible — pyvene hooks cause tensor count mismatch during recomputation. Use smaller batch size + gradient accumulation instead. See [pyvene issue #231](https://github.com/stanfordnlp/pyvene/issues/231).
+
+## Weight Decay & Intervention Design (Research Notes)
+**Key insight**: Weight decay behaves differently for LoReFT vs DiReFT/NoDiReFT:
+- **LoRA**: W = W₀ + BA, B zero-init → weight decay pushes toward pretrained (do nothing)
+- **LoReFT**: W random, weight decay pushes W→0 → does NOT regularize toward identity
+- **DiReFT/NoDiReFT**: When W=0, b=0, intervention is identity → weight decay regularizes toward "do nothing"
+
+This may explain sample efficiency differences. DiReFT with proper weight decay could behave more like LoRA.
+
+**Norm growth observation**: During training, `diff_norm` grows (log-linear), but `delta_base_ratio` saturates below 1. Each layer's intervention adds to the norm — with 32 layers this compounds. LayerNorm prevents explosion but geometry still shifts. Potential fix: norm-preserving interventions.
+
+## Custom Slash Commands
+Located in `.claude/commands/` at repo root:
+- `/project:commit-push [message]` - Stage, commit, and push changes
+- `/project:add-intervention [name]` - Add new intervention type (imports, argparse, sweep scripts, docs)
+- `/project:update-docs [context]` - Update CLAUDE.md based on recent changes
 
 ## Branch
 `aryaman/regret`
