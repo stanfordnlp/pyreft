@@ -73,7 +73,7 @@ uv run train.py -task math \
     --warmup_ratio 0.1 \
     --greedy_decoding \
     --is_wandb \
-    --wandb_name "math_${POSITION}_seed${SEED}"
+    --wandb_name "math_f7s7_seed${SEED}"
 
 echo "============================================"
 echo "Finished at: $(date)"

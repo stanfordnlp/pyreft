@@ -75,7 +75,7 @@ uv run train.py -task commonsense \
     --warmup_ratio 0.1 \
     --greedy_decoding \
     --is_wandb \
-    --wandb_name "commonsense_${POSITION}_seed${SEED}"
+    --wandb_name "commonsense_f7s7_seed${SEED}"
 
 echo "============================================"
 echo "Finished at: $(date)"
