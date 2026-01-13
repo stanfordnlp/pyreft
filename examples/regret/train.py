@@ -252,11 +252,18 @@ def train(args):
         model.resize_token_embeddings(len(tokenizer))
 
     # Enable gradient checkpointing on base model BEFORE wrapping
-    # (ReftModel doesn't expose this method, so we do it here)
-    # use_reentrant=False is required since ReFT doesn't train embeddings
+    # NOTE: Gradient checkpointing is NOT compatible with pyvene/ReFT due to
+    # hook mechanism causing tensor count mismatch during recomputation.
+    # Only enable for LoRA-only or full finetune modes.
     if args.gradient_checkpointing:
-        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-        print("Enabled gradient checkpointing on base model")
+        if not args.disable_reft:
+            print("WARNING: Gradient checkpointing is not compatible with ReFT (pyvene hooks).")
+            print("         Use smaller batch size + gradient accumulation instead.")
+            print("         Disabling gradient checkpointing.")
+            args.gradient_checkpointing = False
+        else:
+            model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+            print("Enabled gradient checkpointing on base model")
 
     # Apply LoRA if requested (before ReFT wrapping)
     if args.use_lora:
