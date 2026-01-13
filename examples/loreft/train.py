@@ -385,7 +385,7 @@ def finetune(
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=eval_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
-        evaluation_strategy="epoch" if task == "glue" else "no",
+        eval_strategy="epoch" if task == "glue" else "no",
         save_strategy="epoch" if task == "glue" else "no",
         metric_for_best_model=metric_for_best_model if task == "glue" else None,
         load_best_model_at_end=True if task == "glue" else False,
