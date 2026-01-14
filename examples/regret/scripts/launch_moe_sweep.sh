@@ -10,11 +10,12 @@
 #   - moerloreft: MoE on R (the orthogonal projection)
 #
 # Usage (run from examples/regret/):
-#   ./scripts/launch_moe_sweep.sh              # Default: both variants
+#   ./scripts/launch_moe_sweep.sh              # Default: both variants, f1+s1 only
 #   ./scripts/launch_moe_sweep.sh --dry-run    # Print commands without submitting
-#   ./scripts/launch_moe_sweep.sh --skip-done  # Skip completed jobs
+#   ./scripts/launch_moe_sweep.sh --skip-done  # Skip completed/running jobs
 #   ./scripts/launch_moe_sweep.sh --rank1-only # Only rank=1 experiments
 #   ./scripts/launch_moe_sweep.sh --model-8b   # Use Llama 3.1 8B
+#   ./scripts/launch_moe_sweep.sh --all-positions # Positions: f1+s1, f1+s3, f1+s5, f3+s3, f5+s5
 #   ./scripts/launch_moe_sweep.sh --moe-w-only # Only MoE-W (moeloreft)
 #   ./scripts/launch_moe_sweep.sh --moe-r-only # Only MoE-R (moerloreft)
 # ============================================================
@@ -79,7 +80,7 @@ fi
 
 # Build position list
 if $ALL_POSITIONS; then
-    POSITIONS=("f1+s1" "alls" "f1+l1" "all")
+    POSITIONS=("f1+s1" "f1+s3" "f1+s5" "f3+s3" "f5+s5")
 fi
 
 # Function to check if job is already done
