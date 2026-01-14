@@ -94,7 +94,8 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         all_diff_norms = []
         all_b_norms = []
         all_delta_base_ratios = []
-        all_expert_pcts = {}  # expert_i -> list of pcts across layers
+        all_expert_entropies = []
+        all_expert_entropies_norm = []
 
         for key, v in self.model.interventions.items():
             intervention = v[0] if isinstance(v, (list, tuple)) else v
@@ -108,12 +109,11 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
                     all_b_norms.append(metrics['b_norm'])
                 if 'delta_base_ratio' in metrics:
                     all_delta_base_ratios.append(metrics['delta_base_ratio'])
-                # Collect MoE expert percentages
-                for k, val in metrics.items():
-                    if k.startswith('expert_') and k.endswith('_pct'):
-                        if k not in all_expert_pcts:
-                            all_expert_pcts[k] = []
-                        all_expert_pcts[k].append(val)
+                # Collect MoE expert entropy
+                if 'expert_entropy' in metrics:
+                    all_expert_entropies.append(metrics['expert_entropy'])
+                if 'expert_entropy_normalized' in metrics:
+                    all_expert_entropies_norm.append(metrics['expert_entropy_normalized'])
                 # Clear metrics after collecting
                 if clear_after:
                     intervention.metrics = {}
@@ -129,9 +129,11 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         if all_delta_base_ratios:
             result['intervention/delta_base_ratio_mean'] = np.mean(all_delta_base_ratios)
             result['intervention/delta_base_ratio_max'] = np.max(all_delta_base_ratios)
-        # Add MoE expert percentages (averaged across layers)
-        for k, vals in all_expert_pcts.items():
-            result[f'intervention/{k}'] = np.mean(vals)
+        # Add MoE expert entropy (averaged across layers)
+        if all_expert_entropies:
+            result['intervention/expert_entropy_mean'] = np.mean(all_expert_entropies)
+        if all_expert_entropies_norm:
+            result['intervention/expert_entropy_norm_mean'] = np.mean(all_expert_entropies_norm)
 
         return result
 

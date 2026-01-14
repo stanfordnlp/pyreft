@@ -192,6 +192,9 @@ def fetch_wandb_runs(project: str, entity: str = None, include_incomplete: bool 
             "method": method,
             "intervention_type": intervention_type,
             "full_finetune": full_finetune,
+            # MoE config
+            "num_experts": config.get("num_experts"),
+            "top_k": config.get("top_k"),
             # Params
             "trainable_params": config.get("trainable_params") or summary.get("trainable_params"),
             # Handle both key formats: eval/nll and eval_nll
@@ -602,7 +605,7 @@ def plot_flops_comparison(
 
 
 def get_best_runs(df: pd.DataFrame):
-    """Get best LR run for each (method, rank, position, component, intervention_type)."""
+    """Get best LR run for each (method, rank, position, component, intervention_type, num_experts)."""
     best_runs = []
 
     # ReFT runs
@@ -610,27 +613,50 @@ def get_best_runs(df: pd.DataFrame):
 
     for intervention_type in reft_df["intervention_type"].dropna().unique():
         int_data = reft_df[reft_df["intervention_type"] == intervention_type]
-        for position in int_data["position"].dropna().unique():
-            pos_data = int_data[int_data["position"] == position]
-            for component in pos_data["component"].dropna().unique():
-                comp_data = pos_data[pos_data["component"] == component]
-                for rank in comp_data["rank"].dropna().unique():
-                    rank_data = comp_data[comp_data["rank"] == rank]
-                    if not rank_data.empty:
-                        best_idx = rank_data["eval_nll"].idxmin()
-                        best_row = rank_data.loc[best_idx].to_dict()
-                        # Build facet name: intervention_type (position, component)
-                        int_name = intervention_type.upper() if intervention_type != "loreft" else "LoReFT"
-                        if component == "block_output":
-                            best_row["facet"] = f"{int_name} ({position})"
-                        else:
-                            best_row["facet"] = f"{int_name} ({position}, {component})"
-                        best_row["rank_val"] = rank
-                        best_row["method_type"] = "reft"
-                        best_row["intervention_type_val"] = intervention_type
-                        best_row["position_val"] = position
-                        best_row["component_val"] = component
-                        best_runs.append(best_row)
+
+        # For MoE methods, also group by num_experts
+        is_moe = intervention_type in ("moeloreft", "moerloreft")
+        if is_moe:
+            expert_values = int_data["num_experts"].dropna().unique()
+        else:
+            expert_values = [None]
+
+        for num_experts in expert_values:
+            if num_experts is not None:
+                expert_data = int_data[int_data["num_experts"] == num_experts]
+            else:
+                expert_data = int_data
+
+            for position in expert_data["position"].dropna().unique():
+                pos_data = expert_data[expert_data["position"] == position]
+                for component in pos_data["component"].dropna().unique():
+                    comp_data = pos_data[pos_data["component"] == component]
+                    for rank in comp_data["rank"].dropna().unique():
+                        rank_data = comp_data[comp_data["rank"] == rank]
+                        if not rank_data.empty:
+                            best_idx = rank_data["eval_nll"].idxmin()
+                            best_row = rank_data.loc[best_idx].to_dict()
+                            # Build facet name
+                            if intervention_type == "loreft":
+                                int_name = "LoReFT"
+                            elif intervention_type == "moeloreft":
+                                int_name = f"MoE-W e={int(num_experts)}"
+                            elif intervention_type == "moerloreft":
+                                int_name = f"MoE-R e={int(num_experts)}"
+                            else:
+                                int_name = intervention_type.upper()
+
+                            if component == "block_output":
+                                best_row["facet"] = f"{int_name} ({position})"
+                            else:
+                                best_row["facet"] = f"{int_name} ({position}, {component})"
+                            best_row["rank_val"] = rank
+                            best_row["method_type"] = "reft"
+                            best_row["intervention_type_val"] = intervention_type
+                            best_row["position_val"] = position
+                            best_row["component_val"] = component
+                            best_row["num_experts_val"] = num_experts
+                            best_runs.append(best_row)
 
     # LoRA runs
     lora_df = df[df["method"] == "lora"].copy()
@@ -696,6 +722,7 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
                 "intervention_type_val": run.get("intervention_type_val", "loreft"),
                 "position_val": position,
                 "component_val": component,
+                "num_experts_val": run.get("num_experts_val"),
                 "rank": rank,
                 "slope": slope,
                 "intercept": intercept,
@@ -1074,6 +1101,7 @@ def compute_sample_efficiency(coefficients: list, output_dir: Path, n_bootstrap=
         "intervention_type": c.get("intervention_type_val", "loreft"),
         "position": c.get("position_val"),
         "component": c.get("component_val", "block_output"),
+        "num_experts": c.get("num_experts_val"),
         "rank": c["rank"],
         "slope": c["slope"],
         "intercept": c["intercept"],
@@ -1500,6 +1528,8 @@ def main():
     print(f"Positions: {df['position'].dropna().unique()}")
     print(f"Components: {df['component'].dropna().unique()}")
     print(f"ReFT Ranks: {sorted(df['rank'].dropna().unique())}")
+    if df['num_experts'].notna().any():
+        print(f"MoE num_experts: {sorted(df['num_experts'].dropna().unique())}")
     print(f"LoRA Ranks: {sorted(df['lora_rank'].dropna().unique())}")
     print(f"LRs: {sorted(df['lr'].dropna().unique())}")
     

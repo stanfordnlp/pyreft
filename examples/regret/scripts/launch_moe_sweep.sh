@@ -88,6 +88,12 @@ is_done() {
     [[ -f "${OUTPUT_DIR}/${run_name}/training_args.json" ]]
 }
 
+# Function to check if job is running/pending in SLURM queue
+is_running() {
+    local job_name="$1"
+    squeue -u $USER -n "$job_name" -h 2>/dev/null | grep -q .
+}
+
 # --- Create logs directory ---
 mkdir -p logs
 
@@ -146,9 +152,14 @@ for moe_type in "${MOE_TYPES[@]}"; do
                     job_name="${MODEL_PREFIX}${moe_type}_r${rank}_e${num_experts}_${pos_short}_lr${lr}"
                     run_name="${moe_type}_r${rank}_e${num_experts}_k${TOP_K}___${position}___lr${lr}"
 
-                    # Skip if already done
+                    # Skip if already done or running
                     if $SKIP_DONE && is_done "$run_name"; then
                         echo "Skipping (done): $run_name"
+                        skipped_count=$((skipped_count + 1))
+                        continue
+                    fi
+                    if $SKIP_DONE && is_running "$job_name"; then
+                        echo "Skipping (running): $job_name"
                         skipped_count=$((skipped_count + 1))
                         continue
                     fi

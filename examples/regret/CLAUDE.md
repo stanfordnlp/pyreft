@@ -50,7 +50,7 @@ Four ReFT variants are available via `--intervention_type`:
 Key differences:
 - **LoReFT vs DiReFT**: In DiReFT, when W=0 and b=0, the intervention is identity. In LoReFT, it subtracts the R-subspace. This affects weight decay regularization.
 - **DiReFT vs NoDiReFT**: NoDiReFT removes the orthogonality constraint on the projection matrix, making it a standard low-rank adapter.
-- **MoE-W-LoReFT**: Uses `--num_experts` (default 4) and `--top_k` (default 2) to route each token to a subset of expert W matrices. Logs per-expert activation percentages.
+- **MoE-W-LoReFT**: Uses `--num_experts` (default 4) and `--top_k` (default 2) to route each token to a subset of expert W matrices. Logs expert entropy (1.0 = uniform, 0.0 = single expert).
 - **MoE-R-LoReFT**: Same as MoE-W but applies MoE to the orthogonal projection R instead of W. Each expert has its own R matrix.
 
 ## Sweep Configuration

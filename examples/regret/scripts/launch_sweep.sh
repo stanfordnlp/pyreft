@@ -91,6 +91,12 @@ is_done() {
     [[ -f "${OUTPUT_DIR}/${run_name}/training_args.json" ]]
 }
 
+# Function to check if job is running/pending in SLURM queue
+is_running() {
+    local job_name="$1"
+    squeue -u $USER -n "$job_name" -h 2>/dev/null | grep -q .
+}
+
 # --- Create logs directory ---
 mkdir -p logs
 
@@ -193,9 +199,14 @@ for component in "${COMPONENTS[@]}"; do
                     run_name="loreft_r${rank}___${position}___${component}___lr${lr}"
                 fi
 
-                # Skip if already done
+                # Skip if already done or running
                 if $SKIP_DONE && is_done "$run_name"; then
                     echo "Skipping (done): $run_name"
+                    skipped_count=$((skipped_count + 1))
+                    continue
+                fi
+                if $SKIP_DONE && is_running "$job_name"; then
+                    echo "Skipping (running): $job_name"
                     skipped_count=$((skipped_count + 1))
                     continue
                 fi
@@ -248,9 +259,14 @@ if $WITH_DIREFT; then
                         run_name="direft_r${rank}___${position}___${component}___lr${lr}"
                     fi
 
-                    # Skip if already done
+                    # Skip if already done or running
                     if $SKIP_DONE && is_done "$run_name"; then
                         echo "Skipping (done): $run_name"
+                        skipped_count=$((skipped_count + 1))
+                        continue
+                    fi
+                    if $SKIP_DONE && is_running "$job_name"; then
+                        echo "Skipping (running): $job_name"
                         skipped_count=$((skipped_count + 1))
                         continue
                     fi
@@ -304,9 +320,14 @@ if $WITH_NODIREFT; then
                         run_name="nodireft_r${rank}___${position}___${component}___lr${lr}"
                     fi
 
-                    # Skip if already done
+                    # Skip if already done or running
                     if $SKIP_DONE && is_done "$run_name"; then
                         echo "Skipping (done): $run_name"
+                        skipped_count=$((skipped_count + 1))
+                        continue
+                    fi
+                    if $SKIP_DONE && is_running "$job_name"; then
+                        echo "Skipping (running): $job_name"
                         skipped_count=$((skipped_count + 1))
                         continue
                     fi
@@ -338,9 +359,14 @@ if $WITH_LORA; then
             job_name="${MODEL_PREFIX}lora_r${lora_rank}_lr${lr}"
             run_name="lora_r${lora_rank}___q+k+v+o+gate+up+down___lr${lr}"
 
-            # Skip if already done
+            # Skip if already done or running
             if $SKIP_DONE && is_done "$run_name"; then
                 echo "Skipping (done): $run_name"
+                skipped_count=$((skipped_count + 1))
+                continue
+            fi
+            if $SKIP_DONE && is_running "$job_name"; then
+                echo "Skipping (running): $job_name"
                 skipped_count=$((skipped_count + 1))
                 continue
             fi

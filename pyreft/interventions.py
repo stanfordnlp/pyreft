@@ -447,8 +447,14 @@ class MoeloreftIntervention(
                     self.expert_counts[i] += (top_k_indices == i).sum().item()
                 self.total_tokens += batch_size * seq_len * self.top_k
 
-                # Compute activation percentages
-                expert_pcts = self.expert_counts / (self.total_tokens + 1e-8) * 100
+                # Compute expert distribution and entropy
+                expert_probs = self.expert_counts / (self.total_tokens + 1e-8)
+                # Entropy: -sum(p * log(p)), only for p > 0
+                log_probs = torch.log(expert_probs + 1e-8)
+                entropy = -(expert_probs * log_probs).sum().item()
+                # Max entropy is log(num_experts) for uniform distribution
+                max_entropy = torch.log(torch.tensor(self.num_experts, dtype=torch.float)).item()
+                normalized_entropy = entropy / (max_entropy + 1e-8)
 
                 diff_norm = diff.norm().item()
                 base_norm = base.norm().item()
@@ -458,10 +464,9 @@ class MoeloreftIntervention(
                     "diff_norm": diff_norm,
                     "delta_base_ratio": diff_norm / (base_norm + 1e-8),
                     "b_norm": self.bias.norm().item(),
+                    "expert_entropy": entropy,
+                    "expert_entropy_normalized": normalized_entropy,
                 }
-                # Add per-expert activation percentages (cumulative over training)
-                for i in range(self.num_experts):
-                    self.metrics[f"expert_{i}_pct"] = expert_pcts[i].item()
 
                 if not self._debug_logged:
                     print(f"[DEBUG MoeloreftIntervention] First forward:")
@@ -469,6 +474,7 @@ class MoeloreftIntervention(
                     print(f"  base norm: {base_norm:.4f}")
                     print(f"  diff norm: {diff_norm:.4f}")
                     print(f"  delta/base ratio: {self.metrics['delta_base_ratio']:.4f}")
+                    print(f"  expert entropy: {entropy:.4f} (normalized: {normalized_entropy:.4f})")
                     self._debug_logged = True
 
         output = base + delta
@@ -591,8 +597,14 @@ class MoerloreftIntervention(
                     self.expert_counts[i] += (top_k_indices == i).sum().item()
                 self.total_tokens += batch_size * seq_len * self.top_k
 
-                # Compute activation percentages
-                expert_pcts = self.expert_counts / (self.total_tokens + 1e-8) * 100
+                # Compute expert distribution and entropy
+                expert_probs = self.expert_counts / (self.total_tokens + 1e-8)
+                # Entropy: -sum(p * log(p)), only for p > 0
+                log_probs = torch.log(expert_probs + 1e-8)
+                entropy = -(expert_probs * log_probs).sum().item()
+                # Max entropy is log(num_experts) for uniform distribution
+                max_entropy = torch.log(torch.tensor(self.num_experts, dtype=torch.float)).item()
+                normalized_entropy = entropy / (max_entropy + 1e-8)
 
                 diff_norm = diff.norm().item()
                 base_norm = base.norm().item()
@@ -602,10 +614,9 @@ class MoerloreftIntervention(
                     "diff_norm": diff_norm,
                     "delta_base_ratio": diff_norm / (base_norm + 1e-8),
                     "b_norm": self.bias.norm().item(),
+                    "expert_entropy": entropy,
+                    "expert_entropy_normalized": normalized_entropy,
                 }
-                # Add per-expert activation percentages (cumulative over training)
-                for i in range(self.num_experts):
-                    self.metrics[f"expert_{i}_pct"] = expert_pcts[i].item()
 
                 if not self._debug_logged:
                     print(f"[DEBUG MoerloreftIntervention] First forward:")
@@ -613,6 +624,7 @@ class MoerloreftIntervention(
                     print(f"  base norm: {base_norm:.4f}")
                     print(f"  diff norm: {diff_norm:.4f}")
                     print(f"  delta/base ratio: {self.metrics['delta_base_ratio']:.4f}")
+                    print(f"  expert entropy: {entropy:.4f} (normalized: {normalized_entropy:.4f})")
                     self._debug_logged = True
 
         output = base + delta
