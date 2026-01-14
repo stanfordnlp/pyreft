@@ -43,6 +43,7 @@ from pyreft import (
     DireftIntervention,
     NodireftIntervention,
     MoeloreftIntervention,
+    MoerloreftIntervention,
     ReftDataCollator,
     ReftGenerationDataset,
 )
@@ -326,6 +327,10 @@ def train(args):
             intervention_cls = MoeloreftIntervention
             if scale_type != "none":
                 print(f"WARNING: scale_type={scale_type} is ignored for MoE-LoReFT (not implemented)")
+        elif intervention_type == "moerloreft":
+            intervention_cls = MoerloreftIntervention
+            if scale_type != "none":
+                print(f"WARNING: scale_type={scale_type} is ignored for MoE-R-LoReFT (not implemented)")
         else:
             # LoReFT with optional scaling
             intervention_classes = {
@@ -367,8 +372,8 @@ def train(args):
         # NodireftIntervention requires add_bias
         if intervention_type == "nodireft":
             intervention_kwargs["add_bias"] = True
-        # MoeloreftIntervention requires num_experts and top_k
-        if intervention_type == "moeloreft":
+        # MoE interventions require num_experts and top_k
+        if intervention_type in ("moeloreft", "moerloreft"):
             intervention_kwargs["num_experts"] = args.num_experts
             intervention_kwargs["top_k"] = args.top_k
 
@@ -735,8 +740,8 @@ def main():
         "--intervention_type",
         type=str,
         default="loreft",
-        choices=["loreft", "direft", "nodireft", "moeloreft"],
-        help="Intervention type: loreft (default), direft (no Rh subtraction), nodireft (no orthogonality), moeloreft (MoE on W)"
+        choices=["loreft", "direft", "nodireft", "moeloreft", "moerloreft"],
+        help="Intervention type: loreft (default), direft (no Rh subtraction), nodireft (no orthogonality), moeloreft (MoE on W), moerloreft (MoE on R)"
     )
     parser.add_argument(
         "--num_experts",

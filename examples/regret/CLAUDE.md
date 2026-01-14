@@ -44,12 +44,14 @@ Four ReFT variants are available via `--intervention_type`:
 - **`loreft`** (default): LoReFT(h) = h + R^T(Wh + b − Rh) — replaces R-subspace component (R orthogonal)
 - **`direft`**: DiReFT(h) = h + R^T(Wh + b) — adds to R-subspace (R orthogonal, no subtraction)
 - **`nodireft`**: NoDiReFT(h) = h + W2^T(W1h + b) — no orthogonality constraint on W2
-- **`moeloreft`**: MoE-LoReFT(h) = h + R^T(∑ᵢsᵢWᵢh + b − Rh) — mixture-of-experts on W with top-k routing
+- **`moeloreft`**: MoE-W-LoReFT(h) = h + R^T(∑ᵢsᵢWᵢh + b − Rh) — mixture-of-experts on W with top-k routing
+- **`moerloreft`**: MoE-R-LoReFT(h) = h + R_mix^T(Wh + b − R_mix·h) where R_mix = ∑ᵢsᵢRᵢ — mixture-of-experts on R
 
 Key differences:
 - **LoReFT vs DiReFT**: In DiReFT, when W=0 and b=0, the intervention is identity. In LoReFT, it subtracts the R-subspace. This affects weight decay regularization.
 - **DiReFT vs NoDiReFT**: NoDiReFT removes the orthogonality constraint on the projection matrix, making it a standard low-rank adapter.
-- **MoE-LoReFT**: Uses `--num_experts` (default 4) and `--top_k` (default 2) to route each token to a subset of expert W matrices. Logs per-expert activation percentages.
+- **MoE-W-LoReFT**: Uses `--num_experts` (default 4) and `--top_k` (default 2) to route each token to a subset of expert W matrices. Logs per-expert activation percentages.
+- **MoE-R-LoReFT**: Same as MoE-W but applies MoE to the orthogonal projection R instead of W. Each expert has its own R matrix.
 
 ## Sweep Configuration
 - **Model (1B)**: Llama 3.2 1B Instruct
@@ -73,8 +75,14 @@ Key differences:
 - `--with-lora` - Include LoRA baseline
 - `--with-direft` - Include DiReFT experiments
 - `--with-nodireft` - Include NoDiReFT experiments (no orthogonality)
-- `--with-moeloreft` - Include MoE-LoReFT experiments (mixture-of-experts)
 - `--model-8b` - Use Llama 3.1 8B instead of 3.2 1B (auto-enables gradient checkpointing, 48G memory)
+
+### MoE Experiments (separate script)
+Use `./scripts/launch_moe_sweep.sh` for MoE experiments:
+- Two variants: `moeloreft` (MoE on W) and `moerloreft` (MoE on R)
+- Sweeps over num_experts: 4, 16 (with top_k=2)
+- Same rank/LR grid as main sweep
+- Flags: `--dry-run`, `--skip-done`, `--rank1-only`, `--model-8b`, `--all-positions`, `--moe-w-only`, `--moe-r-only`
 
 ## Quick Start
 ```bash
@@ -102,8 +110,16 @@ uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --interventi
 # NoDiReFT test run (no orthogonality)
 uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type nodireft
 
-# MoE-LoReFT test run (mixture-of-experts)
+# MoE-W-LoReFT test run (MoE on W)
 uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type moeloreft --num_experts 4 --top_k 2
+
+# MoE-R-LoReFT test run (MoE on R)
+uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type moerloreft --num_experts 4 --top_k 2
+
+# MoE sweep (both variants, 4, 16 experts)
+./scripts/launch_moe_sweep.sh --dry-run --skip-done
+./scripts/launch_moe_sweep.sh --moe-w-only --dry-run  # Only MoE-W
+./scripts/launch_moe_sweep.sh --moe-r-only --dry-run  # Only MoE-R
 
 # Single test run (8B)
 uv run train.py --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \

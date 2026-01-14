@@ -33,6 +33,10 @@ SCALE_TYPE=${SCALE_TYPE:-""}
 COMPONENT=${COMPONENT:-"block_output"}
 INTERVENTION_TYPE=${INTERVENTION_TYPE:-"loreft"}
 
+# MoE config
+NUM_EXPERTS=${NUM_EXPERTS:-4}
+TOP_K=${TOP_K:-2}
+
 # LoRA config
 USE_LORA=${USE_LORA:-false}
 DISABLE_REFT=${DISABLE_REFT:-false}
@@ -66,6 +70,10 @@ echo "============================================"
 echo "Config:"
 echo "  Model: $MODEL"
 echo "  Intervention type: $INTERVENTION_TYPE"
+if [ "$INTERVENTION_TYPE" = "moeloreft" ]; then
+    echo "  Num experts: $NUM_EXPERTS"
+    echo "  Top-k: $TOP_K"
+fi
 echo "  Rank: $RANK"
 echo "  LR: $LR"
 echo "  Layers: $LAYERS"
@@ -106,6 +114,9 @@ elif [ "$USE_LORA" = "true" ]; then
     # LoRA + ReFT combined
     MODULES_SHORT=$(echo "$LORA_MODULES" | sed 's/;/+/g' | sed 's/_proj//g')
     RUN_NAME="lora_r${LORA_RANK}_${INTERVENTION_TYPE}_r${RANK}${SCALE_SUFFIX}___${MODULES_SHORT}___lr${LR}"
+elif [ "$INTERVENTION_TYPE" = "moeloreft" ]; then
+    # MoE-LoReFT: include num_experts and top_k
+    RUN_NAME="${INTERVENTION_TYPE}_r${RANK}_e${NUM_EXPERTS}_k${TOP_K}${SCALE_SUFFIX}___${POSITION}${COMPONENT_PART}___lr${LR}"
 else
     # ReFT-only (loreft or direft)
     RUN_NAME="${INTERVENTION_TYPE}_r${RANK}${SCALE_SUFFIX}___${POSITION}${COMPONENT_PART}___lr${LR}"
@@ -137,6 +148,11 @@ CMD="uv run train.py \
 # Add share_weights flag if needed
 if [ "$SHARE_WEIGHTS" = "true" ]; then
     CMD="$CMD --share_weights"
+fi
+
+# Add MoE params if using moeloreft
+if [ "$INTERVENTION_TYPE" = "moeloreft" ]; then
+    CMD="$CMD --num_experts $NUM_EXPERTS --top_k $TOP_K"
 fi
 
 # Add scale_type if specified

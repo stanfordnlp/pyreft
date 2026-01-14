@@ -480,6 +480,150 @@ class MoeloreftIntervention(
         self.total_tokens = 0
 
 
+class MoerloreftIntervention(
+    SourcelessIntervention,
+    TrainableIntervention,
+    DistributedRepresentationIntervention
+):
+    """
+    MoE-R-LoReFT(h) = h + R_mix^T(Wh + b - R_mix * h)
+    where R_mix = ∑_{i=1}^{k}(s_i * R_i) is a weighted combination of expert R matrices.
+
+    Mixture-of-experts variant of LoReFT where R (the orthogonal projection) is replaced
+    by a weighted combination of e expert R matrices, with top-k expert selection.
+    Unlike MoE-W-LoReFT, this applies MoE to the projection space itself.
+
+    Args:
+        num_experts: Number of expert R matrices (default: 4)
+        top_k: Number of experts to select per token (default: 2)
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs, keep_last_dim=True)
+        self.num_experts = kwargs.get("num_experts", 4)
+        self.top_k = kwargs.get("top_k", 2)
+        low_rank_dim = kwargs["low_rank_dimension"]
+        dtype = kwargs.get("dtype", torch.bfloat16)
+
+        # Expert R matrices: e separate orthogonal projection layers
+        self.expert_rotations = torch.nn.ModuleList()
+        for _ in range(self.num_experts):
+            rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dim, init_orth=True)
+            self.expert_rotations.append(
+                torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+            )
+
+        # Router: projects h to e scores
+        self.router = torch.nn.Linear(self.embed_dim, self.num_experts, bias=False).to(dtype)
+
+        # Shared W matrix (single linear layer)
+        self.learned_source = torch.nn.Linear(self.embed_dim, low_rank_dim, bias=False).to(dtype)
+
+        # Shared bias
+        self.bias = torch.nn.Parameter(torch.zeros(low_rank_dim, dtype=dtype))
+
+        self.dropout = torch.nn.Dropout(kwargs.get("dropout", 0.0))
+        self.act_fn = ACT2FN.get(kwargs.get("act_fn"), ACT2FN["linear"])
+
+        # Debug logging
+        self.debug = kwargs.get("debug", False)
+        self._debug_logged = False
+        self.metrics = {}
+
+        # Track expert activation counts
+        self.expert_counts = torch.zeros(self.num_experts)
+        self.total_tokens = 0
+
+    def forward(self, base, source=None, subspaces=None):
+        batch_size, seq_len, _ = base.shape
+        cast_base = base.to(self.router.weight.dtype)
+
+        # Compute router scores: (B, T, e)
+        router_logits = self.router(cast_base)
+        router_probs = torch.softmax(router_logits, dim=-1)
+
+        # Top-k selection: (B, T, k)
+        top_k_probs, top_k_indices = torch.topk(router_probs, self.top_k, dim=-1)
+
+        # Renormalize top-k probs
+        top_k_probs = top_k_probs / (top_k_probs.sum(dim=-1, keepdim=True) + 1e-8)
+
+        # Compute Wh + b (shared across experts)
+        learned = self.act_fn(self.learned_source(cast_base) + self.bias)
+
+        # Compute rotated bases for each expert: (B, T, e, low_rank_dim)
+        rotated_bases = torch.stack(
+            [rotation(base) for rotation in self.expert_rotations], dim=2
+        )
+
+        # Gather top-k rotated bases: (B, T, k, low_rank_dim)
+        top_k_indices_expanded = top_k_indices.unsqueeze(-1).expand(-1, -1, -1, rotated_bases.shape[-1])
+        selected_rotated = torch.gather(rotated_bases, dim=2, index=top_k_indices_expanded)
+
+        # Weighted sum of rotated bases: R_mix * h = (B, T, low_rank_dim)
+        rotated_base_mix = (selected_rotated * top_k_probs.unsqueeze(-1)).sum(dim=2)
+
+        # LoReFT: h + R_mix^T(learned - R_mix * h)
+        diff = learned.to(rotated_base_mix.dtype) - rotated_base_mix
+
+        # Compute weighted R^T projection
+        # Each expert contributes: s_i * R_i^T * diff
+        # Need to expand diff to apply each expert's R^T
+        # expert_weights: (e, embed_dim, low_rank_dim) from each rotation layer
+        delta = torch.zeros_like(base)
+        for i in range(self.top_k):
+            expert_idx = top_k_indices[:, :, i]  # (B, T)
+            prob = top_k_probs[:, :, i:i+1]  # (B, T, 1)
+
+            # For each unique expert index, apply its R^T
+            for e in range(self.num_experts):
+                mask = (expert_idx == e).unsqueeze(-1)  # (B, T, 1)
+                if mask.any():
+                    # R_e^T @ diff for positions where expert e is selected
+                    R_e_T = self.expert_rotations[e].weight.T  # (embed_dim, low_rank_dim)
+                    expert_delta = torch.matmul(diff, R_e_T)  # (B, T, embed_dim)
+                    delta = delta + mask.float() * prob * expert_delta
+
+        # Track expert usage
+        if self.debug:
+            with torch.no_grad():
+                # Count expert activations
+                for i in range(self.num_experts):
+                    self.expert_counts[i] += (top_k_indices == i).sum().item()
+                self.total_tokens += batch_size * seq_len * self.top_k
+
+                # Compute activation percentages
+                expert_pcts = self.expert_counts / (self.total_tokens + 1e-8) * 100
+
+                diff_norm = diff.norm().item()
+                base_norm = base.norm().item()
+
+                self.metrics = {
+                    "base_norm": base_norm,
+                    "diff_norm": diff_norm,
+                    "delta_base_ratio": diff_norm / (base_norm + 1e-8),
+                    "b_norm": self.bias.norm().item(),
+                }
+                # Add per-expert activation percentages (cumulative over training)
+                for i in range(self.num_experts):
+                    self.metrics[f"expert_{i}_pct"] = expert_pcts[i].item()
+
+                if not self._debug_logged:
+                    print(f"[DEBUG MoerloreftIntervention] First forward:")
+                    print(f"  num_experts={self.num_experts}, top_k={self.top_k}")
+                    print(f"  base norm: {base_norm:.4f}")
+                    print(f"  diff norm: {diff_norm:.4f}")
+                    print(f"  delta/base ratio: {self.metrics['delta_base_ratio']:.4f}")
+                    self._debug_logged = True
+
+        output = base + delta
+        return self.dropout(output.to(base.dtype))
+
+    def reset_expert_counts(self):
+        """Reset expert activation counts (call at start of each epoch/eval)."""
+        self.expert_counts.zero_()
+        self.total_tokens = 0
+
+
 class NodireftIntervention(
     SourcelessIntervention,
     TrainableIntervention,
