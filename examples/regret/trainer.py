@@ -94,6 +94,7 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         all_diff_norms = []
         all_b_norms = []
         all_delta_base_ratios = []
+        all_expert_pcts = {}  # expert_i -> list of pcts across layers
 
         for key, v in self.model.interventions.items():
             intervention = v[0] if isinstance(v, (list, tuple)) else v
@@ -107,6 +108,12 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
                     all_b_norms.append(metrics['b_norm'])
                 if 'delta_base_ratio' in metrics:
                     all_delta_base_ratios.append(metrics['delta_base_ratio'])
+                # Collect MoE expert percentages
+                for k, val in metrics.items():
+                    if k.startswith('expert_') and k.endswith('_pct'):
+                        if k not in all_expert_pcts:
+                            all_expert_pcts[k] = []
+                        all_expert_pcts[k].append(val)
                 # Clear metrics after collecting
                 if clear_after:
                     intervention.metrics = {}
@@ -122,8 +129,20 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
         if all_delta_base_ratios:
             result['intervention/delta_base_ratio_mean'] = np.mean(all_delta_base_ratios)
             result['intervention/delta_base_ratio_max'] = np.max(all_delta_base_ratios)
+        # Add MoE expert percentages (averaged across layers)
+        for k, vals in all_expert_pcts.items():
+            result[f'intervention/{k}'] = np.mean(vals)
 
         return result
+
+    def _reset_expert_counts(self):
+        """Reset expert activation counts for all MoE interventions."""
+        if not hasattr(self.model, 'interventions'):
+            return
+        for key, v in self.model.interventions.items():
+            intervention = v[0] if isinstance(v, (list, tuple)) else v
+            if hasattr(intervention, 'reset_expert_counts'):
+                intervention.reset_expert_counts()
 
     def log(self, logs, start_time=None):
         """Override log to include intervention metrics."""
@@ -148,6 +167,9 @@ class ReftTrainerForCausalLMWithEval(ReftTrainerForCausalLM):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         """Evaluate the model and log NLL (negative log-likelihood) loss."""
+        # Reset expert counts for fresh per-eval stats
+        self._reset_expert_counts()
+
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
         if eval_dataset is None:
             logger.warning("No eval dataset provided, skipping evaluation.")

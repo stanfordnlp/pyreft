@@ -143,17 +143,17 @@ def compute_reft_flops(
     return flops_per_position * n_positions * num_layers * interventions_per_layer
 
 
-def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
+def fetch_wandb_runs(project: str, entity: str = None, include_incomplete: bool = False) -> pd.DataFrame:
     """Fetch runs from wandb and return as DataFrame."""
     import wandb
-    
+
     api = wandb.Api()
     project_path = f"{entity}/{project}" if entity else project
     runs = api.runs(project_path)
-    
+
     records = []
     for run in runs:
-        if run.state != "finished":
+        if not include_incomplete and run.state != "finished":
             continue
         
         config = run.config
@@ -163,7 +163,8 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
         use_lora = config.get("use_lora", False)
         disable_reft = config.get("disable_reft", False)
         full_finetune = config.get("full_finetune", False)
-        
+        intervention_type = config.get("intervention_type", "loreft")  # default is loreft
+
         if full_finetune:
             method = "full_finetune"
         elif use_lora and disable_reft:
@@ -189,6 +190,7 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
             "lora_modules": config.get("lora_modules"),
             # Method type
             "method": method,
+            "intervention_type": intervention_type,
             "full_finetune": full_finetune,
             # Params
             "trainable_params": config.get("trainable_params") or summary.get("trainable_params"),
@@ -203,7 +205,7 @@ def fetch_wandb_runs(project: str, entity: str = None) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def fetch_10x_runs(project_10x: str, entity: str = None) -> dict:
+def fetch_10x_runs(project_10x: str, entity: str = None, include_incomplete: bool = False) -> dict:
     """
     Fetch 10x continuation runs and return a mapping from original run config to 10x run.
 
@@ -222,7 +224,7 @@ def fetch_10x_runs(project_10x: str, entity: str = None) -> dict:
 
     runs_10x = {}
     for run in runs:
-        if run.state != "finished":
+        if not include_incomplete and run.state != "finished":
             continue
 
         config = run.config
@@ -600,31 +602,35 @@ def plot_flops_comparison(
 
 
 def get_best_runs(df: pd.DataFrame):
-    """Get best LR run for each (method, rank, position, component)."""
+    """Get best LR run for each (method, rank, position, component, intervention_type)."""
     best_runs = []
 
     # ReFT runs
     reft_df = df[df["method"] == "reft"].copy()
 
-    for position in reft_df["position"].dropna().unique():
-        pos_data = reft_df[reft_df["position"] == position]
-        for component in pos_data["component"].dropna().unique():
-            comp_data = pos_data[pos_data["component"] == component]
-            for rank in comp_data["rank"].dropna().unique():
-                rank_data = comp_data[comp_data["rank"] == rank]
-                if not rank_data.empty:
-                    best_idx = rank_data["eval_nll"].idxmin()
-                    best_row = rank_data.loc[best_idx].to_dict()
-                    # Include component in facet name if not default
-                    if component == "block_output":
-                        best_row["facet"] = f"ReFT ({position})"
-                    else:
-                        best_row["facet"] = f"ReFT ({position}, {component})"
-                    best_row["rank_val"] = rank
-                    best_row["method_type"] = "reft"
-                    best_row["position_val"] = position
-                    best_row["component_val"] = component
-                    best_runs.append(best_row)
+    for intervention_type in reft_df["intervention_type"].dropna().unique():
+        int_data = reft_df[reft_df["intervention_type"] == intervention_type]
+        for position in int_data["position"].dropna().unique():
+            pos_data = int_data[int_data["position"] == position]
+            for component in pos_data["component"].dropna().unique():
+                comp_data = pos_data[pos_data["component"] == component]
+                for rank in comp_data["rank"].dropna().unique():
+                    rank_data = comp_data[comp_data["rank"] == rank]
+                    if not rank_data.empty:
+                        best_idx = rank_data["eval_nll"].idxmin()
+                        best_row = rank_data.loc[best_idx].to_dict()
+                        # Build facet name: intervention_type (position, component)
+                        int_name = intervention_type.upper() if intervention_type != "loreft" else "LoReFT"
+                        if component == "block_output":
+                            best_row["facet"] = f"{int_name} ({position})"
+                        else:
+                            best_row["facet"] = f"{int_name} ({position}, {component})"
+                        best_row["rank_val"] = rank
+                        best_row["method_type"] = "reft"
+                        best_row["intervention_type_val"] = intervention_type
+                        best_row["position_val"] = position
+                        best_row["component_val"] = component
+                        best_runs.append(best_row)
 
     # LoRA runs
     lora_df = df[df["method"] == "lora"].copy()
@@ -687,6 +693,7 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
                 "run_id": run_id,
                 "facet": run["facet"],
                 "method_type": method_type,
+                "intervention_type_val": run.get("intervention_type_val", "loreft"),
                 "position_val": position,
                 "component_val": component,
                 "rank": rank,
@@ -697,6 +704,7 @@ def fetch_scaling_coefficients(best_runs: list, project: str, entity: str = None
                 "nll": nll,
                 "is_10x": use_10x,
                 "max_step": steps.max(),
+                "trainable_params": run.get("trainable_params"),
             })
 
         except Exception as e:
@@ -950,51 +958,6 @@ def plot_scaling_coefficients(coefficients: list, output_dir: Path):
     plt.savefig(output_dir / "scaling_coefficients.pdf")
     plt.close()
     print("Saved: scaling_coefficients.png")
-    
-    # Plot 3: Coefficient table/summary
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.axis('off')
-    
-    # Create table data
-    table_data = []
-    for _, row in coef_df.sort_values(["facet", "rank"]).iterrows():
-        table_data.append([
-            row["facet"],
-            f"{int(row['rank'])}",
-            f"{row['slope']:.4f}",
-            f"{row['intercept']:.3f}",
-            f"{row['r_squared']:.4f}",
-        ])
-    
-    table = ax.table(
-        cellText=table_data,
-        colLabels=["Method/Position", "Rank", "Slope", "Intercept", "R²"],
-        loc='center',
-        cellLoc='center',
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(10)
-    table.scale(1.2, 1.5)
-    
-    # Style header
-    for i in range(5):
-        table[(0, i)].set_facecolor('#4472C4')
-        table[(0, i)].set_text_props(color='white', fontweight='bold')
-    
-    # Alternate row colors
-    for i in range(1, len(table_data) + 1):
-        for j in range(5):
-            if i % 2 == 0:
-                table[(i, j)].set_facecolor('#D9E2F3')
-    
-    plt.title("Scaling Law Coefficients: NLL = slope·log₁₀(step) + intercept", 
-              fontsize=14, fontweight='bold', pad=20)
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / "scaling_coefficients_table.png", dpi=150)
-    plt.savefig(output_dir / "scaling_coefficients_table.pdf")
-    plt.close()
-    print("Saved: scaling_coefficients_table.png")
 
 
 def plot_scaling_coefficients_with_10x(coefficients: list, output_dir: Path):
@@ -1060,55 +1023,437 @@ def plot_scaling_coefficients_with_10x(coefficients: list, output_dir: Path):
     plt.savefig(output_dir / "scaling_coefficients_with_10x.pdf")
     plt.close()
     print("Saved: scaling_coefficients_with_10x.png")
-    
-    # Table with 10x info
-    fig, ax = plt.subplots(figsize=(14, 10))
-    ax.axis('off')
-    
-    table_data = []
-    for _, row in coef_df.sort_values(["facet", "rank"]).iterrows():
-        steps_str = f"{int(row['max_step']):,}"
-        table_data.append([
-            row["facet"],
-            f"{int(row['rank'])}",
-            f"{row['slope']:.4f}",
-            f"{row['intercept']:.3f}",
-            f"{row['r_squared']:.4f}",
-            steps_str,
-            "✓" if row["is_10x"] else "",
-        ])
-    
-    table = ax.table(
-        cellText=table_data,
-        colLabels=["Method/Position", "Rank", "Slope", "Intercept", "R²", "Max Steps", "10x"],
-        loc='center',
-        cellLoc='center',
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1.2, 1.5)
-    
-    # Style header
-    for i in range(7):
-        table[(0, i)].set_facecolor('#4472C4')
-        table[(0, i)].set_text_props(color='white', fontweight='bold')
-    
-    # Alternate row colors, highlight 10x rows
-    for i in range(1, len(table_data) + 1):
-        for j in range(7):
-            if table_data[i-1][6] == "✓":  # is 10x run
-                table[(i, j)].set_facecolor('#E2EFDA')  # light green
-            elif i % 2 == 0:
-                table[(i, j)].set_facecolor('#D9E2F3')
-    
-    plt.title("Scaling Law Coefficients (with 10x continuation data)\nNLL = slope·log₁₀(step) + intercept", 
-              fontsize=14, fontweight='bold', pad=20)
-    
+
+
+def bootstrap_linear_fit(steps, nll, n_bootstrap=100, target_nll=None):
+    """
+    Bootstrap the linear fit to get confidence intervals on predicted steps.
+
+    Returns: (mean_k, std_k) where k = steps_to_target / baseline_steps
+    """
+    log_steps = np.log10(steps)
+    n_points = len(steps)
+
+    slopes = []
+    intercepts = []
+
+    rng = np.random.default_rng(42)
+
+    for _ in range(n_bootstrap):
+        # Resample with replacement
+        idx = rng.choice(n_points, size=n_points, replace=True)
+        boot_log_steps = log_steps[idx]
+        boot_nll = nll[idx]
+
+        # Fit
+        slope, intercept, _, _, _ = stats.linregress(boot_log_steps, boot_nll)
+        slopes.append(slope)
+        intercepts.append(intercept)
+
+    return np.array(slopes), np.array(intercepts)
+
+
+def compute_sample_efficiency(coefficients: list, output_dir: Path, n_bootstrap=100):
+    """
+    Compare sample efficiency between methods by estimating steps to reach target NLL.
+
+    Uses LoRA rank=1's end NLL as the single target for all methods across all ranks.
+    For each method, computes steps needed using its fitted curve:
+        steps = 10^((target_NLL - intercept) / slope)
+
+    Uses bootstrap resampling to estimate uncertainty in k.
+    """
+    if not coefficients:
+        print("No coefficients for sample efficiency comparison")
+        return
+
+    # Convert to DataFrame, keeping raw data for bootstrap
+    coef_df = pd.DataFrame([{
+        "facet": c["facet"],
+        "method_type": c["method_type"],
+        "intervention_type": c.get("intervention_type_val", "loreft"),
+        "position": c.get("position_val"),
+        "component": c.get("component_val", "block_output"),
+        "rank": c["rank"],
+        "slope": c["slope"],
+        "intercept": c["intercept"],
+        "r_squared": c["r_squared"],
+        "max_step": c.get("max_step", 0),
+        "steps_raw": c.get("steps"),
+        "nll_raw": c.get("nll"),
+        "trainable_params": c.get("trainable_params"),
+    } for c in coefficients])
+
+    # Get LoRA rank=1 as baseline
+    lora_df = coef_df[coef_df["method_type"] == "lora"].copy()
+
+    if lora_df.empty:
+        print("No LoRA runs found, cannot compute sample efficiency")
+        return
+
+    lora_r1 = lora_df[lora_df["rank"] == 1]
+    if lora_r1.empty:
+        min_rank = lora_df["rank"].min()
+        lora_r1 = lora_df[lora_df["rank"] == min_rank]
+        print(f"No LoRA rank=1 found, using rank={int(min_rank)} as baseline")
+
+    baseline = lora_r1.iloc[0]
+    baseline_max_step = baseline["max_step"]
+
+    if baseline_max_step <= 0:
+        print("Baseline LoRA has no valid max_step")
+        return
+
+    # Bootstrap the baseline to get target_nll distribution
+    baseline_steps_raw = baseline.get("steps_raw")
+    baseline_nll_raw = baseline.get("nll_raw")
+
+    if baseline_steps_raw is None or baseline_nll_raw is None:
+        print("No raw data for bootstrap, using point estimates only")
+        use_bootstrap = False
+        target_nll = baseline["slope"] * np.log10(baseline_max_step) + baseline["intercept"]
+        lora_r1_steps = baseline_max_step
+    else:
+        use_bootstrap = True
+        baseline_slopes, baseline_intercepts = bootstrap_linear_fit(
+            baseline_steps_raw, baseline_nll_raw, n_bootstrap
+        )
+        # Target NLL distribution (at baseline max_step)
+        target_nlls = baseline_slopes * np.log10(baseline_max_step) + baseline_intercepts
+        target_nll = np.mean(target_nlls)
+        lora_r1_steps = baseline_max_step
+
+    # Compute steps needed for each method at each rank to reach target NLL
+    comparisons = []
+
+    for _, row in coef_df.iterrows():
+        slope = row["slope"]
+        intercept = row["intercept"]
+        steps_raw = row.get("steps_raw")
+        nll_raw = row.get("nll_raw")
+
+        # Point estimate: steps = 10^((target_nll - intercept) / slope)
+        if slope != 0:
+            log_steps = (target_nll - intercept) / slope
+            steps_needed = 10 ** log_steps
+            k = steps_needed / lora_r1_steps
+        else:
+            steps_needed = np.nan
+            k = np.nan
+
+        # Bootstrap for error bars
+        k_std = np.nan
+        if use_bootstrap and steps_raw is not None and nll_raw is not None:
+            try:
+                method_slopes, method_intercepts = bootstrap_linear_fit(
+                    steps_raw, nll_raw, n_bootstrap
+                )
+                # Compute k for each bootstrap sample
+                # Use both target_nll uncertainty and method fit uncertainty
+                k_samples = []
+                for i in range(n_bootstrap):
+                    t_nll = target_nlls[i] if use_bootstrap else target_nll
+                    m_slope = method_slopes[i]
+                    m_intercept = method_intercepts[i]
+                    if m_slope != 0:
+                        log_s = (t_nll - m_intercept) / m_slope
+                        k_samples.append((10 ** log_s) / lora_r1_steps)
+                if k_samples:
+                    k_std = np.std(k_samples)
+            except Exception:
+                pass
+
+        # Check if we're extrapolating (target below min observed NLL)
+        min_observed_nll = np.min(nll_raw) if nll_raw is not None else np.nan
+        extrapolating = target_nll < min_observed_nll if not np.isnan(min_observed_nll) else False
+
+        comparisons.append({
+            "rank": row["rank"],
+            "method": row["facet"],
+            "steps_needed": steps_needed,
+            "data_multiplier": k,
+            "k_std": k_std,
+            "slope": slope,
+            "min_nll": min_observed_nll,
+            "extrapolating": extrapolating,
+            "trainable_params": row.get("trainable_params"),
+        })
+
+    comp_df = pd.DataFrame(comparisons)
+
+    # Plot: Data multiplier vs rank for each method with error bars
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    methods = sorted(comp_df["method"].unique())
+    colors = plt.cm.tab10(np.linspace(0, 1, len(methods)))
+
+    for i, method in enumerate(methods):
+        method_data = comp_df[comp_df["method"] == method].sort_values("rank")
+        ranks = method_data["rank"].values
+        k_vals = method_data["data_multiplier"].values
+        k_errs = method_data["k_std"].values
+
+        # Plot with error bars if available
+        if not np.all(np.isnan(k_errs)):
+            ax.errorbar(ranks, k_vals, yerr=k_errs,
+                        marker='o', color=colors[i], linewidth=2, markersize=8,
+                        capsize=3, capthick=1.5, label=method)
+        else:
+            ax.plot(ranks, k_vals,
+                    marker='o', color=colors[i], linewidth=2, markersize=8,
+                    label=method)
+
+    ax.set_xlabel("Rank", fontsize=12)
+    ax.set_ylabel("Data Multiplier (k)", fontsize=12)
+    ax.set_title(f"Sample Efficiency: Steps to Reach LoRA r=1 End NLL ({target_nll:.4f})\n"
+                 f"(k = steps / {int(lora_r1_steps):,})", fontsize=12)
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
+    ax.axhline(y=1, color='gray', linestyle='--', alpha=0.7, linewidth=2)
+    ax.legend(fontsize=8, loc='best', ncol=2)
+    ax.grid(True, alpha=0.3)
+
     plt.tight_layout()
-    plt.savefig(output_dir / "scaling_coefficients_table_with_10x.png", dpi=150)
-    plt.savefig(output_dir / "scaling_coefficients_table_with_10x.pdf")
+    plt.savefig(output_dir / "sample_efficiency.png", dpi=150)
+    plt.savefig(output_dir / "sample_efficiency.pdf")
     plt.close()
-    print("Saved: scaling_coefficients_table_with_10x.png")
+    print("Saved: sample_efficiency.png")
+
+    # Plot 2: Data multiplier vs trainable params
+    # Group by method type (not position) for cleaner visualization
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Define method groups and their styles
+    method_styles = {
+        "LoRA": {"color": "tab:orange", "marker": "s"},
+        "LoReFT": {"color": "tab:blue", "marker": "o"},
+        "DiReFT": {"color": "tab:green", "marker": "^"},
+        "NoDiReFT": {"color": "tab:red", "marker": "D"},
+    }
+
+    for method in methods:
+        method_data = comp_df[comp_df["method"] == method].copy()
+        method_data = method_data.dropna(subset=["trainable_params"])
+
+        if method_data.empty:
+            continue
+
+        method_data = method_data.sort_values("trainable_params")
+        params = method_data["trainable_params"].values
+        k_vals = method_data["data_multiplier"].values
+        k_errs = method_data["k_std"].values
+
+        # Determine style based on method name
+        style = {"color": "gray", "marker": "x"}
+        for key, s in method_styles.items():
+            if key in method:
+                style = s
+                break
+
+        if not np.all(np.isnan(k_errs)):
+            ax.errorbar(params, k_vals, yerr=k_errs,
+                        marker=style["marker"], color=style["color"],
+                        linewidth=2, markersize=8, capsize=3, capthick=1.5,
+                        label=method, alpha=0.8)
+        else:
+            ax.plot(params, k_vals,
+                    marker=style["marker"], color=style["color"],
+                    linewidth=2, markersize=8, label=method, alpha=0.8)
+
+    ax.set_xlabel("Trainable Parameters", fontsize=12)
+    ax.set_ylabel("Data Multiplier (k)", fontsize=12)
+    ax.set_title(f"Sample Efficiency vs Parameters\n"
+                 f"(target NLL = {target_nll:.4f}, baseline = LoRA r=1)", fontsize=12)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.axhline(y=1, color='gray', linestyle='--', alpha=0.7, linewidth=2)
+    ax.legend(fontsize=7, loc='best', ncol=2)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "sample_efficiency_vs_params.png", dpi=150)
+    plt.savefig(output_dir / "sample_efficiency_vs_params.pdf")
+    plt.close()
+    print("Saved: sample_efficiency_vs_params.png")
+
+    # Plot 3: Residuals of linear fits to check for systematic deviation
+    # Collect all residuals
+    residual_data = []
+    for _, row in coef_df.iterrows():
+        steps_raw = row.get("steps_raw")
+        nll_raw = row.get("nll_raw")
+        slope = row["slope"]
+        intercept = row["intercept"]
+
+        if steps_raw is None or nll_raw is None:
+            continue
+
+        log_steps = np.log10(steps_raw)
+        predicted = slope * log_steps + intercept
+        residuals = nll_raw - predicted
+
+        for i in range(len(steps_raw)):
+            residual_data.append({
+                "method": row["facet"],
+                "method_type": row["method_type"],
+                "rank": row["rank"],
+                "log_step": log_steps[i],
+                "step": steps_raw[i],
+                "residual": residuals[i],
+                "nll": nll_raw[i],
+                "predicted": predicted[i],
+            })
+
+    if residual_data:
+        resid_df = pd.DataFrame(residual_data)
+
+        # Plot residuals vs log(step), colored by method type
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+        # Left: Residuals vs log(step) by method type
+        ax = axes[0]
+        for method_type, color in [("lora", "tab:orange"), ("reft", "tab:blue")]:
+            type_data = resid_df[resid_df["method_type"] == method_type]
+            if not type_data.empty:
+                ax.scatter(type_data["log_step"], type_data["residual"],
+                          alpha=0.3, s=10, color=color, label=method_type.upper())
+
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
+        ax.set_xlabel("log₁₀(step)", fontsize=12)
+        ax.set_ylabel("Residual (actual - predicted NLL)", fontsize=12)
+        ax.set_title("Residuals vs Training Step", fontsize=12)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        # Right: Residuals vs predicted NLL (to check heteroscedasticity)
+        ax = axes[1]
+        for method_type, color in [("lora", "tab:orange"), ("reft", "tab:blue")]:
+            type_data = resid_df[resid_df["method_type"] == method_type]
+            if not type_data.empty:
+                ax.scatter(type_data["predicted"], type_data["residual"],
+                          alpha=0.3, s=10, color=color, label=method_type.upper())
+
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
+        ax.set_xlabel("Predicted NLL", fontsize=12)
+        ax.set_ylabel("Residual (actual - predicted NLL)", fontsize=12)
+        ax.set_title("Residuals vs Predicted Value", fontsize=12)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(output_dir / "fit_residuals.png", dpi=150)
+        plt.savefig(output_dir / "fit_residuals.pdf")
+        plt.close()
+        print("Saved: fit_residuals.png")
+
+        # Also plot residuals faceted by rank to see if pattern varies
+        ranks = sorted(resid_df["rank"].unique())
+        n_ranks = len(ranks)
+        if n_ranks > 0:
+            n_cols = min(4, n_ranks)
+            n_rows = (n_ranks + n_cols - 1) // n_cols
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(4*n_cols, 3.5*n_rows),
+                                     squeeze=False, sharey=True)
+            axes = axes.flatten()
+
+            for i in range(n_ranks, len(axes)):
+                axes[i].set_visible(False)
+
+            for idx, rank in enumerate(ranks):
+                ax = axes[idx]
+                rank_data = resid_df[resid_df["rank"] == rank]
+
+                for method_type, color in [("lora", "tab:orange"), ("reft", "tab:blue")]:
+                    type_data = rank_data[rank_data["method_type"] == method_type]
+                    if not type_data.empty:
+                        ax.scatter(type_data["log_step"], type_data["residual"],
+                                  alpha=0.4, s=15, color=color, label=method_type.upper())
+
+                ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
+                ax.set_xlabel("log₁₀(step)", fontsize=10)
+                if idx % n_cols == 0:
+                    ax.set_ylabel("Residual", fontsize=10)
+                ax.set_title(f"Rank {int(rank)}", fontsize=11)
+                ax.grid(True, alpha=0.3)
+                if idx == 0:
+                    ax.legend(fontsize=8)
+
+            plt.suptitle("Residuals by Rank (positive = model underpredicts NLL)", fontsize=12)
+            plt.tight_layout()
+            plt.savefig(output_dir / "fit_residuals_by_rank.png", dpi=150)
+            plt.savefig(output_dir / "fit_residuals_by_rank.pdf")
+            plt.close()
+            print("Saved: fit_residuals_by_rank.png")
+
+    # Print nicely formatted console table, separated by rank
+    print(f"\n{'='*90}")
+    print(f"SAMPLE EFFICIENCY: Steps to reach NLL = {target_nll:.4f}")
+    print(f"{'='*90}")
+    print(f"Baseline: LoRA r=1 reaches target in {int(lora_r1_steps):,} steps")
+    print(f"k = (steps needed) / {int(lora_r1_steps):,}  [± 1 std from bootstrap]")
+    print(f"Ex = extrapolating (target NLL below min observed, high uncertainty)")
+    print()
+
+    for rank in sorted(comp_df["rank"].unique()):
+        rank_data = comp_df[comp_df["rank"] == rank].copy()
+        rank_data = rank_data.sort_values("data_multiplier")
+
+        print(f"{'─'*90}")
+        print(f"RANK {int(rank)}")
+        print(f"{'─'*90}")
+        print(f"{'Method':<32} {'Slope':>8} {'Min NLL':>8} {'Steps':>10} {'k':>15} {'Ex':>3}")
+        print(f"{'-'*32} {'-'*8} {'-'*8} {'-'*10} {'-'*15} {'-'*3}")
+
+        for _, row in rank_data.iterrows():
+            method = row["method"][:32]
+            steps = row["steps_needed"]
+            k = row["data_multiplier"]
+            k_std = row["k_std"]
+            slope = row["slope"]
+            min_nll = row["min_nll"]
+            extrap = "!" if row["extrapolating"] else ""
+
+            slope_str = f"{slope:.4f}" if not np.isnan(slope) else "N/A"
+            min_nll_str = f"{min_nll:.4f}" if not np.isnan(min_nll) else "N/A"
+
+            if not np.isnan(steps) and steps > 0:
+                steps_str = f"{int(steps):,}"
+                if not np.isnan(k_std):
+                    k_str = f"{k:.2f}x ± {k_std:.2f}"
+                else:
+                    k_str = f"{k:.2f}x"
+            else:
+                steps_str = "N/A"
+                k_str = "N/A"
+
+            print(f"{method:<32} {slope_str:>8} {min_nll_str:>8} {steps_str:>10} {k_str:>15} {extrap:>3}")
+
+        print()
+
+    # Summary: average k across ranks for each method
+    print(f"{'='*90}")
+    print("SUMMARY (average k across all ranks)")
+    print(f"{'='*90}")
+    summary = comp_df.groupby("method").agg({
+        "data_multiplier": "mean",
+        "k_std": "mean",
+    }).sort_values("data_multiplier")
+
+    print(f"{'Method':<40} {'Avg k':>15}")
+    print(f"{'-'*40} {'-'*15}")
+    for method, row in summary.iterrows():
+        avg_k = row["data_multiplier"]
+        avg_std = row["k_std"]
+        if not np.isnan(avg_k):
+            if not np.isnan(avg_std):
+                k_str = f"{avg_k:.2f}x ± {avg_std:.2f}"
+            else:
+                k_str = f"{avg_k:.2f}x"
+        else:
+            k_str = "N/A"
+        print(f"{method:<40} {k_str:>15}")
+
+    print()
 
 
 def main():
@@ -1127,6 +1472,8 @@ def main():
                         help="Save fetched data to CSV")
     parser.add_argument("--curves", action="store_true",
                         help="Plot scaling curves with linear fits (slow, fetches history)")
+    parser.add_argument("--include-incomplete", action="store_true",
+                        help="Include runs that haven't finished (running, crashed, etc.)")
     args = parser.parse_args()
     
     output_dir = Path(args.output)
@@ -1138,7 +1485,9 @@ def main():
         df = pd.read_csv(args.csv)
     else:
         print(f"Fetching runs from wandb project: {args.project}")
-        df = fetch_wandb_runs(args.project, args.entity)
+        if args.include_incomplete:
+            print("Including incomplete runs")
+        df = fetch_wandb_runs(args.project, args.entity, args.include_incomplete)
         
         if args.save_csv:
             csv_path = output_dir / "sweep_results.csv"
@@ -1147,6 +1496,7 @@ def main():
     
     print(f"Loaded {len(df)} runs")
     print(f"Methods: {df['method'].unique()}")
+    print(f"Intervention types: {df['intervention_type'].dropna().unique()}")
     print(f"Positions: {df['position'].dropna().unique()}")
     print(f"Components: {df['component'].dropna().unique()}")
     print(f"ReFT Ranks: {sorted(df['rank'].dropna().unique())}")
@@ -1157,7 +1507,7 @@ def main():
     runs_10x = {}
     if args.project_10x and not args.csv:
         print(f"\nFetching 10x continuation runs from: {args.project_10x}")
-        runs_10x = fetch_10x_runs(args.project_10x, args.entity)
+        runs_10x = fetch_10x_runs(args.project_10x, args.entity, args.include_incomplete)
         print(f"Found {len(runs_10x)} continuation runs")
     
     # Generate plots (only the useful ones)
@@ -1176,6 +1526,7 @@ def main():
         plot_scaling_curves(coefficients, output_dir, include_10x=False)
         plot_scaling_by_rank(coefficients, output_dir, include_10x=False)
         plot_scaling_coefficients(coefficients, output_dir)
+        compute_sample_efficiency(coefficients, output_dir)
         
         # If 10x data available, also plot combined curves
         if runs_10x:

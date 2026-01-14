@@ -25,7 +25,8 @@ from .interventions import (
     ConsreftIntervention,
     LobireftIntervention,
     DireftIntervention,
-    NodireftIntervention
+    NodireftIntervention,
+    MoeloreftIntervention,
 )
 
 # dataloader helpers

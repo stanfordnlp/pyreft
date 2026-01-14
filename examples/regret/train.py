@@ -42,6 +42,7 @@ from pyreft import (
     LoreftIntervention_TokenScale,
     DireftIntervention,
     NodireftIntervention,
+    MoeloreftIntervention,
     ReftDataCollator,
     ReftGenerationDataset,
 )
@@ -321,6 +322,10 @@ def train(args):
             intervention_cls = NodireftIntervention
             if scale_type != "none":
                 print(f"WARNING: scale_type={scale_type} is ignored for NoDiReFT (not implemented)")
+        elif intervention_type == "moeloreft":
+            intervention_cls = MoeloreftIntervention
+            if scale_type != "none":
+                print(f"WARNING: scale_type={scale_type} is ignored for MoE-LoReFT (not implemented)")
         else:
             # LoReFT with optional scaling
             intervention_classes = {
@@ -362,6 +367,10 @@ def train(args):
         # NodireftIntervention requires add_bias
         if intervention_type == "nodireft":
             intervention_kwargs["add_bias"] = True
+        # MoeloreftIntervention requires num_experts and top_k
+        if intervention_type == "moeloreft":
+            intervention_kwargs["num_experts"] = args.num_experts
+            intervention_kwargs["top_k"] = args.top_k
 
         representations = [{
             "layer": l,
@@ -726,8 +735,20 @@ def main():
         "--intervention_type",
         type=str,
         default="loreft",
-        choices=["loreft", "direft", "nodireft"],
-        help="Intervention type: loreft (default), direft (no Rh subtraction), nodireft (no orthogonality)"
+        choices=["loreft", "direft", "nodireft", "moeloreft"],
+        help="Intervention type: loreft (default), direft (no Rh subtraction), nodireft (no orthogonality), moeloreft (MoE on W)"
+    )
+    parser.add_argument(
+        "--num_experts",
+        type=int,
+        default=4,
+        help="Number of experts for MoE interventions (default: 4)"
+    )
+    parser.add_argument(
+        "--top_k",
+        type=int,
+        default=2,
+        help="Number of experts to select per token for MoE interventions (default: 2)"
     )
     parser.add_argument(
         "--component",

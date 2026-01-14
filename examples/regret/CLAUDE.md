@@ -40,14 +40,16 @@ ReFT can target different transformer components via `--component`:
 - **`attention_output`** - Attention module output
 
 ## Intervention Types
-Three ReFT variants are available via `--intervention_type`:
+Four ReFT variants are available via `--intervention_type`:
 - **`loreft`** (default): LoReFT(h) = h + R^T(Wh + b − Rh) — replaces R-subspace component (R orthogonal)
 - **`direft`**: DiReFT(h) = h + R^T(Wh + b) — adds to R-subspace (R orthogonal, no subtraction)
 - **`nodireft`**: NoDiReFT(h) = h + W2^T(W1h + b) — no orthogonality constraint on W2
+- **`moeloreft`**: MoE-LoReFT(h) = h + R^T(∑ᵢsᵢWᵢh + b − Rh) — mixture-of-experts on W with top-k routing
 
 Key differences:
 - **LoReFT vs DiReFT**: In DiReFT, when W=0 and b=0, the intervention is identity. In LoReFT, it subtracts the R-subspace. This affects weight decay regularization.
 - **DiReFT vs NoDiReFT**: NoDiReFT removes the orthogonality constraint on the projection matrix, making it a standard low-rank adapter.
+- **MoE-LoReFT**: Uses `--num_experts` (default 4) and `--top_k` (default 2) to route each token to a subset of expert W matrices. Logs per-expert activation percentages.
 
 ## Sweep Configuration
 - **Model (1B)**: Llama 3.2 1B Instruct
@@ -71,6 +73,7 @@ Key differences:
 - `--with-lora` - Include LoRA baseline
 - `--with-direft` - Include DiReFT experiments
 - `--with-nodireft` - Include NoDiReFT experiments (no orthogonality)
+- `--with-moeloreft` - Include MoE-LoReFT experiments (mixture-of-experts)
 - `--model-8b` - Use Llama 3.1 8B instead of 3.2 1B (auto-enables gradient checkpointing, 48G memory)
 
 ## Quick Start
@@ -98,6 +101,9 @@ uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --interventi
 
 # NoDiReFT test run (no orthogonality)
 uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type nodireft
+
+# MoE-LoReFT test run (mixture-of-experts)
+uv run train.py --max_n_train_example 100 --position f1+s1 --rank 4 --intervention_type moeloreft --num_experts 4 --top_k 2
 
 # Single test run (8B)
 uv run train.py --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \
