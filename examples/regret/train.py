@@ -213,7 +213,21 @@ def train(args):
         # Duplicate layers if using multiple positions without weight sharing
         if "+" in args.position and not args.share_weights:
             layers = layers + layers
-        
+
+        # Parse components (supports "+" separated, e.g., "key_output+value_output")
+        components = args.component.split("+") if "+" in args.component else [args.component]
+        if len(components) > 1:
+            # Duplicate layers for each component (like multi-position does)
+            base_layers = list(layers)
+            layers = base_layers * len(components)
+            # Track which component each layer slot maps to
+            layer_components = []
+            for comp in components:
+                layer_components.extend([comp] * len(base_layers))
+            print(f"ReFT: Multi-component intervention on {components}")
+        else:
+            layer_components = [components[0]] * len(layers)
+
         print(f"ReFT: Intervening on {len(layers)} layer(s): {layers[:5]}..." if len(layers) > 5 else f"ReFT: Intervening on layers: {layers}")
     
     # Load tokenizer
@@ -343,46 +357,52 @@ def train(args):
 
         # Component path depends on whether we're wrapping a PEFT model
         if args.use_lora:
-            # PEFT model has a different module structure
-            component = "base_model.model.model.layers[{layer}].output"
-        else:
-            component = args.component
+            # PEFT model has a different module structure (only supports single component)
+            if len(components) > 1:
+                raise ValueError("Multi-component (e.g., key_output+value_output) is not supported with --use_lora")
+            lora_component = "base_model.model.model.layers[{layer}].output"
 
-        # Determine embedding dimension based on component
-        # mlp_activation is intermediate_size (4x hidden_size), others are hidden_size
-        if args.component == "mlp_activation":
-            embed_dim = model.config.intermediate_size
-        else:
-            embed_dim = model.config.hidden_size
+        # Determine embedding dimension per component
+        def get_embed_dim(comp):
+            if comp == "mlp_activation":
+                return model.config.intermediate_size
+            return model.config.hidden_size
 
         # Print intervention details
         scale_str = f", scale={scale_type}" if scale_type != "none" else ""
         type_str = intervention_type.upper()
-        print(f"Creating {type_str} interventions: rank={args.rank}, embed_dim={embed_dim}{scale_str}")
+        embed_dims = {c: get_embed_dim(c) for c in components}
+        print(f"Creating {type_str} interventions: rank={args.rank}, embed_dims={embed_dims}{scale_str}")
 
-        # Build intervention kwargs
-        intervention_kwargs = {
-            "embed_dim": embed_dim,
-            "low_rank_dimension": args.rank,
-            "dropout": args.dropout,
-            "dtype": dtype,
-            "act_fn": args.act_fn,
-            "debug": args.debug_interventions,
-        }
-        # NodireftIntervention requires add_bias
-        if intervention_type == "nodireft":
-            intervention_kwargs["add_bias"] = True
-        # MoE interventions require num_experts and top_k
-        if intervention_type in ("moeloreft", "moerloreft"):
-            intervention_kwargs["num_experts"] = args.num_experts
-            intervention_kwargs["top_k"] = args.top_k
+        # Build representations with per-layer component assignment
+        representations = []
+        for l, comp in zip(layers, layer_components):
+            embed_dim = get_embed_dim(comp)
+            intervention_kwargs = {
+                "embed_dim": embed_dim,
+                "low_rank_dimension": args.rank,
+                "dropout": args.dropout,
+                "dtype": dtype,
+                "act_fn": args.act_fn,
+                "debug": args.debug_interventions,
+            }
+            if intervention_type == "nodireft":
+                intervention_kwargs["add_bias"] = True
+            if intervention_type in ("moeloreft", "moerloreft"):
+                intervention_kwargs["num_experts"] = args.num_experts
+                intervention_kwargs["top_k"] = args.top_k
 
-        representations = [{
-            "layer": l,
-            "component": component.format(layer=l) if args.use_lora else component,
-            "low_rank_dimension": args.rank,
-            "intervention": intervention_cls(**intervention_kwargs)
-        } for l in layers]
+            if args.use_lora:
+                rep_component = lora_component.format(layer=l)
+            else:
+                rep_component = comp
+
+            representations.append({
+                "layer": l,
+                "component": rep_component,
+                "low_rank_dimension": args.rank,
+                "intervention": intervention_cls(**intervention_kwargs),
+            })
         
         # Create ReFT config and model
         reft_config = ReftConfig(representations=representations)
