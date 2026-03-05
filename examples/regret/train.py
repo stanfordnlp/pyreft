@@ -366,6 +366,10 @@ def train(args):
         def get_embed_dim(comp):
             if comp == "mlp_activation":
                 return model.config.intermediate_size
+            elif comp in ("key_output", "value_output"):
+                return model.config.num_key_value_heads * model.config.head_dim
+            elif comp in ("query_output",):
+                return model.config.num_attention_heads * model.config.head_dim
             return model.config.hidden_size
 
         # Print intervention details
