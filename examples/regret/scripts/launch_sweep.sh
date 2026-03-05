@@ -56,6 +56,7 @@ ALL_COMPONENTS=false
 WITH_DIREFT=false
 WITH_NODIREFT=false
 WITH_SUFFIX_POSITIONS=false
+WITH_KV=false
 RANK1_ONLY=false
 MODEL_8B=false
 
@@ -70,6 +71,7 @@ for arg in "$@"; do
         --with-direft) WITH_DIREFT=true; echo "=== INCLUDING DIREFT EXPERIMENTS ===" ;;
         --with-nodireft) WITH_NODIREFT=true; echo "=== INCLUDING NODIREFT EXPERIMENTS ===" ;;
         --with-suffix-positions) WITH_SUFFIX_POSITIONS=true; echo "=== INCLUDING SUFFIX POSITION EXPERIMENTS ===" ;;
+        --with-kv) WITH_KV=true; echo "=== INCLUDING KEY+VALUE EXPERIMENTS ===" ;;
         --rank1-only) RANK1_ONLY=true; echo "=== RANK 1 ONLY ==="; RANKS=(1); LORA_RANKS=(1) ;;
         --model-8b) MODEL_8B=true; echo "=== LLAMA 3.1 8B MODE ===" ;;
     esac
@@ -119,6 +121,10 @@ elif $WITH_MLP; then
     COMPONENTS=("block_output" "mlp_activation")
 else
     COMPONENTS=("block_output")
+fi
+
+if $WITH_KV; then
+    COMPONENTS+=("key_output+value_output")
 fi
 
 # --- Calculate total jobs ---
