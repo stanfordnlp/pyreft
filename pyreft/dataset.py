@@ -109,6 +109,156 @@ def get_intervention_locations(**kwargs):
     return intervention_locations
 
 
+def _parse_marker_spans(
+    text: str,
+    start_marker: str = "<<reft>>",
+    end_marker: str = "</reft>>",
+) -> tuple:
+    """Extract spans between markers and return cleaned text with span (start, end) char offsets in cleaned text."""
+    cleaned_parts = []
+    spans = []
+    pos = 0
+    while True:
+        s = text.find(start_marker, pos)
+        if s < 0:
+            cleaned_parts.append(text[pos:])
+            break
+        cleaned_parts.append(text[pos:s])
+        e = text.find(end_marker, s + len(start_marker))
+        if e < 0:
+            cleaned_parts.append(text[s:])
+            break
+        span_content = text[s + len(start_marker):e]
+        start_in_cleaned = sum(len(p) for p in cleaned_parts)
+        end_in_cleaned = start_in_cleaned + len(span_content)
+        spans.append((start_in_cleaned, end_in_cleaned))
+        cleaned_parts.append(span_content)
+        pos = e + len(end_marker)
+    cleaned_text = "".join(cleaned_parts)
+    return cleaned_text, spans
+
+
+def _span_ranges_to_token_indices(
+    tokenizer: transformers.PreTrainedTokenizer,
+    text: str,
+    span_ranges: List[tuple],
+    model_max_length: Optional[int] = None,
+) -> List[List[int]]:
+    """Map character span ranges in text to token indices. Returns one list of token indices per span."""
+    enc = tokenizer(
+        text,
+        max_length=model_max_length or tokenizer.model_max_length,
+        truncation=True,
+        return_offsets_mapping=True,
+        return_tensors=None,
+    )
+    offset_mapping = enc.get("offset_mapping")
+    if not offset_mapping:
+        enc = tokenizer(
+            text,
+            max_length=model_max_length or tokenizer.model_max_length,
+            truncation=True,
+            return_offsets_mapping=True,
+        )
+        offset_mapping = enc["offset_mapping"]
+    input_ids = enc["input_ids"] if isinstance(enc.get("input_ids")[0], int) else enc["input_ids"][0]
+    if hasattr(input_ids, "tolist"):
+        input_ids = input_ids.tolist()
+    token_indices_per_span = []
+    for start_char, end_char in span_ranges:
+        indices = []
+        for i, (tok_start, tok_end) in enumerate(offset_mapping):
+            if tok_start is None or tok_end is None:
+                continue
+            if tok_start < end_char and tok_end > start_char:
+                indices.append(i)
+        token_indices_per_span.append(indices if indices else [len(input_ids) - 1])
+    return token_indices_per_span
+
+
+def make_marker_supervised_data_module(
+    tokenizer: transformers.PreTrainedTokenizer,
+    model,
+    inputs: List[str],
+    outputs: List[str],
+    start_marker: str = "<<reft>>",
+    end_marker: str = "</reft>>",
+    num_interventions: int = 1,
+    nonstop: bool = False,
+    intervene_on_last_token_of_span_only: bool = False,
+) -> Dict:
+    """Build supervised data module from prompts that contain marker spans for intervention targeting.
+
+    Prompts may include spans wrapped in start_marker/end_marker (e.g. <<reft>> ... </reft>>).
+    Markers are stripped from the actual input; intervention_locations are set to token indices
+    of the marked spans (or only the last token of each span if intervene_on_last_token_of_span_only).
+    """
+    all_base_input_ids = []
+    all_intervention_locations = []
+    all_output_ids = []
+    max_len = getattr(tokenizer, "model_max_length", None) or 2048
+    for i in range(len(inputs)):
+        prompt = inputs[i]
+        output = outputs[i]
+        cleaned_prompt, span_ranges = _parse_marker_spans(prompt, start_marker, end_marker)
+        if not span_ranges:
+            base_prompt_length = len(
+                tokenizer(
+                    cleaned_prompt,
+                    max_length=max_len,
+                    truncation=True,
+                    return_tensors="pt",
+                )["input_ids"][0]
+            )
+            span_token_lists = [[base_prompt_length - 1]]
+        else:
+            span_token_lists = _span_ranges_to_token_indices(
+                tokenizer, cleaned_prompt, span_ranges, max_len
+            )
+            if intervene_on_last_token_of_span_only:
+                span_token_lists = [[s[-1]] if s else [0] for s in span_token_lists]
+        full_input = cleaned_prompt + output
+        if not nonstop:
+            full_input += tokenizer.eos_token
+        base_input_ids = tokenizer(
+            full_input,
+            max_length=max_len,
+            truncation=True,
+            return_tensors="pt",
+        )["input_ids"][0]
+        prompt_ids = tokenizer(
+            cleaned_prompt,
+            max_length=max_len,
+            truncation=True,
+            return_tensors="pt",
+        )["input_ids"][0]
+        base_prompt_length = len(prompt_ids)
+        output_ids = copy.deepcopy(base_input_ids)
+        output_ids[:base_prompt_length] = IGNORE_INDEX
+        flat_positions = []
+        for sl in span_token_lists:
+            flat_positions.extend(sl)
+        if not flat_positions:
+            flat_positions = [base_prompt_length - 1]
+        intervention_locations = [flat_positions] * num_interventions
+        all_base_input_ids.append(base_input_ids)
+        all_intervention_locations.append(intervention_locations)
+        all_output_ids.append(output_ids)
+    train_dataset = datasets.Dataset.from_dict({
+        "input_ids": all_base_input_ids,
+        "intervention_locations": all_intervention_locations,
+        "labels": all_output_ids,
+    })
+    data_collator_fn = transformers.DataCollatorForSeq2Seq(
+        tokenizer=tokenizer,
+        model=model,
+        label_pad_token_id=-100,
+        padding="longest",
+    )
+    data_collator = ReftDataCollator(data_collator=data_collator_fn)
+    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+
+
 @dataclass
 class ReftDataCollator(object):
     """Collate examples for ReFT."""
@@ -799,3 +949,115 @@ class ReftRewardCollator:
         max_seq_length = batch["input_ids"].shape[-1]
         batch["intervention_locations"] = batch["intervention_locations"][..., :max_seq_length]
         return batch
+
+
+@dataclass
+class ReftDPODataCollator:
+    """Collator for DPO training: tokenizes prompt/chosen/rejected and adds intervention_locations."""
+
+    tokenizer: transformers.PreTrainedTokenizer
+    max_length: int = 512
+    max_prompt_length: Optional[int] = None
+    num_interventions: int = 1
+    pad_token_id: Optional[int] = None
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
+        pad_id = self.pad_token_id if self.pad_token_id is not None else self.tokenizer.pad_token_id
+        max_pl = self.max_prompt_length or self.max_length
+        chosen_input_ids, chosen_attention_mask, chosen_labels = [], [], []
+        rejected_input_ids, rejected_attention_mask, rejected_labels = [], [], []
+        intervention_locations_batch = []
+        for f in features:
+            prompt, chosen, rejected = f["prompt"], f["chosen"], f["rejected"]
+            prompt_enc = self.tokenizer(
+                prompt,
+                max_length=max_pl,
+                truncation=True,
+                return_tensors="pt",
+            )
+            prompt_ids = prompt_enc["input_ids"][0]
+            prompt_len = prompt_ids.shape[0]
+            chosen_full = prompt + chosen + (self.tokenizer.eos_token or "")
+            chosen_enc = self.tokenizer(
+                chosen_full,
+                max_length=self.max_length,
+                truncation=True,
+                return_tensors="pt",
+            )
+            c_ids = chosen_enc["input_ids"][0]
+            c_labels = copy.deepcopy(c_ids)
+            c_labels[:prompt_len] = IGNORE_INDEX
+            rejected_full = prompt + rejected + (self.tokenizer.eos_token or "")
+            rejected_enc = self.tokenizer(
+                rejected_full,
+                max_length=self.max_length,
+                truncation=True,
+                return_tensors="pt",
+            )
+            r_ids = rejected_enc["input_ids"][0]
+            r_labels = copy.deepcopy(r_ids)
+            r_labels[:prompt_len] = IGNORE_INDEX
+            chosen_input_ids.append(c_ids)
+            chosen_attention_mask.append((c_ids != pad_id).long())
+            chosen_labels.append(c_labels)
+            rejected_input_ids.append(r_ids)
+            rejected_attention_mask.append((r_ids != pad_id).long())
+            rejected_labels.append(r_labels)
+            intervention_locations_batch.append([[prompt_len - 1]] * self.num_interventions)
+        to_pad = lambda x, pad_val: torch.nn.utils.rnn.pad_sequence(
+            x, batch_first=True, padding_value=pad_val
+        )
+        chosen_input_ids = to_pad(chosen_input_ids, pad_id)
+        chosen_attention_mask = to_pad(chosen_attention_mask, 0)
+        chosen_labels = to_pad(chosen_labels, IGNORE_INDEX)
+        rejected_input_ids = to_pad(rejected_input_ids, pad_id)
+        rejected_attention_mask = to_pad(rejected_attention_mask, 0)
+        rejected_labels = to_pad(rejected_labels, IGNORE_INDEX)
+        num_int, max_pos = len(intervention_locations_batch[0]), max(
+            len(p[0]) for p in intervention_locations_batch
+        )
+        il_tensor = torch.full(
+            (len(features), num_int, max_pos), -1, dtype=torch.long
+        )
+        for i, locs in enumerate(intervention_locations_batch):
+            for j, pos_list in enumerate(locs):
+                il_tensor[i, j, : len(pos_list)] = torch.tensor(pos_list, dtype=torch.long)
+        return {
+            "chosen_input_ids": chosen_input_ids,
+            "chosen_attention_mask": chosen_attention_mask,
+            "chosen_labels": chosen_labels,
+            "rejected_input_ids": rejected_input_ids,
+            "rejected_attention_mask": rejected_attention_mask,
+            "rejected_labels": rejected_labels,
+            "intervention_locations": il_tensor,
+        }
+
+
+def make_dpo_data_module(
+    tokenizer: transformers.PreTrainedTokenizer,
+    prompts: List[str],
+    chosen_outputs: List[str],
+    rejected_outputs: List[str],
+    max_length: int = 512,
+    max_prompt_length: Optional[int] = None,
+    num_interventions: int = 1,
+) -> Dict:
+    """Build dataset and collator for ReFT DPO training from prompt/chosen/rejected lists."""
+    assert len(prompts) == len(chosen_outputs) == len(rejected_outputs)
+    train_dataset = datasets.Dataset.from_dict({
+        "prompt": prompts,
+        "chosen": chosen_outputs,
+        "rejected": rejected_outputs,
+    })
+    collator = ReftDPODataCollator(
+        tokenizer=tokenizer,
+        max_length=max_length,
+        max_prompt_length=max_prompt_length or max_length,
+        num_interventions=num_interventions,
+        pad_token_id=tokenizer.pad_token_id,
+    )
+    return dict(
+        train_dataset=train_dataset,
+        eval_dataset=None,
+        data_collator=collator,
+    )
