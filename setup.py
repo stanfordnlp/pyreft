@@ -21,7 +21,7 @@ setup(
     packages=find_packages(include=['pyreft', 'pyreft.*']),
     python_requires='>=3.8',
     install_requires=requirements,
-    extras_require={},
+    extras_require={"dpo": ["trl"]},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
